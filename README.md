@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/qoregeo.svg?logo=pypi&logoColor=white)](https://pypi.org/project/qoregeo)
 [![Python versions](https://img.shields.io/pypi/pyversions/qoregeo.svg?logo=python&logoColor=white)](https://pypi.org/project/qoregeo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://github.com/bosekarmegam/qoregeo/actions/workflows/test.yml/badge.svg)](https://github.com/bosekarmegam/qoregeo/actions)
+[![Tests](https://github.com/bosekarmegam/qoregeo/actions/workflows/tests.yml/badge.svg)](https://github.com/bosekarmegam/qoregeo/actions)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://pypi.org/project/qoregeo)
 
 ---
