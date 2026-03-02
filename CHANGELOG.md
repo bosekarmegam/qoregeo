@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [1.0.1] — 2025-03-02
+
+### Fixed
+- Skip auto-detection when lat_col/lng_col are manually provided
+- Fix southern hemisphere distance test range
 
 ## [1.0.0] — 2025-01-01
 

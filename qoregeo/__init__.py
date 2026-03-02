@@ -48,9 +48,9 @@ from .exceptions import (
     InvalidBufferError,
 )
 
-__version__  = "1.0.0"
-__author__   = "Suneel Bose, Megam Bose"
-__email__    = "suneel@arcgx.in"
+__version__  = "1.0.1"
+__author__   = "Suneel Bose"
+__email__    = "suneelbosekarmegam@gmail.com"
 __license__  = "MIT"
 
 __all__ = [
