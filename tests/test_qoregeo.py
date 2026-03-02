@@ -1,7 +1,7 @@
 """
 tests/test_qoregeo.py
 =====================
-Full test suite for QOREgeo v1.0.0.
+Full test suite for QOREgeo v1.0.2.
 
 Run with:
     pytest tests/ -v
@@ -116,7 +116,7 @@ class TestInit:
         assert "7 features" in repr(geo_loaded)
 
     def test_version(self):
-        assert GeoEngine.VERSION == "1.0.0"
+        assert GeoEngine.VERSION == "1.0.2"
 
     def test_len_no_data(self):
         assert len(GeoEngine()) == 0
