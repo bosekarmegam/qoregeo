@@ -55,10 +55,7 @@ _MAP_TEMPLATE = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
-<link rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0f111a; color:#fff; }}
@@ -86,15 +83,21 @@ _MAP_TEMPLATE = """\
 <div id="brand"><strong>QOREgeo</strong> · {title}</div>
 <div id="count"><span id="n">0</span> features</div>
 
-<script
-  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqaE="
-  crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const DATA = {geojson};
-const TITLE = {title_json};
+  if (typeof L === 'undefined') {{
+    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\\/script>');
+  }}
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {{
+  try {{
+    if (typeof L === 'undefined') throw new Error('Leaflet failed to load from CDNs');
 
-const map = L.map('map', {{ zoomControl:true, preferCanvas:true }});
+    const DATA = {geojson};
+    const TITLE = {title_json};
+
+    const map = L.map('map', {{ zoomControl:true, preferCanvas:true }});
 
 // Dark tile layer
 L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
@@ -141,6 +144,13 @@ if (count > 0) {{
   const zoom = {zoom};
   if (map.getZoom() < zoom - 2) map.setZoom(zoom);
 }}
+  }} catch (err) {{
+    console.error('QOREgeo Error:', err);
+    document.body.innerHTML += `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#e74c3c;color:white;padding:20px;border-radius:8px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+      <b style="font-size:16px;">Map Loading Error</b><br/><br/>${{err.message}}
+    </div>`;
+  }}
+}});
 </script>
 </body>
 </html>
@@ -176,10 +186,7 @@ _HEAT_TEMPLATE = """\
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{title}</title>
-<link rel="stylesheet"
-  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-  integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-  crossorigin=""/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ background:#0f111a; }}
@@ -198,14 +205,27 @@ _HEAT_TEMPLATE = """\
 <div id="map"></div>
 <div id="brand"><strong>QOREgeo</strong> · {title}</div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-  integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqaE=" crossorigin=""></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  if (typeof L === 'undefined') {{
+    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\\/script>');
+  }}
+</script>
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script>
-const POINTS = {points};
-const TITLE  = {title_json};
+  if (typeof L !== 'undefined' && typeof L.heatLayer === 'undefined') {{
+    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"><\\/script>');
+  }}
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {{
+  try {{
+    if (typeof L === 'undefined') throw new Error('Leaflet failed to load from CDNs');
 
-const map = L.map('map', {{ preferCanvas:true }});
+    const POINTS = {points};
+    const TITLE  = {title_json};
+
+    const map = L.map('map', {{ preferCanvas:true }});
 
 L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
   attribution: '&copy; OSM · CARTO', subdomains:'abcd', maxZoom:19
@@ -221,6 +241,13 @@ if (POINTS.length > 0) {{
   const lngs = POINTS.map(p => p[1]);
   map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]]);
 }}
+  }} catch (err) {{
+    console.error('QOREgeo Error:', err);
+    document.body.innerHTML += `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#e74c3c;color:white;padding:20px;border-radius:8px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+      <b style="font-size:16px;">Map Loading Error</b><br/><br/>${{err.message}}
+    </div>`;
+  }}
+}});
 </script>
 </body>
 </html>

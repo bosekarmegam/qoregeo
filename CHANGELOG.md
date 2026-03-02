@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+## [1.0.3] — 2025-03-02
+
+### Fixed
+- fix map loading error
+
 ## [1.0.2] — 2025-03-02
 
 ### Fixed

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name        = "qoregeo"
-version     = "1.0.2"
+version     = "1.0.3"
 description = "Quantum-Powered Spatial Intelligence for Python. Zero C++ dependencies."
 readme      = "README.md"
 license     = { file = "LICENSE" }
