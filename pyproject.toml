@@ -1,0 +1,97 @@
+[build-system]
+requires      = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name        = "qoregeo"
+version     = "1.0.0"
+description = "Quantum-Powered Spatial Intelligence for Python. Zero C++ dependencies."
+readme      = "README.md"
+license     = { file = "LICENSE" }
+authors     = [
+    { name = "Suneel Bose",  email = "suneel@arcgx.in" },
+    { name = "Megam Bose" },
+]
+maintainers = [
+    { name = "Suneel Bose", email = "suneel@arcgx.in" },
+]
+keywords = [
+    "gis", "geospatial", "spatial", "geography", "mapping",
+    "geofencing", "leaflet", "heatmap", "coordinates",
+    "latitude", "longitude", "distance", "bearing",
+    "qore", "quantum",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
+]
+requires-python = ">=3.8"
+dependencies    = []          # Zero runtime dependencies
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.1",
+    "mypy>=1.5",
+]
+
+[project.urls]
+Homepage      = "https://github.com/bosekarmegam/qoregeo"
+Repository    = "https://github.com/bosekarmegam/qoregeo"
+Documentation = "https://github.com/bosekarmegam/qoregeo#readme"
+"Bug Tracker" = "https://github.com/bosekarmegam/qoregeo/issues"
+Changelog     = "https://github.com/bosekarmegam/qoregeo/blob/main/CHANGELOG.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["qoregeo"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "qoregeo/",
+    "tests/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "pyproject.toml",
+]
+
+# ─── Pytest ──────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+addopts      = "-v --tb=short"
+python_files = ["test_*.py"]
+
+# ─── Coverage ────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source = ["qoregeo"]
+omit   = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+
+# ─── Ruff (linting) ──────────────────────────────────────────────────────────
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = ["E", "F", "W", "I", "UP"]
+ignore = ["E501"]
+
+# ─── Mypy (type checking) ────────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.8"
+strict         = false
+ignore_missing_imports = true
