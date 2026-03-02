@@ -62,7 +62,7 @@ class GeoEngine:
     None — all configuration is done via method calls.
     """
 
-    VERSION = "1.0.1"
+    VERSION = "1.0.2"
 
     def __init__(self) -> None:
         self._data: Optional[Dict[str, Any]] = None   # GeoJSON FeatureCollection
