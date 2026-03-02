@@ -116,7 +116,7 @@ class TestInit:
         assert "7 features" in repr(geo_loaded)
 
     def test_version(self):
-        assert GeoEngine.VERSION == "1.0.2"
+        assert GeoEngine.VERSION == "1.0.3"
 
     def test_len_no_data(self):
         assert len(GeoEngine()) == 0

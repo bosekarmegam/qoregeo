@@ -368,24 +368,6 @@ geo.filter_by_radius(*patient, 5).map("nearby_hospitals.html")
 
 ---
 
-## Running Tests
-
-```bash
-# Install dev dependencies
-pip install qoregeo[dev]
-
-# Run all tests
-pytest
-
-# With coverage
-pytest --cov=qoregeo --cov-report=term-missing
-
-# Run a specific test
-pytest tests/test_qoregeo.py::TestDistance -v
-```
-
----
-
 ## Roadmap
 
 | Version | Status | Focus |

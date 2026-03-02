@@ -48,7 +48,7 @@ from .exceptions import (
     InvalidBufferError,
 )
 
-__version__  = "1.0.2"
+__version__  = "1.0.3"
 __author__   = "Suneel Bose"
 __email__    = "suneelbosekarmegam@gmail.com"
 __license__  = "MIT"
