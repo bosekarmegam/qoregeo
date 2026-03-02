@@ -410,7 +410,7 @@ pytest tests/test_qoregeo.py::TestDistance -v
 ## License
 
 MIT © 2025 [ArcGX TechLabs Private Limited](https://arcgx.in)  
-Built by Suneel Bose 
+Built by Suneel Bose K
 
 ---
 
