@@ -410,7 +410,7 @@ pytest tests/test_qoregeo.py::TestDistance -v
 ## License
 
 MIT © 2025 [ArcGX TechLabs Private Limited](https://arcgx.in)  
-Built by Suneel Bose & Megam Bose
+Built by Suneel Bose 
 
 ---
 
@@ -419,4 +419,4 @@ Built by Suneel Bose & Megam Bose
 - 📦 PyPI: [pypi.org/project/qoregeo](https://pypi.org/project/qoregeo)
 - 🐙 GitHub: [github.com/bosekarmegam/qoregeo](https://github.com/bosekarmegam/qoregeo)
 - 🐛 Issues: [github.com/bosekarmegam/qoregeo/issues](https://github.com/bosekarmegam/qoregeo/issues)
-- ✉️ Contact: suneel@arcgx.in
+- ✉️ Contact: suneelbosekarmegam@gmail.com
