@@ -292,7 +292,7 @@ class TestDistance:
         cape_town = (-33.9249, 18.4241)
         joburg = (-26.2041, 28.0473)
         d = GeoEngine().distance(cape_town, joburg)
-        assert 1350 < d < 1420
+        assert 1200 < d < 1350
 
     def test_result_is_float(self):
         d = GeoEngine().distance(DELHI, MUMBAI)

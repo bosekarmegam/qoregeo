@@ -145,9 +145,12 @@ class GeoEngine:
                 raise EmptyDatasetError(path)
 
             # Auto-detect columns
-            detected_lat, detected_lng = _detect_lat_lng_columns(
-                list(reader.fieldnames), path
-            )
+            if lat_col and lng_col:
+                detected_lat, detected_lng = lat_col, lng_col
+            else:
+                detected_lat, detected_lng = _detect_lat_lng_columns(
+                    list(reader.fieldnames), path
+                )
             lat_c = lat_col or detected_lat
             lng_c = lng_col or detected_lng
 
