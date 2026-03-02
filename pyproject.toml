@@ -9,11 +9,10 @@ description = "Quantum-Powered Spatial Intelligence for Python. Zero C++ depende
 readme      = "README.md"
 license     = { file = "LICENSE" }
 authors     = [
-    { name = "Suneel Bose",  email = "suneel@arcgx.in" },
-    { name = "Megam Bose" },
+    { name = "Suneel Bose",  email = "suneelbosekarmegam@gmail.com" },
 ]
 maintainers = [
-    { name = "Suneel Bose", email = "suneel@arcgx.in" },
+    { name = "Suneel Bose", email = "suneelbosekarmegam@gmail.com" },
 ]
 keywords = [
     "gis", "geospatial", "spatial", "geography", "mapping",
