@@ -33,6 +33,5 @@ jobs:
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # ADD THIS LINE: It turns the "400 Error" into a "Success"
           skip-existing: true 
           verbose: true
