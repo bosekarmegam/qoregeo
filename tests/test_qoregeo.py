@@ -1,7 +1,7 @@
 """
 tests/test_qoregeo.py
 =====================
-Full test suite for QOREgeo v1.0.2.
+Full test suite for QOREgeo v1.0.3.
 
 Run with:
     pytest tests/ -v
