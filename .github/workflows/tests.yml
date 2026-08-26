@@ -17,7 +17,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         # Python 3.8 is still supported, but the newest runner images no longer
-        # ship it — pin those legs to images that do.
+        # ship it: pin those legs to images that do.
         include:
           - os: ubuntu-22.04
             python-version: "3.8"

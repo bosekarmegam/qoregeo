@@ -4,7 +4,7 @@ qoregeo.map_builder
 Standalone interactive HTML maps built on Leaflet.js.
 
 Every function here writes one self-contained ``.html`` file. Open it in a
-browser, mail it, drop it in a bucket — there is no server, no build step and
+browser, mail it, drop it in a bucket. There is no server, no build step and
 no Python running behind it.
 
 Leaflet itself is pulled from a CDN with an automatic fallback to a second
@@ -67,7 +67,7 @@ CATEGORY_COLOURS = [
     "#FF8FD9", "#9FE870", "#FFD700", "#00B7C3", "#E06C00",
 ]
 
-#: Sequential ramp used by choropleths — perceptually ordered dark → bright.
+#: Sequential ramp used by choropleths, perceptually ordered dark → bright.
 SEQUENTIAL_RAMP = [
     "#08304B", "#00506B", "#00727F", "#00957F", "#2FB86F",
     "#8AD65A", "#E8E45A",
@@ -103,7 +103,7 @@ def _write(path: str, content: str) -> None:
 
 
 def _render(template: str, values: Dict[str, Any]) -> str:
-    """Substitute ``/*__KEY__*/`` markers — brace-safe, unlike str.format."""
+    """Substitute ``/*__KEY__*/`` markers, brace-safe, unlike str.format."""
     out = template
     for key, value in values.items():
         out = out.replace(f"/*__{key}__*/", value if isinstance(value, str) else json.dumps(value))
@@ -136,7 +136,7 @@ def _auto_center(features: Sequence[Feature]) -> Coord:
 
 
 def _basemap_config(basemap: str, extra: Optional[Sequence[str]] = None) -> List[Dict[str, str]]:
-    """Ordered basemap list — the requested one first, so it renders by default."""
+    """Ordered basemap list. The requested one first, so it renders by default."""
     name = basemap if basemap in BASEMAPS else DEFAULT_BASEMAP
     names = [name]
     for other in (extra if extra is not None else BASEMAPS.keys()):
@@ -155,7 +155,7 @@ def _category_styles(
     values: List[str] = []
     for feat in features:
         value = feat.get("properties", {}).get(colour_by)
-        text = "—" if value is None else str(value)
+        text = "-" if value is None else str(value)
         if text not in values:
             values.append(text)
     return (
@@ -314,7 +314,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function colourOf(feature) {
       if (!COLOUR_BY) { return ACCENT; }
       var raw = (feature.properties || {})[COLOUR_BY];
-      return COLOURS[raw === null || raw === undefined ? '—' : String(raw)] || ACCENT;
+      return COLOURS[raw === null || raw === undefined ? '-' : String(raw)] || ACCENT;
     }
 
     function popupHtml(feature) {
@@ -415,7 +415,7 @@ def build_map(
     """
     Write an interactive map of any GeoJSON features.
 
-    Points, lines and polygons all render — the map is driven by
+    Points, lines and polygons all render. The map is driven by
     ``L.geoJSON``, so mixed collections work in one layer.
 
     Parameters
@@ -549,12 +549,12 @@ def build_heatmap(
     Write a density heatmap.
 
     ``intensity_col`` weights each point by a property (sales, population,
-    incident severity); values are normalised to 0–1 so the gradient always
+    incident severity); values are normalised to 0-1 so the gradient always
     uses its full range.
 
     Parameters
     ----------
-    radius : heat radius in pixels — raise it for sparse data
+    radius : heat radius in pixels. Raise it for sparse data
     blur   : blur radius in pixels
     """
     from .geometry import centroid_of
@@ -701,7 +701,7 @@ def build_choropleth(
     quiet: bool = False,
 ) -> str:
     """
-    Write a choropleth — features shaded by a numeric property.
+    Write a choropleth, features shaded by a numeric property.
 
     Class breaks use quantiles rather than equal intervals, so each colour
     carries roughly the same number of features. Equal intervals collapse to
@@ -711,7 +711,7 @@ def build_choropleth(
     ----------
     value_col : numeric property driving the colour
     label_col : property shown as the popup heading
-    bins      : number of classes (2–7)
+    bins      : number of classes (2-7)
     """
     features = list(features)
     values = []
@@ -724,7 +724,7 @@ def build_choropleth(
     bins = max(2, min(7, int(bins)))
     breaks = _quantile_breaks(values, bins)
     # Tied data can yield fewer distinct breaks than requested; shrink the ramp
-    # to match so the legend never shows an empty "5 – 5" class.
+    # to match so the legend never shows an empty "5 - 5" class.
     ramp = _sample_ramp(SEQUENTIAL_RAMP, len(breaks))
 
     legend_rows = []
@@ -733,7 +733,7 @@ def build_choropleth(
         high = breaks[i + 1] if i + 1 < len(breaks) else (max(values) if values else low)
         legend_rows.append(
             f'<div class="row"><span class="swatch" style="background:{colour}"></span>'
-            f"<span>{_fmt_number(low)} – {_fmt_number(high)}</span></div>"
+            f"<span>{_fmt_number(low)} - {_fmt_number(high)}</span></div>"
         )
 
     panels = (

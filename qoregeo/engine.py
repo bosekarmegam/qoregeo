@@ -1,7 +1,7 @@
 """
 qoregeo.engine
 ==============
-``GeoEngine`` — the single entry point for every spatial operation.
+``GeoEngine``, the single entry point for every spatial operation.
 
 The design goal is that spatial work should read like data work. If you know
 how to chain Pandas operations, you already know how to use this::
@@ -80,11 +80,11 @@ RADIUS_UNITS = {"km": 1.0, "miles": 1.60934, "mi": 1.60934, "m": 0.001, "ft": 0.
 
 class GeoEngine:
     """
-    Spatial data engine — load, analyse, visualise.
+    Spatial data engine, load, analyse, visualise.
 
     Parameters
     ----------
-    None — everything is configured through method calls.
+    None. Everything is configured through method calls.
 
     Attributes
     ----------
@@ -144,7 +144,7 @@ class GeoEngine:
 
     @staticmethod
     def _point_of(feature: Feature) -> Optional[Coord]:
-        """``(lat, lng)`` of a feature — the centroid for non-point geometries."""
+        """``(lat, lng)`` of a feature, the centroid for non-point geometries."""
         geom = feature.get("geometry") or {}
         if geom.get("type") == "Point":
             coords = geom.get("coordinates") or []
@@ -183,7 +183,7 @@ class GeoEngine:
 
         Returns
         -------
-        self — for method chaining
+        self, for method chaining
         """
         if not os.path.exists(path):
             raise QFileNotFoundError(path)
@@ -266,7 +266,7 @@ class GeoEngine:
                 data = json.load(f)
             except json.JSONDecodeError as e:
                 raise UnsupportedFormatError(
-                    f".geojson — invalid JSON: {e}"
+                    f".geojson, invalid JSON: {e}"
                 ) from e
 
         if data.get("type") == "FeatureCollection":
@@ -275,12 +275,12 @@ class GeoEngine:
             return {"type": "FeatureCollection", "features": [data]}
 
         raise UnsupportedFormatError(
-            ".geojson — expected a FeatureCollection or Feature"
+            ".geojson, expected a FeatureCollection or Feature"
         )
 
     def load_data(self, features: Sequence[Any]) -> GeoEngine:
         """
-        Load features already in memory — no file needed.
+        Load features already in memory, no file needed.
 
         Deliberately permissive about shape: GeoJSON Features, bare geometries,
         ``(lat, lng)`` tuples and plain dicts with lat/lng keys all work,
@@ -288,7 +288,7 @@ class GeoEngine:
 
         Parameters
         ----------
-        features : the records to load — see above for accepted shapes
+        features : the records to load, see above for accepted shapes
 
         Returns
         -------
@@ -386,7 +386,7 @@ class GeoEngine:
         """
         Flatten features into plain dicts with ``latitude``/``longitude`` keys.
 
-        The shape every other data tool expects — hand it straight to
+        The shape every other data tool expects. Hand it straight to
         ``pandas.DataFrame`` or ``csv.DictWriter``.
         """
         self._require_data("to_records")
@@ -487,7 +487,7 @@ class GeoEngine:
         """
         Where you end up travelling ``distance`` from ``origin`` on a bearing.
 
-        The inverse of :meth:`bearing` — useful for projecting a search cone,
+        The inverse of :meth:`bearing`, useful for projecting a search cone,
         an evacuation radius edge, or the next waypoint on a heading.
         """
         return _geom.destination(origin, bearing, self._to_km(distance, unit))
@@ -497,7 +497,7 @@ class GeoEngine:
         return _geom.midpoint(point_a, point_b)
 
     def interpolate(self, point_a: Coord, point_b: Coord, fraction: float) -> Coord:
-        """Point at ``fraction`` (0–1) along the great-circle path from A to B."""
+        """Point at ``fraction`` (0-1) along the great-circle path from A to B."""
         return _geom.interpolate(point_a, point_b, fraction)
 
     @staticmethod
@@ -522,7 +522,7 @@ class GeoEngine:
         center     : (lat, lng) centre of the circle
         radius     : radius of the circle
         unit       : ``'km'`` | ``'miles'`` | ``'m'`` | ``'ft'`` | ``'nm'``
-        num_points : polygon resolution — higher is smoother
+        num_points : polygon resolution. Higher is smoother
 
         Returns
         -------
@@ -559,7 +559,7 @@ class GeoEngine:
         Corridor of a given width around a polyline.
 
         This is the "everything within 500 m of this road / river / pipeline"
-        zone — the line equivalent of :meth:`buffer`.
+        zone, the line equivalent of :meth:`buffer`.
 
         Parameters
         ----------
@@ -580,7 +580,7 @@ class GeoEngine:
         radius: float,
         unit: str = "km",
     ) -> Dict[str, Any]:
-        """Buffer any geometry — point, line or polygon — by a distance."""
+        """Buffer any geometry, point, line or polygon, by a distance."""
         return _geom.geometry_buffer(geometry, self._to_km(radius, unit))
 
     def point_in_polygon(
@@ -618,7 +618,7 @@ class GeoEngine:
         """
         True if two geometries overlap or touch.
 
-        Works for polygon/polygon, polygon/line and line/line — the test
+        Works for polygon/polygon, polygon/line and line/line, the test
         behind "does this delivery zone clash with that one?".
         """
         return _geom.intersects(geom_a, geom_b)
@@ -631,7 +631,7 @@ class GeoEngine:
         """
         Area of a polygon, using spherical geometry.
 
-        With no argument, sums the area of every loaded feature — the "how
+        With no argument, sums the area of every loaded feature, the "how
         much land do these districts cover?" answer.
 
         Parameters
@@ -670,7 +670,7 @@ class GeoEngine:
         """
         Centroid as ``(lat, lng)``.
 
-        With no argument, the mean centre of every loaded feature — computed
+        With no argument, the mean centre of every loaded feature, computed
         on the sphere, so it stays correct across the antimeridian.
         """
         if geometry is not None:
@@ -685,7 +685,7 @@ class GeoEngine:
 
     def centre_of_mass(self, weight_col: Optional[str] = None) -> Coord:
         """
-        Weighted centre of the dataset — the "where should the hub go?" point.
+        Weighted centre of the dataset. The "where should the hub go?" point.
 
         ``weight_col`` weights each feature by a numeric property (population,
         revenue, order volume).
@@ -715,7 +715,7 @@ class GeoEngine:
 
     def simplify(self, tolerance: float = 0.001) -> GeoEngine:
         """
-        Reduce vertex counts with Douglas–Peucker, keeping shape.
+        Reduce vertex counts with Douglas-Peucker, keeping shape.
 
         Boundary files are routinely 100× larger than any map needs.
         ``tolerance`` is in degrees: 0.001 ≈ 100 m.
@@ -915,7 +915,7 @@ class GeoEngine:
         """
         Filter with an expression.
 
-        The expression language is small and safe — parsed, never ``eval``'d —
+        The expression language is small and safe, parsed and never ``eval``'d,
         so it is fine to accept one from a config file or a web request.
 
         Parameters
@@ -1057,7 +1057,7 @@ class GeoEngine:
         max_lat: float,
         max_lng: float,
     ) -> GeoEngine:
-        """Keep features inside a bounding box — the cheapest spatial filter."""
+        """Keep features inside a bounding box, the cheapest spatial filter."""
         self._require_data("filter_by_bbox")
         kept = []
         for feat in self._features():
@@ -1112,7 +1112,7 @@ class GeoEngine:
 
     def sample(self, n: int = 10, seed: Optional[int] = None) -> GeoEngine:
         """
-        A random subset — for eyeballing a large dataset quickly.
+        A random subset, for eyeballing a large dataset quickly.
 
         Pass ``seed`` for a reproducible sample.
         """
@@ -1181,7 +1181,7 @@ class GeoEngine:
         Add or overwrite a property.
 
         ``value`` may be a constant, or a function receiving each feature's
-        properties dict — a computed column.
+        properties dict, a computed column.
 
         Examples
         --------
@@ -1361,7 +1361,7 @@ class GeoEngine:
 
         Returns
         -------
-        ``{"valid", "invalid", "issues", "likely_swapped"}`` — ``issues`` lists
+        ``{"valid", "invalid", "issues", "likely_swapped"}``, ``issues`` lists
         ``{"index", "problem"}`` entries.
         """
         self._require_data("validate")
@@ -1453,7 +1453,7 @@ class GeoEngine:
         Remove duplicate features, keeping the first of each group.
 
         With ``tolerance_km`` above zero, any point that close to an already
-        kept feature counts as a duplicate — which is how you collapse the
+        kept feature counts as a duplicate, which is how you collapse the
         same shop geocoded twice a few metres apart.
 
         Parameters
@@ -1512,7 +1512,7 @@ class GeoEngine:
         Repair swapped latitude/longitude values.
 
         Only swaps a point when the stored latitude is outside ±90 but the
-        longitude is not — an unambiguous signal, since a real latitude never
+        longitude is not, an unambiguous signal, since a real latitude never
         exceeds 90. Ambiguous cases are left alone rather than guessed at.
         """
         self._require_data("fix_coordinates")
@@ -1577,7 +1577,7 @@ class GeoEngine:
 
         Returns
         -------
-        ``{"engine", "centroids", "inertia", "iterations"}`` — the engine
+        ``{"engine", "centroids", "inertia", "iterations"}``, the engine
         carries the cluster label on each feature.
         """
         self._require_data("kmeans")
@@ -1657,7 +1657,7 @@ class GeoEngine:
         """
         Order the loaded features into a short visiting route.
 
-        Greedy nearest-neighbour followed by 2-opt improvement — the standard
+        Greedy nearest-neighbour followed by 2-opt improvement, the standard
         practical TSP heuristic. Distances are straight-line, so this plans
         the *order* of stops, not the roads between them.
 
@@ -1707,7 +1707,7 @@ class GeoEngine:
 
         Returns
         -------
-        A list of dicts with the projected coordinates — the geometries
+        A list of dicts with the projected coordinates, the geometries
         themselves stay in WGS84, which is what GeoJSON requires.
         """
         self._require_data("project")
@@ -1735,7 +1735,7 @@ class GeoEngine:
         """
         Fill in coordinates by looking up an address property.
 
-        Needs network access — the only method in QOREgeo that does — and is
+        Needs network access. The only method in QOREgeo that does, and is
         rate limited to one request per second by the public geocoding
         service's rules.
 
@@ -1808,13 +1808,13 @@ class GeoEngine:
 
     def _repr_html_(self) -> str:
         """
-        Rich preview in Jupyter — the first few rows as a table.
+        Rich preview in Jupyter, the first few rows as a table.
 
         Notebooks are where most spatial exploration starts, so showing the
         data beats showing ``<GeoEngine object at 0x…>``.
         """
         if not self._data or not self._features():
-            return "<b>GeoEngine</b> — <i>no data loaded</i>"
+            return "<b>GeoEngine</b>, <i>no data loaded</i>"
 
         features = self._features()
         columns = self._known_columns()[:8]
@@ -1827,7 +1827,7 @@ class GeoEngine:
                 f"<td style='padding:4px 10px'>{(feat.get('properties') or {}).get(c, '')}</td>"
                 for c in columns
             )
-            location = f"{point[0]:.4f}, {point[1]:.4f}" if point else "—"
+            location = f"{point[0]:.4f}, {point[1]:.4f}" if point else "-"
             rows.append(
                 f"<tr><td style='padding:4px 10px;color:#888'>{location}</td>{cells}</tr>"
             )
@@ -1966,7 +1966,7 @@ class GeoEngine:
         quiet: bool = False,
     ) -> GeoEngine:
         """
-        Write a choropleth — features shaded by a numeric property.
+        Write a choropleth, features shaded by a numeric property.
 
         Classes are quantiles, so each colour holds roughly the same number of
         features even when the data is heavily skewed.
@@ -2001,7 +2001,7 @@ class GeoEngine:
         label_field: Optional[str] = None,
     ) -> GeoEngine:
         """
-        Render a static SVG map — no browser, no network, no dependencies.
+        Render a static SVG map, no browser, no network, no dependencies.
 
         For reports, README images and CI artefacts, where an interactive HTML
         map is the wrong shape entirely.

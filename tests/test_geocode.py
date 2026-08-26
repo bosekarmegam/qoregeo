@@ -2,7 +2,7 @@
 Geocoding.
 
 Every test here runs offline. The HTTP layer is stubbed, because a test suite
-that reaches out to a public API is a test suite that fails on a train — and
+that reaches out to a public API is a test suite that fails on a train, and
 hammering Nominatim from CI is exactly what its usage policy forbids.
 """
 
@@ -167,8 +167,8 @@ class _FakeResponse:
 
 class TestCaching:
     """
-    The cache lives inside ``_get``, so these stub the transport *below* it —
-    stubbing ``_get`` itself would bypass the thing under test.
+    The cache lives inside ``_get``, so these stub the transport *below* it.
+    Stubbing ``_get`` itself would bypass the thing under test.
     """
 
     @pytest.fixture

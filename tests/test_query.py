@@ -3,7 +3,7 @@ The query expression language.
 
 Two things matter here: that it parses what it promises, and that it refuses
 everything else. A query string often arrives from a config file or a web
-form, so the parser is the security boundary — there is no ``eval`` behind it,
+form, so the parser is the security boundary. There is no ``eval`` behind it,
 and these tests keep it that way.
 """
 

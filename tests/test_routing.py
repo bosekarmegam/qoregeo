@@ -1,4 +1,4 @@
-"""Route optimisation — greedy tour plus 2-opt improvement."""
+"""Route optimisation, greedy tour plus 2-opt improvement."""
 
 from __future__ import annotations
 
@@ -96,7 +96,7 @@ class TestTwoOpt:
 
     def test_untangles_a_crossed_square(self):
         # The smallest possible crossing. Fixing it needs the reversal of a
-        # two-stop segment — the move an off-by-one `j - i == 1` guard would
+        # two-stop segment: the move an off-by-one `j - i == 1` guard would
         # skip, leaving the tour crossed forever.
         square = [(0.0, 0.0), (0.0, 1.0), (1.0, 1.0), (1.0, 0.0)]
         matrix = _matrix(square)

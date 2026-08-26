@@ -8,7 +8,7 @@ where do the points bunch up, which polygon does each point belong to, and
 is the pattern actually clustered or just random?
 
 Every algorithm works on true great-circle distances rather than treating
-latitude and longitude as a flat plane — the shortcut that quietly ruins
+latitude and longitude as a flat plane. The shortcut that quietly ruins
 clustering results anywhere outside the tropics.
 """
 
@@ -62,7 +62,7 @@ def dbscan(
 
     Parameters
     ----------
-    eps_km      : neighbourhood radius — two points this close are neighbours
+    eps_km      : neighbourhood radius, two points this close are neighbours
     min_samples : how many neighbours (including itself) make a point a "core"
     """
     if eps_km <= 0:
@@ -124,7 +124,7 @@ def kmeans(
     Seeded with k-means++ so the result is stable and well-spread rather than
     dependent on a lucky random draw. Centroids are averaged in 3-D Cartesian
     space and projected back to the sphere, which keeps them sensible across
-    the antimeridian — a plain mean of longitudes would place a Fiji cluster
+    the antimeridian. A plain mean of longitudes would place a Fiji cluster
     in Africa.
     """
     if not features:
@@ -185,7 +185,7 @@ def _kmeanspp_init(pts: List[Coord], k: int, rng: random.Random) -> List[Coord]:
 
 def spherical_mean(points: Sequence[Coord]) -> Coord:
     """
-    Average of coordinates done properly — via 3-D unit vectors.
+    Average of coordinates done properly, via 3-D unit vectors.
 
     Averaging degrees directly breaks across the antimeridian and near the
     poles; this does not.
@@ -222,7 +222,7 @@ def spatial_join(
     """
     Attach polygon attributes to the points that fall inside them.
 
-    This is the join that answers "which district is each customer in?" —
+    This is the join that answers "which district is each customer in?",
     the single most common GIS operation after distance.
 
     Parameters
@@ -351,7 +351,7 @@ def nearest_neighbour_ratio(features: Sequence[Feature]) -> Dict[str, Any]:
     Clark & Evans nearest-neighbour statistic.
 
     Answers "is this pattern actually clustered, or does it just look that
-    way?" — a ratio below 1 means clustered, above 1 means dispersed, and
+    way?". A ratio below 1 means clustered, above 1 means dispersed, and
     around 1 means indistinguishable from random.
     """
     pts = _points_of(features)
@@ -398,7 +398,7 @@ def nearest_neighbour_ratio(features: Sequence[Feature]) -> Dict[str, Any]:
 
 def centre_of_mass(features: Sequence[Feature], weight_col: Optional[str] = None) -> Coord:
     """
-    Weighted geographic centre — the "where should the depot go?" answer.
+    Weighted geographic centre. The "where should the depot go?" answer.
 
     With ``weight_col`` it is the centre of gravity of that column (population,
     revenue, order count); without it, the plain mean centre.
@@ -459,7 +459,7 @@ def dispersion(features: Sequence[Feature]) -> Dict[str, float]:
 
 
 def great_circle_area_of(radius_km: float) -> float:
-    """Surface area of a spherical cap of the given radius — used by density maths."""
+    """Surface area of a spherical cap of the given radius, used by density maths."""
     if radius_km <= 0:
         raise InvalidRadiusError(radius_km)
     theta = radius_km / EARTH_RADIUS_KM

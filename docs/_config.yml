@@ -1,0 +1,68 @@
+# GitHub Pages configuration for the QOREgeo documentation.
+#
+# Enable at: Settings > Pages > Source: "Deploy from a branch",
+# Branch: main, Folder: /docs.
+#
+# jekyll-seo-tag turns the values below into the <title>, <meta name>,
+# Open Graph and Twitter Card tags that decide how a shared link looks.
+
+title: QOREgeo
+tagline: Spatial intelligence for Python. Zero dependencies.
+description: >-
+  Pure-Python GIS with no GDAL, no PROJ and nothing to compile. Distance,
+  geofencing, shapefiles, clustering, spatial joins, route optimisation and
+  interactive maps, installable anywhere Python runs.
+
+url: https://bosekarmegam.github.io
+baseurl: /qoregeo
+repository: bosekarmegam/qoregeo
+
+theme: jekyll-theme-cayman
+plugins:
+  - jekyll-seo-tag
+  - jekyll-sitemap
+
+# Open Graph and Twitter Card image, used when the link is shared.
+logo: /qoregeo/assets/qoregeo-mark.png
+image: /qoregeo/assets/qoregeo-social.png
+twitter:
+  card: summary_large_image
+
+author:
+  name: Suneel Bose
+  email: suneelbosekarmegam@gmail.com
+
+social:
+  name: QOREgeo
+  links:
+    - https://github.com/bosekarmegam/qoregeo
+    - https://pypi.org/project/qoregeo
+
+# Keywords search engines and package indexes pick up.
+keywords:
+  - python gis
+  - geospatial python
+  - gis without gdal
+  - pure python shapefile
+  - geojson python
+  - haversine distance python
+  - geofencing python
+  - spatial join python
+  - dbscan geospatial
+  - route optimisation python
+  - leaflet map python
+  - geohash python
+
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
+
+include:
+  - assets
+
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - vendor

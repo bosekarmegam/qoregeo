@@ -4,8 +4,8 @@ qoregeo.formats
 Readers and writers for the spatial formats people actually receive.
 
 CSV and GeoJSON cover most modern work, but real datasets arrive as GPS
-tracks, Google Earth exports, database WKT columns and — still, constantly —
-Esri shapefiles. Each of those normally means another dependency; here they
+tracks, Google Earth exports, database WKT columns and, still,
+constantly, Esri shapefiles. Each of those normally means another dependency; here they
 are parsed with ``struct``, ``re`` and the standard library XML parser.
 
 The shapefile reader is the notable one: ``.shp`` is a documented binary
@@ -271,7 +271,7 @@ def write_wkt_file(features: Sequence[Feature], path: str, encoding: str = "utf-
 
 def read_ndjson(path: str, encoding: str = "utf-8") -> List[Feature]:
     """
-    Read newline-delimited GeoJSON — one Feature per line.
+    Read newline-delimited GeoJSON, one Feature per line.
 
     This is the format big spatial exports use, because it streams: you never
     have to hold the whole collection in memory to append to it.
@@ -286,7 +286,7 @@ def read_ndjson(path: str, encoding: str = "utf-8") -> List[Feature]:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise UnsupportedFormatError(
-                    f".ndjson — line {line_no} is not valid JSON: {exc}"
+                    f".ndjson (line {line_no} is not valid JSON: {exc})"
                 ) from exc
 
             if record.get("type") == "Feature":
@@ -316,7 +316,7 @@ _GPX_NS = {"gpx": "http://www.topografix.com/GPX/1/1"}
 
 def read_gpx(path: str) -> List[Feature]:
     """
-    Read a GPX file — waypoints, routes and tracks.
+    Read a GPX file, waypoints, routes and tracks.
 
     Waypoints become Points; routes and track segments become LineStrings,
     with elevation and timestamps preserved as properties where present.
@@ -344,7 +344,7 @@ def read_gpx(path: str) -> List[Feature]:
             features.append(_gpx_line(coords, "route", _gpx_meta(route)))
 
     # Track metadata (name, description) lives on <trk>, while the points live
-    # in one or more child <trkseg>s — so read the name once and reuse it.
+    # in one or more child <trkseg>s: so read the name once and reuse it.
     for track in _findall(root, "trk"):
         meta = _gpx_meta(track)
         for segment in _findall(track, "trkseg"):
@@ -583,7 +583,7 @@ def write_kml(features: Sequence[Feature], path: str, name: str = "QOREgeo expor
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# XML helpers — KML and GPX both use namespaces inconsistently in the wild
+# XML helpers: KML and GPX both use namespaces inconsistently in the wild
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _parse_xml(path: str) -> ET.Element:
@@ -593,7 +593,7 @@ def _parse_xml(path: str) -> ET.Element:
         return ET.parse(path).getroot()
     except ET.ParseError as exc:
         raise UnsupportedFormatError(
-            f"{os.path.splitext(path)[1]} — malformed XML: {exc}"
+            f"{os.path.splitext(path)[1]}, malformed XML: {exc}"
         ) from exc
 
 
@@ -658,12 +658,12 @@ def read_shapefile(path: str, encoding: str = "latin-1") -> List[Feature]:
         data = handle.read()
 
     if len(data) < 100:
-        raise UnsupportedFormatError(".shp — file is too short to be a shapefile")
+        raise UnsupportedFormatError(".shp. File is too short to be a shapefile")
 
     magic = struct.unpack(">i", data[0:4])[0]
     if magic != 9994:
         raise UnsupportedFormatError(
-            ".shp — bad magic number; this is not an Esri shapefile"
+            ".shp. Bad magic number; this is not an Esri shapefile"
         )
 
     geometries: List[Optional[Geometry]] = []
@@ -875,7 +875,7 @@ def iter_features(source: Iterable[Any]) -> List[Feature]:
     Coerce loosely-shaped input into GeoJSON Features.
 
     Accepts Features, bare geometries, ``(lat, lng)`` pairs and dicts with
-    lat/lng keys — the four shapes people actually have lying around.
+    lat/lng keys. The four shapes people actually have lying around.
     """
     out: List[Feature] = []
     for item in source:

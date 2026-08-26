@@ -5,9 +5,9 @@ Coordinate reference system conversions, in pure Python.
 
 Three projections cover the overwhelming majority of practical needs:
 
-* **WGS84** (EPSG:4326) — degrees of latitude and longitude, what GPS emits.
-* **Web Mercator** (EPSG:3857) — metres, what every web map tile is drawn in.
-* **UTM** — metres within a 6°-wide zone, what surveyors and national grids use.
+* **WGS84** (EPSG:4326), degrees of latitude and longitude, what GPS emits.
+* **Web Mercator** (EPSG:3857). Metres, what every web map tile is drawn in.
+* **UTM**, metres within a 6°-wide zone, what surveyors and national grids use.
 
 Everything here is a closed-form formula, so there is no projection database
 to install and nothing to fail at import time.

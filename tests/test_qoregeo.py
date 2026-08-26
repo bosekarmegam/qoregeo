@@ -1,7 +1,7 @@
 """
 tests/test_qoregeo.py
 =====================
-Core regression suite for QOREgeo — the v1.0 API surface.
+Core regression suite for QOREgeo, the v1.0 API surface.
 
 These tests pin the original behaviour so later releases cannot quietly
 break it. Newer features have their own modules alongside this one.
@@ -404,7 +404,7 @@ class TestPointInPolygon:
         assert GeoEngine().point_in_polygon(MUMBAI, zone) is False
 
     def test_edge_case_at_boundary(self):
-        """Point at ~50 km from Delhi is uncertain — just check it doesn't crash."""
+        """Point at ~50 km from Delhi is uncertain, just check it doesn't crash."""
         zone = GeoEngine().buffer(DELHI, radius=50)
         edge = (28.6139, 78.0)   # roughly east of Delhi
         result = GeoEngine().point_in_polygon(edge, zone)
@@ -611,7 +611,7 @@ class TestMethodChaining:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Map + Heatmap (filesystem only — no browser)
+# Map + Heatmap (filesystem only: no browser)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestMapOutput:

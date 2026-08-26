@@ -1,5 +1,5 @@
 """
-Map output — interactive HTML and static SVG/PNG.
+Map output, interactive HTML and static SVG/PNG.
 
 The HTML maps cannot be executed here, so the tests assert on the generated
 document: that every placeholder is filled, the data is embedded, the options
@@ -220,7 +220,7 @@ class TestChoropleth:
         assert len(set(breaks)) == len(breaks)
 
     def test_tied_values_collapse_classes(self):
-        # Half the rows sharing one value must not create an empty "5 – 5" class.
+        # Half the rows sharing one value must not create an empty "5 - 5" class.
         assert _quantile_breaks([5, 5, 5, 5, 7.4, 11.3, 20.7], 5) == [5, 7.4]
 
     def test_uniform_data_yields_one_class(self):
@@ -327,7 +327,7 @@ class TestSVG:
 
 class TestPNG:
     def decode(self, path):
-        """Pull the raw scanlines back out — a size check proves nothing."""
+        """Pull the raw scanlines back out, a size check proves nothing."""
         data = read_bytes(path)
         assert data[:8] == b"\x89PNG\r\n\x1a\n"
 

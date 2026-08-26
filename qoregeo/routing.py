@@ -5,7 +5,7 @@ Stop ordering and route optimisation.
 
 This solves the question every delivery, sales-visit and inspection workflow
 runs into: given a depot and a list of stops, what order costs the least
-travel? That is the Travelling Salesman Problem — NP-hard, so an exact answer
+travel? That is the Travelling Salesman Problem. NP-hard, so an exact answer
 is out of reach past a handful of stops, and unnecessary in practice.
 
 The approach here is the standard, well-behaved pair: a greedy
@@ -13,7 +13,7 @@ nearest-neighbour tour for a fast starting point, then 2-opt local search to
 untangle it. Typical results land within a few percent of optimal for the
 dozens-of-stops routes real businesses actually plan.
 
-Distances are straight-line great-circle, not road distances — this plans the
+Distances are straight-line great-circle, not road distances, this plans the
 *order* of stops, not the turn-by-turn path between them.
 """
 
@@ -73,7 +73,7 @@ def two_opt(
     2-opt improvement: repeatedly reverse a segment when doing so shortens
     the tour.
 
-    Geometrically this removes crossings — a tour that crosses itself is never
+    Geometrically this removes crossings. A tour that crosses itself is never
     optimal, and 2-opt is the cheapest way to spot and fix that.
     """
     n = len(order)
@@ -89,8 +89,8 @@ def two_opt(
         for i in range(first, n - 1):
             for j in range(i + 1, n):
                 # Every j > i is a real move. Reversing a two-stop segment
-                # swaps adjacent stops, which still exchanges two edges —
-                # skipping it (a common off-by-one) strands tours in worse
+                # swaps adjacent stops, which still exchanges two edges.
+                # Skipping it (a common off-by-one) strands tours in worse
                 # local optima than 2-opt should ever settle for.
                 candidate = best[:i] + best[i : j + 1][::-1] + best[j + 1 :]
                 cand_len = _tour_length(candidate, m, round_trip)
@@ -226,8 +226,8 @@ def travel_time(
     """
     Rough schedule for a route: driving time plus time spent at each stop.
 
-    ``speed_kmh`` is an average including traffic — 40 km/h is a reasonable
-    urban default, 60–80 for intercity.
+    ``speed_kmh`` is an average including traffic. 40 km/h is a reasonable
+    urban default, 60-80 for intercity.
     """
     if speed_kmh <= 0:
         raise ValueError("speed_kmh must be greater than zero")

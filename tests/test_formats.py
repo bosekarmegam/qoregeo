@@ -3,7 +3,7 @@ Format readers and writers: WKT, NDJSON, GPX, KML and Esri shapefiles.
 
 The shapefile tests build real ``.shp``/``.dbf`` byte streams with ``struct``
 rather than shipping binary fixtures, so what is under test is the actual
-documented layout — and the test data stays readable.
+documented layout, and the test data stays readable.
 """
 
 from __future__ import annotations

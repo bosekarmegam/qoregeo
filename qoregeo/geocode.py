@@ -5,14 +5,14 @@ Address → coordinate lookup, and back again.
 
 Every other part of QOREgeo works offline. Geocoding cannot: turning
 "India Gate, New Delhi" into a latitude needs somebody's address database.
-So this module is deliberately **opt-in** — nothing here runs unless you
+So this module is deliberately **opt-in**. Nothing here runs unless you
 construct a :class:`Geocoder` yourself.
 
 It talks to OpenStreetMap's Nominatim service over ``urllib`` from the
 standard library, so there is still nothing to install. Nominatim's usage
 policy is respected by construction:
 
-* a real user agent is required — the service blocks generic ones
+* a real user agent is required, the service blocks generic ones
 * requests are rate limited to one per second, in-process
 * results are cached, so re-running a script doesn't re-hit the API
 
@@ -35,7 +35,7 @@ from .exceptions import GeocodingError
 Coord = Tuple[float, float]
 
 DEFAULT_BASE_URL = "https://nominatim.openstreetmap.org"
-DEFAULT_MIN_INTERVAL = 1.0          # seconds between requests — Nominatim's rule
+DEFAULT_MIN_INTERVAL = 1.0          # seconds between requests. Nominatim's rule
 DEFAULT_TIMEOUT = 10.0
 
 
@@ -46,7 +46,7 @@ class Geocoder:
     Parameters
     ----------
     user_agent   : identifies your app. Nominatim rejects requests without a
-                   meaningful one — include contact details, e.g.
+                   meaningful one, include contact details, e.g.
                    ``"store-locator/1.0 (ops@example.com)"``
     base_url     : point this at your own Nominatim instance for bulk work
     min_interval : seconds between requests (never set below 1.0 for the
@@ -115,7 +115,7 @@ class Geocoder:
             ) from exc
         except urllib.error.URLError as exc:
             raise GeocodingError(
-                label, f"Could not reach {self.base_url} — {exc.reason}."
+                label, f"Could not reach {self.base_url}, {exc.reason}."
             ) from exc
         except (TimeoutError, OSError) as exc:
             raise GeocodingError(label, f"Network error: {exc}") from exc
@@ -170,7 +170,7 @@ class Geocoder:
         Geocode a list of addresses, in order.
 
         Rate limiting makes this roughly one address per second against the
-        public service — budget accordingly, or run your own instance.
+        public service, budget accordingly, or run your own instance.
         """
         out: List[Optional[Dict[str, Any]]] = []
         for address in addresses:

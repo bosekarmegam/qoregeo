@@ -8,7 +8,7 @@ which is fine for a few hundred points and painful for a few hundred thousand.
 This index buckets features into fixed-size latitude/longitude cells so a query
 only has to look at the cells its search radius actually touches.
 
-The grid is deliberately simple — no R-tree, no rebalancing, no C extension.
+The grid is deliberately simple, no R-tree, no rebalancing, no C extension.
 It builds in one linear pass and answers typical city-scale queries in
 microseconds.
 """
@@ -48,7 +48,7 @@ class SpatialIndex:
     -----
     The grid is uniform **in degrees**, not in kilometres. That matters: an
     earlier design sized each column by the local km-per-degree, which made a
-    point's column index depend on its own latitude — so "the cell next door"
+    point's column index depend on its own latitude, so "the cell next door"
     stopped meaning the same thing in different rows, and wide queries silently
     lost results. A fixed degree grid keeps neighbour arithmetic exact; the
     query simply widens its column sweep as it moves away from the equator,
@@ -121,7 +121,7 @@ class SpatialIndex:
 
         This is the longitude half-width of a spherical cap:
         ``asin(sin δ / cos φ)``. The special case that matters is a cap
-        touching a pole — then *every* longitude is within reach, because the
+        touching a pole, then *every* longitude is within reach, because the
         short way round goes over the top. Bounding the sweep by
         ``radius / km-per-degree`` instead would quietly drop points sitting
         just across the pole from the query.
@@ -187,7 +187,7 @@ class SpatialIndex:
         return results
 
     def _scan_all(self, point: Coord, radius_km: float) -> List[Tuple[float, int]]:
-        """Linear fallback — used when the grid sweep would cost more than it saves."""
+        """Linear fallback. Used when the grid sweep would cost more than it saves."""
         results = [
             (d, i)
             for d, i in (

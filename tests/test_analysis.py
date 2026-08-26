@@ -99,7 +99,7 @@ class TestSphericalMean:
         assert analysis.spherical_mean([(0.0, 0.0), (0.0, 10.0)]) == pytest.approx((0.0, 5.0))
 
     def test_crosses_the_antimeridian(self):
-        # A naive average of longitudes would give 0 — the wrong side of the planet.
+        # A naive average of longitudes would give 0: the wrong side of the planet.
         lat, lng = analysis.spherical_mean([(0.0, 179.0), (0.0, -179.0)])
         assert abs(lng) == pytest.approx(180.0, abs=1e-6)
         assert lat == pytest.approx(0.0, abs=1e-9)

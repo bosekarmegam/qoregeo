@@ -174,7 +174,7 @@ class TestHelpers:
 class TestPolarAndWrapAround:
     """
     The two places a grid index quietly loses results: over a pole, and across
-    the antimeridian. Both are regressions — earlier versions dropped points in
+    the antimeridian. Both are regressions, earlier versions dropped points in
     exactly these positions.
     """
 

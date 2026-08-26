@@ -1,7 +1,7 @@
 """
 qoregeo.geohash
 ===============
-Geohashes, slippy map tiles and quadkeys — the three ways spatial data gets
+Geohashes, slippy map tiles and quadkeys, the three ways spatial data gets
 bucketed for storage, caching and joins.
 
 A geohash turns a coordinate into a short string where shared prefixes mean
@@ -181,7 +181,7 @@ neighbors = neighbours
 
 
 def geohash_polygon(geohash: str) -> Dict[str, Any]:
-    """The geohash cell as a GeoJSON Polygon — handy for drawing the grid."""
+    """The geohash cell as a GeoJSON Polygon, handy for drawing the grid."""
     box = bbox(geohash)
     return {
         "type": "Polygon",
@@ -199,7 +199,7 @@ def geohash_polygon(geohash: str) -> Dict[str, Any]:
 
 def common_prefix(hashes: List[str]) -> str:
     """
-    Longest shared prefix across geohashes — the smallest cell containing them all.
+    Longest shared prefix across geohashes, the smallest cell containing them all.
     """
     if not hashes:
         return ""
@@ -216,7 +216,7 @@ def common_prefix(hashes: List[str]) -> str:
 
 def tile_of(lat: float, lng: float, zoom: int = 12) -> Tuple[int, int, int]:
     """
-    Slippy-map tile ``(x, y, z)`` containing a coordinate — the ``{z}/{x}/{y}``
+    Slippy-map tile ``(x, y, z)`` containing a coordinate, the ``{z}/{x}/{y}``
     in every XYZ tile URL.
     """
     _validate_coord(lat, lng)
@@ -247,7 +247,7 @@ def tile_bounds(x: int, y: int, zoom: int) -> Dict[str, float]:
 
 def quadkey(x: int, y: int, zoom: int) -> str:
     """
-    Bing-style quadkey for a tile — the same prefix trick as geohashes,
+    Bing-style quadkey for a tile, the same prefix trick as geohashes,
     in Web Mercator space.
     """
     digits = []

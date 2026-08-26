@@ -20,7 +20,7 @@ In practice that means:
 - No C extensions, no Cython, no build step.
 - Optional accelerators are fine **if** the pure-Python path stays complete and
   the import is guarded. Nothing may ever be required.
-- Test-only and lint-only dependencies are fine — they live in
+- Test-only and lint-only dependencies are fine. They live in
   `[project.optional-dependencies]`.
 
 If a feature genuinely cannot be done in pure Python, say so in an issue. The
@@ -37,7 +37,7 @@ In rough order:
    data looked like. This is worth more than a feature list.
 2. **Bug reports with a reproducer.** Ten lines that fail beat a paragraph
    that describes failing.
-3. **Roadmap items** — see [ROADMAP.md](ROADMAP.md). Comment on the issue
+3. **Roadmap items**, see [ROADMAP.md](ROADMAP.md). Comment on the issue
    before starting something large, so nobody duplicates work.
 4. **Documentation and examples**, particularly worked examples on real data.
 
@@ -116,7 +116,7 @@ degenerate bounding boxes, and tied values in quantile classes.
 - Type annotations on all public functions. The package ships `py.typed`.
 - Python 3.8 compatibility: `from __future__ import annotations` at the top of
   every module, and `List`/`Optional`/`Union` from `typing` rather than builtin
-  generics — type *aliases* are evaluated eagerly, so `tuple[float, float]`
+  generics. Type *aliases* are evaluated eagerly, so `tuple[float, float]`
   breaks at runtime on 3.8. This lifts in v2.0.
 
 ### Comments and docstrings
@@ -133,7 +133,7 @@ exists or when to reach for it, then `Parameters` / `Returns` / `Examples`.
 QOREgeo exceptions teach. Every one names the problem and shows the fix:
 
 ```
-❌  QOREgeo — Column Not Found
+❌  QOREgeo. Column Not Found
 ────────────────────────────────────────────────
 File: 'stores.csv'
 Could not find a 'lat' column.
@@ -161,7 +161,7 @@ area.
 
 ```
 qoregeo/
-  engine.py       GeoEngine — the public entry point
+  engine.py       GeoEngine, the public entry point
   geometry.py     spherical and planar primitives
   index.py        uniform-grid spatial index
   analysis.py     clustering, joins, point-pattern statistics
@@ -179,7 +179,7 @@ qoregeo/
 
 tests/
   conftest.py           shared fixtures
-  test_qoregeo.py       v1.0 regression suite — do not weaken
+  test_qoregeo.py       v1.0 regression suite. Do not weaken
   test_<module>.py      one per module
 ```
 

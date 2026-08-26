@@ -40,7 +40,7 @@ CITY_ROWS: List[Dict[str, Any]] = [
 
 
 def point_feature(lat: float, lng: float, **props: Any) -> Dict[str, Any]:
-    """Build a GeoJSON Point Feature — the workhorse of these tests."""
+    """Build a GeoJSON Point Feature, the workhorse of these tests."""
     return {
         "type": "Feature",
         "geometry": {"type": "Point", "coordinates": [lng, lat]},
@@ -93,7 +93,7 @@ def districts() -> GeoEngine:
 
 @pytest.fixture
 def clustered_points() -> List[Dict[str, Any]]:
-    """Three tight blobs plus two far-flung outliers — a DBSCAN test case."""
+    """Three tight blobs plus two far-flung outliers, a DBSCAN test case."""
     features: List[Dict[str, Any]] = []
     for index, (lat, lng) in enumerate([DELHI, MUMBAI, CHENNAI]):
         for step in range(8):

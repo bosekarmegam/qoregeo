@@ -1,7 +1,7 @@
 """
 qoregeo.cli
 ===========
-Command-line interface — spatial work without writing a script.
+Command-line interface, spatial work without writing a script.
 
 Converting a CSV to GeoJSON, checking a distance, or eyeballing an unfamiliar
 dataset are all one-liners that do not deserve a Python file::
@@ -34,7 +34,7 @@ def parse_point(text: str) -> Coord:
     parts = str(text).replace(" ", "").split(",")
     if len(parts) != 2:
         raise argparse.ArgumentTypeError(
-            f"{text!r} is not a coordinate. Use lat,lng — for example 28.6139,77.2090"
+            f"{text!r} is not a coordinate. Use lat,lng, for example 28.6139,77.2090"
         )
     try:
         return (float(parts[0]), float(parts[1]))
@@ -142,7 +142,7 @@ def cmd_heatmap(args: argparse.Namespace) -> int:
 
 
 def cmd_image(args: argparse.Namespace) -> int:
-    """Render a static SVG or PNG — no browser, no network."""
+    """Render a static SVG or PNG, no browser, no network."""
     geo = _load(args)
     if args.query:
         geo = geo.query(args.query)
@@ -203,7 +203,7 @@ def cmd_nearest(args: argparse.Namespace) -> int:
     for rank, match in enumerate(matches, start=1):
         props = match["feature"].get("properties", {})
         label = props.get("name") or props.get("Name") or f"feature {match['index']}"
-        print(f"{rank:>3}. {label}  —  {match['distance']} {args.unit}")
+        print(f"{rank:>3}. {label},  {match['distance']} {args.unit}")
     return 0
 
 
@@ -261,7 +261,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Assemble the full argument parser."""
     parser = argparse.ArgumentParser(
         prog="qoregeo",
-        description="QOREgeo — spatial intelligence for Python, from the command line.",
+        description="QOREgeo: spatial intelligence for Python, from the command line.",
         epilog="Docs: https://github.com/bosekarmegam/qoregeo",
     )
     parser.add_argument("--version", action="version", version=f"qoregeo {__version__}")
@@ -285,7 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     info.set_defaults(func=cmd_info)
 
     convert = with_query(with_input(subparsers.add_parser("convert", help="convert between formats")))
-    convert.add_argument("output", help="output file — the extension picks the format")
+    convert.add_argument("output", help="output file, the extension picks the format")
     convert.set_defaults(func=cmd_convert)
 
     mapper = with_query(with_input(subparsers.add_parser("map", help="render an interactive HTML map")))
@@ -356,7 +356,7 @@ def build_parser() -> argparse.ArgumentParser:
     geocode.add_argument("address")
     geocode.add_argument(
         "--user-agent", required=True,
-        help="identify your app, with contact details — the service requires it",
+        help="identify your app, with contact details. The service requires it",
     )
     geocode.add_argument("--country", help="ISO country code, e.g. in")
     geocode.add_argument("--json", action="store_true")

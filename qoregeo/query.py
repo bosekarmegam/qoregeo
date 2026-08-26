@@ -4,7 +4,7 @@ qoregeo.query
 A tiny expression language for filtering features.
 
 ``geo.query("population > 1e6 and state != 'Delhi'")`` reads the way you would
-say it out loud, which is the whole point — chaining half a dozen ``filter()``
+say it out loud, which is the whole point, chaining half a dozen ``filter()``
 calls does not.
 
 This is a hand-written tokeniser and recursive-descent parser. It deliberately
@@ -311,7 +311,7 @@ def _compare(field: str, operator: str, expected: Any) -> Predicate:
     """
     Build a comparison.
 
-    Numbers compare numerically whenever *both* sides look numeric — CSV
+    Numbers compare numerically whenever *both* sides look numeric. CSV
     columns arrive as strings, and ``"9" > "10"`` being true would surprise
     everybody. Otherwise strings compare case-insensitively, matching
     ``filter()``.
@@ -395,7 +395,7 @@ def compile_query(expression: str) -> Predicate:
     """
     Compile a query string into a predicate over a feature's properties.
 
-    Compile once and reuse it when filtering repeatedly — parsing is cheap,
+    Compile once and reuse it when filtering repeatedly. Parsing is cheap,
     but not free.
     """
     return _Parser(tokenise(expression), str(expression)).parse()

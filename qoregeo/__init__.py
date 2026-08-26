@@ -4,7 +4,7 @@ qoregeo
 Quantum-Powered Spatial Intelligence for Python.
 
 Zero dependencies. Pure Python. Installs in two seconds, on every platform
-Python runs on — including the ones where GDAL wheels do not.
+Python runs on, including the ones where GDAL wheels do not.
 
 Quick Start
 -----------

@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+title: "QOREgeo: spatial intelligence for Python with zero dependencies"
+message: "If you use this software, please cite it as below."
+type: software
+authors:
+  - given-names: Suneel Bose
+    family-names: Karmegam
+    email: suneelbosekarmegam@gmail.com
+    affiliation: ArcGX TechLabs Private Limited
+repository-code: "https://github.com/bosekarmegam/qoregeo"
+url: "https://pypi.org/project/qoregeo"
+abstract: >-
+  QOREgeo is a pure-Python geospatial library that performs distance and
+  bearing calculation, geodesic buffering, geofencing, shapefile and GPX/KML
+  reading, density-based and k-means clustering, spatial joins, point-pattern
+  statistics, route optimisation and interactive and static map rendering
+  without any external dependency or compiled extension. It is designed for
+  environments where the conventional geospatial stack cannot be installed,
+  including serverless runtimes, embedded devices and restricted desktops.
+keywords:
+  - geospatial
+  - GIS
+  - Python
+  - spatial analysis
+  - geofencing
+  - shapefile
+  - clustering
+  - spatial join
+  - route optimisation
+  - cartography
+license: MIT
+version: 1.1.0
+date-released: "2026-08-26"

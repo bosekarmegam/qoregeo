@@ -7,8 +7,8 @@ Everything here is dependency-free and works on any Python 3.8+ runtime.
 
 Two coordinate conventions are used, and the distinction matters:
 
-* **User-facing tuples** are ``(lat, lng)`` — the order people say out loud.
-* **GeoJSON rings/coordinates** are ``[lng, lat]`` — the order the spec mandates.
+* **User-facing tuples** are ``(lat, lng)``, the order people say out loud.
+* **GeoJSON rings/coordinates** are ``[lng, lat]``, the order the spec mandates.
 
 Functions that take a ``ring``/``coords`` argument expect GeoJSON order.
 Functions that take a ``point``/``center`` argument expect ``(lat, lng)``.
@@ -37,7 +37,7 @@ Coord = Tuple[float, float]          # (lat, lng)
 Ring = List[List[float]]             # [[lng, lat], ...]
 Geometry = Dict[str, Any]
 
-# WGS84 ellipsoid — used by the Vincenty solver.
+# WGS84 ellipsoid: used by the Vincenty solver.
 WGS84_A = 6378137.0                  # semi-major axis, metres
 WGS84_F = 1 / 298.257223563          # flattening
 WGS84_B = (1 - WGS84_F) * WGS84_A    # semi-minor axis, metres
@@ -276,7 +276,7 @@ def nearest_point_on_line(point: Coord, line: Sequence[Coord]) -> Dict[str, Any]
     Snap a point onto a polyline.
 
     Returns ``{"point": (lat, lng), "distance": km, "segment": index,
-    "fraction": 0..1}`` — everything you need to place a marker on a route.
+    "fraction": 0..1}``. Everything you need to place a marker on a route.
     """
     if len(line) < 2:
         raise InvalidGeometryError("LineString", "a line needs at least two points")
@@ -335,7 +335,7 @@ def ring_area_km2(ring: Sequence[Sequence[float]]) -> float:
     Spherical area of a closed ``[[lng, lat], ...]`` ring, in square km.
 
     Uses the spherical-excess formula, so it is accurate for rings of any
-    size — unlike the planar shoelace approximation, which degrades badly
+    size, unlike the planar shoelace approximation, which degrades badly
     away from the equator.
     """
     if len(ring) < 3:
@@ -605,7 +605,7 @@ def segments_intersect(
     p3: Sequence[float],
     p4: Sequence[float],
 ) -> bool:
-    """True if segment p1–p2 crosses or touches segment p3–p4 (planar)."""
+    """True if segment p1-p2 crosses or touches segment p3-p4 (planar)."""
     o1 = _orientation(p1, p2, p3)
     o2 = _orientation(p1, p2, p4)
     o3 = _orientation(p3, p4, p1)
@@ -737,7 +737,7 @@ def _edges(geometry: Geometry) -> List[Tuple[List[float], List[float]]]:
 
 def convex_hull(points: Sequence[Sequence[float]]) -> Ring:
     """
-    Convex hull of ``[lng, lat]`` points via Andrew's monotone chain — O(n log n).
+    Convex hull of ``[lng, lat]`` points via Andrew's monotone chain. O(n log n).
 
     Returns a closed ring. Fewer than three distinct points raises, since
     a hull needs an interior.
@@ -761,7 +761,7 @@ def convex_hull(points: Sequence[Sequence[float]]) -> Ring:
     ring = lower[:-1] + upper[:-1]
 
     if len(ring) < 3:
-        raise InvalidGeometryError("ConvexHull", "points are collinear — no hull exists")
+        raise InvalidGeometryError("ConvexHull", "points are collinear. No hull exists")
 
     out = [[p[0], p[1]] for p in ring]
     out.append(list(out[0]))
@@ -782,7 +782,7 @@ def simplify(
     closed: bool = False,
 ) -> List[List[float]]:
     """
-    Ramer–Douglas–Peucker simplification of a ``[lng, lat]`` sequence.
+    Ramer-Douglas-Peucker simplification of a ``[lng, lat]`` sequence.
 
     ``tolerance`` is in degrees: 0.001 ≈ 100 m near the equator. Set
     ``closed=True`` for rings so the shape stays closed.
@@ -870,7 +870,7 @@ def segment_buffer_ring(
     The offset sides are **densified** rather than drawn as two straight
     edges. A great circle is a curve in lng/lat space, so joining the offsets
     at each end with a straight chord would bulge into the corridor on one
-    side and out of it on the other — over a 1000 km leg that error runs to
+    side and out of it on the other. Over a 1000 km leg that error runs to
     tens of kilometres. Sampling along the arc and offsetting from the local
     tangent keeps both sides a true fixed distance from the path.
     """
@@ -897,7 +897,7 @@ def segment_buffer_ring(
     ring: List[List[float]] = [offset(i, 90) for i in range(len(samples))]
 
     # Cap around b. The sweep *decreases* from bearing+90 to bearing-90 so it
-    # passes through the bearing itself — the far side of b. Sweeping the
+    # passes through the bearing itself: the far side of b. Sweeping the
     # other way would cut back across the segment, leaving the endpoint
     # outside its own buffer.
     end_bearing = bearings[-1]
@@ -930,7 +930,7 @@ def line_buffer(
     Buffer a polyline into a MultiPolygon corridor.
 
     Each segment contributes one capsule. Their union is the true buffer, and
-    because the caps are full semicircles the joins are already covered — no
+    because the caps are full semicircles the joins are already covered, no
     mitring artefacts at corners.
     """
     if radius_km <= 0:

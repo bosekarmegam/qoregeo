@@ -1,7 +1,7 @@
 """
 qoregeo.static_map
 ==================
-Static map images — SVG and PNG — rendered without a browser, a plotting
+Static map images. SVG and PNG, rendered without a browser, a plotting
 library or a network connection.
 
 The interactive HTML maps are the right output for exploring data. They are
@@ -11,7 +11,7 @@ or a headless browser.
 
 Both renderers here are self-contained: SVG is text, and the PNG encoder is
 built on :mod:`zlib` and :mod:`struct` from the standard library. Data is
-projected to Web Mercator — the same projection as web tiles — so shapes
+projected to Web Mercator, the same projection as web tiles, so shapes
 match what the interactive map shows.
 
 There is no basemap imagery: these draw your geometry on a plain background,
@@ -32,7 +32,7 @@ from .exceptions import EmptyDatasetError
 Feature = Dict[str, Any]
 RGB = Tuple[int, int, int]
 
-#: QORE house palette — teal on near-black, matching the interactive maps.
+#: QORE house palette, teal on near-black, matching the interactive maps.
 THEME_DARK = {
     "background": (15, 17, 26),
     "point": (0, 212, 170),
@@ -84,7 +84,7 @@ class Projector:
 
         # Both spans must run low → high so the scale stays positive. Mercator y
         # grows northward while pixel y grows downward, so the flip happens in
-        # project(), not here — storing them the other way round silently
+        # project(), not here: storing them the other way round silently
         # mirrors the whole image.
         self._x0 = self._merc_x(bounds["min_lng"])
         self._x1 = self._merc_x(bounds["max_lng"])
@@ -94,8 +94,8 @@ class Projector:
         span_x = self._x1 - self._x0
         span_y = self._y1 - self._y0
 
-        # A single point, or a perfectly straight row of them, has zero span —
-        # give it an arbitrary window so the scale stays finite.
+        # A single point, or a perfectly straight row of them, has zero span.
+        # Give it an arbitrary window so the scale stays finite.
         if span_x <= 0:
             self._x0 -= 0.001
             self._x1 += 0.001
@@ -422,7 +422,7 @@ class Canvas:
         Encode the buffer as a PNG.
 
         PNG is a handful of length-prefixed, CRC-checked chunks wrapping
-        zlib-compressed scanlines — about thirty lines of standard library
+        zlib-compressed scanlines, about thirty lines of standard library
         calls, which is why this needs no imaging dependency.
         """
         raw = bytearray()
@@ -461,7 +461,7 @@ def build_png(
     Render features to a PNG file.
 
     Same projection and palette as :func:`build_svg`, rasterised instead of
-    vector — for places that will not take an SVG.
+    vector, for places that will not take an SVG.
 
     Returns the output path.
     """

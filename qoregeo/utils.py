@@ -1,7 +1,7 @@
 """
 qoregeo.utils
 =============
-Pure utility functions — no side effects, fully testable.
+Pure utility functions, no side effects, fully testable.
 """
 
 from __future__ import annotations
@@ -139,7 +139,7 @@ def _on_segment(
     x2: float,
     y2: float,
 ) -> bool:
-    """True if (px, py) lies on the segment (x1,y1)–(x2,y2), within tolerance."""
+    """True if (px, py) lies on the segment (x1,y1)-(x2,y2), within tolerance."""
     cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
     scale = max(abs(x2 - x1), abs(y2 - y1), 1.0)
     if abs(cross) > BOUNDARY_EPSILON * scale:
@@ -160,8 +160,8 @@ def _point_in_polygon_ray(
 
     ``ring`` is a list of ``[lng, lat]`` pairs (GeoJSON convention).
 
-    Plain ray casting leaves points exactly on an edge or vertex undefined —
-    they fall inside or outside depending on floating-point luck. That is a
+    Plain ray casting leaves points exactly on an edge or vertex undefined.
+    They fall inside or outside depending on floating-point luck. That is a
     poor answer for the questions people actually ask: a convex hull would not
     contain the points it was built from, and a geofence would reject an
     address sitting on the boundary. So an explicit on-edge test runs first and
@@ -251,10 +251,10 @@ def _safe_float(
     try:
         return float(value)
     except ValueError:
-        # Non-fatal — skip row rather than crash
+        # Non-fatal: skip row rather than crash
         import warnings
         warnings.warn(
-            f"QOREgeo: row {row_num} in '{filepath}' — "
+            f"QOREgeo: row {row_num} in '{filepath}', "
             f"could not parse '{col_name}' value '{value}' as a number. Row skipped.",
             stacklevel=4,
         )
