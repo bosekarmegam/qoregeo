@@ -9,8 +9,8 @@ Every exception includes:
 """
 
 from __future__ import annotations
-from typing import List, Optional
 
+from typing import List
 
 _LINE = "─" * 44
 
@@ -166,5 +166,81 @@ class InvalidBufferError(QOREgeoError):
             f"Fix it — use a polygon created with geo.buffer():\n\n"
             f"    zone = geo.buffer((28.61, 77.20), radius=10)\n"
             f"    geo.point_in_polygon((28.65, 77.22), zone)"
+        )
+        super().__init__(msg)
+
+
+class InvalidGeometryError(QOREgeoError):
+    """Raised when a geometry is structurally unusable for the requested operation."""
+
+    def __init__(self, geom_type: str = "geometry", reason: str = "") -> None:
+        detail = f"\n{reason}\n" if reason else "\n"
+        msg = (
+            f"\n\n❌  QOREgeo — Invalid Geometry ('{geom_type}')\n{_LINE}\n"
+            f"This geometry can't be used for that operation.{detail}\n"
+            f"Fix it:\n"
+            f"    • Point geometries need [lng, lat] coordinates\n"
+            f"    • LineStrings need at least 2 points\n"
+            f"    • Polygons need a closed outer ring of at least 4 points\n"
+            f"    • Run geo.validate() to see exactly which features are broken"
+        )
+        super().__init__(msg)
+
+
+class InvalidQueryError(QOREgeoError):
+    """Raised when a query() expression cannot be parsed."""
+
+    def __init__(self, expression: str, reason: str = "") -> None:
+        detail = f"{reason}\n\n" if reason else ""
+        msg = (
+            f"\n\n❌  QOREgeo — Invalid Query\n{_LINE}\n"
+            f"Could not parse: {expression!r}\n\n"
+            f"{detail}"
+            f"Queries look like this:\n\n"
+            f"    geo.query('population > 1000000')\n"
+            f"    geo.query(\"state == 'Maharashtra'\")\n"
+            f"    geo.query('population > 1e6 and state != \"Delhi\"')\n"
+            f"    geo.query('name contains \"pur\"')\n\n"
+            f"Supported operators: ==  !=  >  >=  <  <=  contains  "
+            f"startswith  endswith  in\n"
+            f"Combine with 'and' / 'or', group with parentheses."
+        )
+        super().__init__(msg)
+
+
+class GeocodingError(QOREgeoError):
+    """Raised when an address lookup fails or is not permitted."""
+
+    def __init__(self, query: str, reason: str = "") -> None:
+        detail = f"{reason}\n\n" if reason else ""
+        msg = (
+            f"\n\n❌  QOREgeo — Geocoding Failed\n{_LINE}\n"
+            f"Could not geocode: {query!r}\n\n"
+            f"{detail}"
+            f"Notes:\n"
+            f"    • Geocoding needs a network connection — everything else in\n"
+            f"      QOREgeo works fully offline\n"
+            f"    • It is opt-in. Pass consent explicitly:\n\n"
+            f"          from qoregeo import Geocoder\n"
+            f"          coder = Geocoder(user_agent='my-app/1.0 (me@example.com)')\n"
+            f"          coder.geocode('India Gate, Delhi')\n\n"
+            f"    • The public Nominatim service asks for max 1 request/second\n"
+            f"      and a real contact address in the user agent"
+        )
+        super().__init__(msg)
+
+
+class MissingIndexError(QOREgeoError):
+    """Raised when an index-only operation is attempted without an index."""
+
+    def __init__(self, method_name: str = "this method") -> None:
+        msg = (
+            f"\n\n❌  QOREgeo — No Spatial Index\n{_LINE}\n"
+            f"geo.{method_name}() needs a spatial index.\n\n"
+            f"Fix it:\n\n"
+            f"    geo.build_index()\n"
+            f"    geo.{method_name}(...)\n\n"
+            f"Indexes are built automatically for datasets above "
+            f"the auto-index threshold."
         )
         super().__init__(msg)

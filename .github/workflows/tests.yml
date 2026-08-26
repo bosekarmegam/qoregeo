@@ -15,7 +15,16 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        # Python 3.8 is still supported, but the newest runner images no longer
+        # ship it — pin those legs to images that do.
+        include:
+          - os: ubuntu-22.04
+            python-version: "3.8"
+          - os: windows-latest
+            python-version: "3.8"
+          - os: macos-13
+            python-version: "3.8"
 
     steps:
       - name: Checkout code
@@ -35,6 +44,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v --tb=short
 
+      - name: Check the CLI is installed and runs
+        run: |
+          qoregeo --version
+          qoregeo distance 28.6139,77.2090 19.0760,72.8777
+
       - name: Run with coverage (Ubuntu + Python 3.12 only)
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
         run: pytest tests/ --cov=qoregeo --cov-report=xml --cov-report=term-missing
@@ -45,3 +59,70 @@ jobs:
         with:
           file: ./coverage.xml
           fail_ci_if_error: false
+
+  lint:
+    name: Lint and type check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          pip install .
+
+      - name: Ruff
+        run: ruff check qoregeo tests
+
+      - name: Mypy
+        run: mypy qoregeo
+
+  zero-dependencies:
+    name: Verify zero runtime dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and install into a clean environment
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install dist/*.whl
+
+      - name: Assert nothing else was pulled in
+        # The zero-dependency promise is the product. If a stray import ever
+        # sneaks into the package, this job is what catches it.
+        run: |
+          echo "Installed packages:"
+          /tmp/clean/bin/pip list --format=freeze
+          EXTRA=$(/tmp/clean/bin/pip list --format=freeze \
+            | grep -viE '^(qoregeo|pip|setuptools|wheel)==' || true)
+          if [ -n "$EXTRA" ]; then
+            echo "::error::qoregeo pulled in runtime dependencies:"
+            echo "$EXTRA"
+            exit 1
+          fi
+          echo "Confirmed: zero runtime dependencies."
+
+      - name: Import and exercise the package with nothing else installed
+        run: |
+          /tmp/clean/bin/python -c "
+          import qoregeo
+          geo = qoregeo.GeoEngine().load_data([(28.6139, 77.2090), (19.0760, 72.8777)])
+          assert geo.count() == 2
+          assert 1140 < geo.distance((28.6139, 77.2090), (19.0760, 72.8777)) < 1160
+          print('qoregeo', qoregeo.__version__, 'works standalone')
+          "
+          /tmp/clean/bin/qoregeo --version

@@ -10,8 +10,8 @@ import math
 from typing import List, Optional, Tuple
 
 from .exceptions import (
-    InvalidCoordinateError,
     ColumnNotFoundError,
+    InvalidCoordinateError,
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,8 +28,8 @@ def _validate_coord(lat: float, lng: float) -> None:
     try:
         lat_f = float(lat)
         lng_f = float(lng)
-    except (TypeError, ValueError):
-        raise InvalidCoordinateError(lat, lng)
+    except (TypeError, ValueError) as exc:
+        raise InvalidCoordinateError(lat, lng) from exc
 
     if not (-90.0 <= lat_f <= 90.0) or not (-180.0 <= lng_f <= 180.0):
         raise InvalidCoordinateError(lat_f, lng_f)
@@ -127,15 +127,45 @@ def _generate_circle_polygon(
 # Point-in-polygon (ray casting)
 # ─────────────────────────────────────────────────────────────────────────────
 
+#: Tolerance for deciding a point sits *on* a polygon edge, in degrees.
+BOUNDARY_EPSILON = 1e-12
+
+
+def _on_segment(
+    px: float,
+    py: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+) -> bool:
+    """True if (px, py) lies on the segment (x1,y1)–(x2,y2), within tolerance."""
+    cross = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1)
+    scale = max(abs(x2 - x1), abs(y2 - y1), 1.0)
+    if abs(cross) > BOUNDARY_EPSILON * scale:
+        return False
+    return (
+        min(x1, x2) - BOUNDARY_EPSILON <= px <= max(x1, x2) + BOUNDARY_EPSILON
+        and min(y1, y2) - BOUNDARY_EPSILON <= py <= max(y1, y2) + BOUNDARY_EPSILON
+    )
+
+
 def _point_in_polygon_ray(
     lat: float,
     lng: float,
     ring: List[List[float]],
 ) -> bool:
     """
-    Ray-casting test.
+    Ray-casting test, with the boundary counted as inside.
 
-    ring is a list of [lng, lat] pairs (GeoJSON convention).
+    ``ring`` is a list of ``[lng, lat]`` pairs (GeoJSON convention).
+
+    Plain ray casting leaves points exactly on an edge or vertex undefined —
+    they fall inside or outside depending on floating-point luck. That is a
+    poor answer for the questions people actually ask: a convex hull would not
+    contain the points it was built from, and a geofence would reject an
+    address sitting on the boundary. So an explicit on-edge test runs first and
+    reports inside. It shares this loop, so the check costs nothing extra.
     """
     inside = False
     j = len(ring) - 1
@@ -143,6 +173,9 @@ def _point_in_polygon_ray(
     for i in range(len(ring)):
         xi, yi = ring[i][0], ring[i][1]   # lng, lat
         xj, yj = ring[j][0], ring[j][1]
+
+        if _on_segment(lng, lat, xi, yi, xj, yj):
+            return True
 
         intersect = (
             (yi > lat) != (yj > lat)

@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name        = "qoregeo"
-version     = "1.0.3"
-description = "Quantum-Powered Spatial Intelligence for Python. Zero C++ dependencies."
+version     = "1.1.0"
+description = "Quantum-Powered Spatial Intelligence for Python. Zero dependencies, zero C++ toolchain, works everywhere Python does."
 readme      = "README.md"
 license     = { file = "LICENSE" }
 authors     = [
@@ -16,12 +16,17 @@ maintainers = [
 ]
 keywords = [
     "gis", "geospatial", "spatial", "geography", "mapping",
-    "geofencing", "leaflet", "heatmap", "coordinates",
-    "latitude", "longitude", "distance", "bearing",
+    "geofencing", "leaflet", "heatmap", "choropleth", "coordinates",
+    "latitude", "longitude", "distance", "bearing", "haversine", "vincenty",
+    "geojson", "shapefile", "gpx", "kml", "wkt", "geohash", "quadkey",
+    "utm", "web-mercator", "projection", "crs",
+    "dbscan", "kmeans", "clustering", "spatial-index", "knn",
+    "spatial-join", "route-optimization", "tsp", "geocoding",
+    "no-gdal", "pure-python", "zero-dependency",
     "qore", "quantum",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -32,7 +37,11 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Topic :: Utilities",
+    "Environment :: Console",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
@@ -46,8 +55,17 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.5",
 ]
+# Nothing here is needed at runtime; these only make the test suite stricter.
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[project.scripts]
+qoregeo = "qoregeo.cli:main"
 
 [project.urls]
+Roadmap       = "https://github.com/bosekarmegam/qoregeo/blob/main/ROADMAP.md"
 Homepage      = "https://github.com/bosekarmegam/qoregeo"
 Repository    = "https://github.com/bosekarmegam/qoregeo"
 Documentation = "https://github.com/bosekarmegam/qoregeo#readme"
@@ -56,6 +74,8 @@ Changelog     = "https://github.com/bosekarmegam/qoregeo/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["qoregeo"]
+# PEP 561 marker so type checkers pick up the inline annotations.
+artifacts = ["qoregeo/py.typed"]
 
 [tool.hatch.build.targets.sdist]
 include = [
@@ -64,6 +84,8 @@ include = [
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "ROADMAP.md",
     "pyproject.toml",
 ]
 
@@ -86,11 +108,31 @@ skip_covered = false
 [tool.ruff]
 line-length = 100
 target-version = "py38"
-select = ["E", "F", "W", "I", "UP"]
-ignore = ["E501"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",     # line length is handled by the formatter, not the linter
+    # The package supports Python 3.8, where `list[str]` and `X | Y` are not
+    # valid at runtime. Type *aliases* are evaluated eagerly even under
+    # `from __future__ import annotations`, so builtin generics cannot be used
+    # consistently until the 3.8 floor is dropped in v2.0.
+    "UP006",    # use `list` instead of `List`
+    "UP007",    # use `X | Y` instead of `Union`
+    "UP035",    # deprecated `typing` import
+    "UP045",    # use `X | None` instead of `Optional[X]`
+    "SIM105",   # contextlib.suppress is slower than try/except pass in hot loops
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests deliberately poke at private helpers and re-raise expected errors.
+"tests/*" = ["B011", "SIM117"]
 
 # ─── Mypy (type checking) ────────────────────────────────────────────────────
 [tool.mypy]
-python_version = "3.8"
+# The package still supports 3.8 at runtime; mypy itself dropped support for
+# checking against it, so type-check against the oldest version mypy accepts.
+python_version = "3.10"
 strict         = false
 ignore_missing_imports = true
+warn_unused_ignores = true

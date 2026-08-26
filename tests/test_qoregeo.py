@@ -1,7 +1,10 @@
 """
 tests/test_qoregeo.py
 =====================
-Full test suite for QOREgeo v1.0.3.
+Core regression suite for QOREgeo — the v1.0 API surface.
+
+These tests pin the original behaviour so later releases cannot quietly
+break it. Newer features have their own modules alongside this one.
 
 Run with:
     pytest tests/ -v
@@ -13,35 +16,31 @@ from __future__ import annotations
 
 import csv
 import json
-import math
 import os
-import tempfile
 from pathlib import Path
-from typing import List
 
 import pytest
 
 from qoregeo import GeoEngine
 from qoregeo.exceptions import (
-    NoDataError,
-    InvalidCoordinateError,
-    InvalidUnitError,
     ColumnNotFoundError,
     EmptyDatasetError,
-    InvalidRadiusError,
     InvalidBufferError,
+    InvalidCoordinateError,
+    InvalidRadiusError,
+    InvalidUnitError,
+    NoDataError,
     UnsupportedFormatError,
 )
 from qoregeo.exceptions import FileNotFoundError as QFileNotFoundError
 from qoregeo.utils import (
-    _haversine_km,
     _bearing_to_compass,
-    _generate_circle_polygon,
-    _point_in_polygon_ray,
     _detect_lat_lng_columns,
+    _generate_circle_polygon,
+    _haversine_km,
+    _point_in_polygon_ray,
     _validate_coord,
 )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -116,7 +115,14 @@ class TestInit:
         assert "7 features" in repr(geo_loaded)
 
     def test_version(self):
-        assert GeoEngine.VERSION == "1.0.3"
+        import qoregeo
+
+        assert qoregeo.__version__ == GeoEngine.VERSION
+
+    def test_version_is_semver(self):
+        parts = GeoEngine.VERSION.split(".")
+        assert len(parts) == 3
+        assert all(p.isdigit() for p in parts)
 
     def test_len_no_data(self):
         assert len(GeoEngine()) == 0
