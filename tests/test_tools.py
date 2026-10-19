@@ -1,13 +1,13 @@
 """
 tests/test_tools.py
 ===================
-qoregeo.tools — QOREgeo's operations as AI tools (MCP, Claude API, OpenAI).
+qoregeo.tools: QOREgeo's operations as AI tools (MCP, Claude API, OpenAI).
 
 * ``tool_definitions()`` in all four formats and the JSON-Schema rules the
   platforms enforce (object schemas, ``additionalProperties: false``,
   ``required`` ⊆ ``properties``, tool-name pattern)
 * ``call_tool()`` for every tool with valid input, checking the result data
-* error paths — every one returns ``is_error=True`` with a useful message and
+* error paths, each of which returns ``is_error=True`` with a useful message and
   never raises: unknown tools, bad arguments, sandbox escapes ('..', absolute
   paths, symlinks), missing / oversized files, read-only mode, the input file
   as output, existing outputs (``overwrite``), wrong extensions, geocoding
@@ -139,7 +139,7 @@ def walk_schemas(schema: Any, where: str = "$") -> list[tuple[str, dict[str, Any
 
 
 class FakeGeocoder:
-    """Stands in for qoregeo.geocode.Geocoder — never touches the network."""
+    """Stands in for qoregeo.geocode.Geocoder and never touches the network."""
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...], dict[str, Any]]] = []
@@ -352,7 +352,7 @@ class TestToolDefinitions:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# call_tool — every tool with valid input
+# call_tool: every tool with valid input
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestGeometryTools:
@@ -783,7 +783,7 @@ class TestGeocodingTools:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# call_tool — error paths (never raise)
+# call_tool: error paths (never raise)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCallErrors:

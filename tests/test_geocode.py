@@ -1,5 +1,5 @@
 """
-Tests for qoregeo.geocode — fully offline.
+Offline tests for qoregeo.geocode.
 
 Every HTTP request goes through ``Geocoder._fetch`` (or, for the one test of
 ``_fetch`` itself, ``urllib.request.urlopen``), both of which are replaced
@@ -1615,7 +1615,7 @@ class TestSharedAcrossProcesses:
 
 class TestSharedStateDegrades:
     """An unusable cache directory or a Python without sqlite3 falls back to the
-    in-process limit and cache — never an error."""
+    in-process limit and cache instead of raising an error."""
 
     def _check_in_process(self, server: FakeServer, clock: FakeClock, gc: Geocoder) -> None:
         assert gc.search("a") == [] and gc.search("a") == []   # memory cache

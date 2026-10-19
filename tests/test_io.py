@@ -130,7 +130,7 @@ def cities_geojson(tmp_path: Path) -> Path:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — basics
+# CSV loading: basics
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestLoadCsvBasics:
@@ -190,7 +190,7 @@ class TestLoadCsvBasics:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — delimiter detection
+# CSV loading: delimiter detection
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestDelimiterDetection:
@@ -250,7 +250,7 @@ class TestDelimiterDetection:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — headers and lat/lng auto-detection
+# CSV loading: headers and lat/lng auto-detection
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCsvHeaders:
@@ -317,7 +317,7 @@ class TestCsvHeaders:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — lat_col / lng_col overrides
+# CSV loading: lat_col / lng_col overrides
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestColumnOverrides:
@@ -373,7 +373,7 @@ class TestColumnOverrides:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — row validation, warnings and empty datasets
+# CSV loading: row validation, warnings and empty datasets
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCsvRowValidation:
@@ -476,7 +476,7 @@ class TestCsvRowValidation:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSV loading — infer_types
+# CSV loading: infer_types
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Known answers from the research vectors (csv_inference) plus extra edge cases.
@@ -492,7 +492,7 @@ INFER_CASES = [
     ("5.", 5.0),
     ("1e3", 1000.0),
     ("2.5E-3", 0.0025),
-    ("02134", "02134"),     # ZIP code — leading zero preserved
+    ("02134", "02134"),     # ZIP code: leading zero preserved
     ("007", "007"),
     ("-007", "-007"),
     ("00.5", "00.5"),
@@ -539,7 +539,7 @@ class TestInferTypes:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# load() — paths, missing files and formats
+# load(): paths, missing files and formats
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestLoadPaths:
@@ -979,7 +979,7 @@ class TestAddPoint:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# save() — GeoJSON
+# save(): GeoJSON
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestSaveGeoJson:
@@ -1076,7 +1076,7 @@ class TestSaveGeoJson:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# save() — CSV / TSV
+# save(): CSV / TSV
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestSaveCsv:
@@ -1192,7 +1192,7 @@ class TestSaveCsv:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# save() — empty data, errors and paths
+# save(): empty data, errors and paths
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestSaveGeneral:

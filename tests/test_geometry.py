@@ -3,7 +3,7 @@ tests/test_geometry.py
 ======================
 Geometry & math test suite for QOREgeo: distance (haversine / Vincenty),
 units, coordinate coercion, bearing, destination, midpoint, buffer,
-point-in-polygon, area, length, distance-to-line and geohash — plus
+point-in-polygon, area, length, distance-to-line and geohash, plus
 white-box tests of the pure helpers in ``qoregeo.utils``.
 
 Known-answer vectors come from published sources (Movable Type Scripts,
@@ -91,7 +91,7 @@ ANTIMERIDIAN_BOX = {
 
 # The same corners written with a jump from +170 to -170. GeoJSON edges are
 # straight lines in lng/lat (RFC 7946 §3.1.1; Turf, Shapely and Leaflet agree),
-# so this is a 340°-wide band, not the 20° box — RFC 7946 §3.1.9 says to cut
+# so this is a 340°-wide band, not the 20° box. RFC 7946 §3.1.9 says to cut
 # such shapes at ±180 (see FIJI_SPLIT) or keep longitudes continuous.
 JUMP_BOX = {
     "type": "Polygon",
@@ -264,7 +264,7 @@ class TestCoordinateCoercion:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Distance — haversine (default)
+# Distance: haversine (default)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestDistanceHaversine:
@@ -319,7 +319,7 @@ class TestDistanceHaversine:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Distance — units and aliases
+# Distance: units and aliases
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestDistanceUnits:
@@ -378,7 +378,7 @@ class TestDistanceUnits:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Distance — Vincenty (WGS-84 ellipsoid)
+# Distance: Vincenty (WGS-84 ellipsoid)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestDistanceVincenty:

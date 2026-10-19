@@ -427,9 +427,8 @@ def test_agents_md_describes_ci_accurately() -> None:
     versions = re.search(r'python-version: \[([^\]]+)\]', workflow)
     assert versions
     matrix = [v.strip().strip('"') for v in versions.group(1).split(",")]
-    # "Python 3.10 to 3.15"; older text used an en dash, which the style rules now ban.
-    assert (f"Python {matrix[0]} to {matrix[-1]}" in agents
-            or f"Python {matrix[0]}\N{EN DASH}{matrix[-1]}" in agents)
+    # The range is written "Python 3.10 to 3.15" (the style rules ban en dashes).
+    assert f"Python {matrix[0]} to {matrix[-1]}" in agents
     lint_job = workflow.split("\n  test:")[0]
     assert "ruff" in lint_job and "mypy" in lint_job and "ubuntu-latest" in lint_job
     lint_python = re.search(r'python-version: "([\d.]+)"', lint_job)
