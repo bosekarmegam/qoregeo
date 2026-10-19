@@ -71,5 +71,7 @@ once, on Ubuntu with Python 3.14.
 
 Bump the version in `qoregeo/_version.py`, `.claude-plugin/plugin.json`,
 `gemini-extension.json` and `server.json` (both `version` fields), add a CHANGELOG entry, then
-publish a GitHub Release tagged `vX.Y.Z`. The release workflow tests, builds, uploads to PyPI
-(trusted publishing) and lists the new version in the MCP Registry.
+publish a GitHub Release tagged `vX.Y.Z` — or, once that's merged, run the *Publish to PyPI*
+workflow on `main` by hand with the version, which creates the tag and Release itself. Either
+way the workflow tests, builds, uploads to PyPI (trusted publishing) and lists the new version
+in the MCP Registry.

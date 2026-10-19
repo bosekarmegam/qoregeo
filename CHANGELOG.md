@@ -172,7 +172,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   codecov v7, upload/download-artifact v7/v8).
 - Release: runs the full lint / type / test matrix, then separate build and publish
   jobs, tag/version check, wheel tested before upload, `pypi` environment for trusted
-  publishing; Dependabot for actions.
+  publishing; Dependabot for actions. It can also be run by hand on `main` with a version,
+  and then creates the `vX.Y.Z` tag and GitHub Release (with the CHANGELOG notes) itself.
 
 ## [1.0.3] — 2026-03-02
 
