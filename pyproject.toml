@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name          = "qoregeo"
 dynamic       = ["version"]   # single source of truth: qoregeo/_version.py
-description   = "Quantum-Powered Spatial Intelligence for Python. Zero C++ dependencies."
+description   = "Zero-dependency geospatial toolkit for Python and AI assistants: distances, geofences, OpenStreetMap maps, geocoding, MCP server."
 readme        = "README.md"
 license       = "MIT"
 license-files = ["LICENSE"]
@@ -19,7 +19,8 @@ keywords = [
     "gis", "geospatial", "spatial", "geography", "mapping",
     "geofencing", "leaflet", "heatmap", "coordinates", "geojson",
     "latitude", "longitude", "distance", "bearing", "geohash",
-    "haversine", "vincenty", "qore", "quantum",
+    "haversine", "vincenty", "qore", "quantum", "openstreetmap", "geocoding",
+    "mcp", "model-context-protocol", "ai-agents", "claude", "llm-tools",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -40,6 +41,9 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies    = []          # Zero runtime dependencies
+
+[project.scripts]
+qoregeo = "qoregeo.cli:main"
 
 [project.urls]
 Homepage      = "https://github.com/bosekarmegam/qoregeo"
@@ -62,11 +66,16 @@ path = "qoregeo/_version.py"
 packages = ["qoregeo"]
 core-metadata-version = "2.4"   # PEP 639 license metadata; readable by twine >= 6.1
 
+# The Agent Skill ships inside the package so `qoregeo skill install` works from PyPI.
+[tool.hatch.build.targets.wheel.force-include]
+"skills/qoregeo" = "qoregeo/_skill/qoregeo"
+
 [tool.hatch.build.targets.sdist]
 core-metadata-version = "2.4"
 include = [
     "qoregeo/",
     "tests/",
+    "skills/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -78,10 +87,6 @@ include = [
 testpaths    = ["tests"]
 addopts      = "-v --tb=short"
 python_files = ["test_*.py"]
-filterwarnings = [
-    # Map tests don't use a CARTO key; the dedicated test asserts this warning.
-    "ignore:QOREgeo. CARTO basemaps:UserWarning",
-]
 
 # ─── Coverage ────────────────────────────────────────────────────────────────
 [tool.coverage.run]

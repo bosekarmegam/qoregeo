@@ -4,12 +4,12 @@ tests/test_maps.py
 HTML map and heatmap generation — static analysis of the generated files.
 
 No browser and no network: every test writes a page into ``tmp_path`` and
-inspects its text (and the ``var CONFIG = {...};`` JSON it embeds).
+inspects its text (and the ``var CONFIG = JSON.parse("…");`` data it embeds).
 
 Covers file output, title escaping, script-injection safety of the embedded
 data, NaN / non-JSON property values, the pinned Subresource Integrity hashes
 and CDN fallbacks, the view (center / zoom) config, basemap presets and
-custom tile URLs, CARTO API-key handling, overlays, heatmap intensity
+custom tile URLs, the file:// notice, overlays, heatmap intensity
 normalisation and radius / blur validation, verbose output (including
 consoles that cannot print emoji) and the map_builder JSON helpers.
 
@@ -47,10 +47,11 @@ from qoregeo.map_builder import (
     _LEAFLET_CSS,
     _LEAFLET_HEAT_JS,
     _LEAFLET_JS,
-    CARTO_KEY_ENV,
+    _TILES,
     _announce,
     _json_safe,
     _to_js,
+    tile_presets,
 )
 
 # Heatmap tests feed deliberately unusable intensities; the warning they cause
@@ -80,15 +81,27 @@ LEAFLET_HEAT_URLS = [
     "https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js",
 ]
 
+OSM_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 PRESET_URLS = {
-    "dark":    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-    "light":   "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    "voyager": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-    "osm":     "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "light":        OSM_URL,
+    "osm":          OSM_URL,
+    "dark":         OSM_URL,
+    "humanitarian": "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+    "topo":         "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+    "cyclosm":      "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
+    "osm-de":       "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+    "osm-fr":       "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+    "satellite":    "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/"
+                    "default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg",
+    "none":         None,
 }
-CARTO_PRESETS = ["dark", "light", "voyager"]
+OSM_PRESETS = ["light", "osm", "dark"]   # served by tile.openstreetmap.org
+# Tile servers following the OpenStreetMap tile policy (a Referer is required).
+REFERER_PRESETS = [*OSM_PRESETS, "humanitarian", "cyclosm", "osm-fr"]
 
 OSM_COPYRIGHT_LINK = '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+OSM_ATTRIBUTION = (f"&copy; {OSM_COPYRIGHT_LINK} contributors | "
+                   '<a href="https://www.openstreetmap.org/fixthemap">Report a map issue</a>')
 CUSTOM_TILES = "https://tiles.example.com/{z}/{x}/{y}.png"
 
 XSS = "</script><script>alert(1)</script>"
@@ -107,7 +120,7 @@ BUILDERS = ["map", "heatmap"]
 
 _MISSING = object()   # marker: feature has no value for the intensity column
 
-_CONFIG_RE = re.compile(r"^[ \t]*var CONFIG = (.*);[ \t]*$", re.MULTILINE)
+_CONFIG_RE = re.compile(r"^[ \t]*var CONFIG = JSON\.parse\((.*)\);[ \t]*$", re.MULTILINE)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -119,14 +132,15 @@ def read_page(path: Path) -> str:
 
 
 def config_text(page: str) -> str:
-    """Return the raw JSON literal assigned to ``var CONFIG`` (exactly one)."""
+    """Return the raw string literal passed to ``JSON.parse`` for ``var CONFIG`` (exactly one)."""
     found = _CONFIG_RE.findall(page)
-    assert len(found) == 1, "expected exactly one 'var CONFIG = …;' line"
+    assert len(found) == 1, "expected exactly one 'var CONFIG = JSON.parse(…);' line"
     return found[0]
 
 
 def parse_config(page: str) -> dict[str, Any]:
-    return json.loads(config_text(page))
+    # The page holds a JS string literal (valid JSON) whose value is the JSON config.
+    return json.loads(json.loads(config_text(page)))
 
 
 def render(geo: GeoEngine, tmp_path: Path, builder: str = "map", **kwargs: Any) -> str:
@@ -155,12 +169,6 @@ def weighted(*weights: Any, key: str = "w") -> GeoEngine:
 
 def single(**properties: Any) -> GeoEngine:
     return GeoEngine(verbose=False).add_point(28.6139, 77.2090, **properties)
-
-
-@pytest.fixture(autouse=True)
-def _no_carto_key_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Never let a developer's / CI's real CARTO key leak into these tests."""
-    monkeypatch.delenv(CARTO_KEY_ENV, raising=False)
 
 
 @pytest.fixture
@@ -620,7 +628,7 @@ class TestZoomValidation:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Basemaps — presets
+# Basemaps — presets (all open and keyless)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestTilePresets:
@@ -628,9 +636,37 @@ class TestTilePresets:
     def test_preset_url(self, geo, tmp_path, name):
         tiles = parse_config(render(geo, tmp_path, tiles=name))["tiles"]
         assert tiles["url"] == PRESET_URLS[name]
+        assert tiles["name"] == name
 
-    def test_default_is_dark(self, geo, tmp_path):
-        assert parse_config(render(geo, tmp_path))["tiles"]["url"] == PRESET_URLS["dark"]
+    def test_presets_table_matches(self):
+        assert set(_TILES) == set(PRESET_URLS)
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    def test_default_is_light_openstreetmap(self, geo, tmp_path, builder):
+        tiles = parse_config(render(geo, tmp_path, builder))["tiles"]
+        assert tiles["name"] == "light"
+        assert tiles["url"] == OSM_URL
+        assert tiles["options"]["className"] == "qg-tiles-light"
+
+    @pytest.mark.parametrize("name", list(PRESET_URLS))
+    def test_no_preset_needs_a_key(self, geo, tmp_path, name):
+        page = render(geo, tmp_path, tiles=name)
+        assert "key=" not in (parse_config(page)["tiles"]["url"] or "")
+        assert "cartocdn" not in page and "carto.com" not in page
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    @pytest.mark.parametrize("name", list(PRESET_URLS))
+    def test_no_preset_ever_warns(self, geo, tmp_path, builder, name):
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            getattr(geo, builder)(tmp_path / "w.html", tiles=name)
+
+    @pytest.mark.parametrize(("alias", "name"), [
+        ("hot", "humanitarian"), ("opentopomap", "topo"), ("blank", "none"), ("osm_light", "light"),
+        ("osm-dark", "dark"), ("cycling", "cyclosm"), ("nasa", "satellite"), ("osm_de", "osm-de"),
+    ])
+    def test_aliases(self, geo, tmp_path, alias, name):
+        assert parse_config(render(geo, tmp_path, tiles=alias))["tiles"]["name"] == name
 
     @pytest.mark.parametrize("spelling", ["OSM", "  osm  ", "Osm"])
     def test_preset_name_case_and_whitespace_insensitive(self, geo, tmp_path, spelling):
@@ -638,13 +674,18 @@ class TestTilePresets:
         assert tiles["url"] == PRESET_URLS["osm"]
 
     @pytest.mark.parametrize("builder", BUILDERS)
-    @pytest.mark.parametrize("tiles", ["satellite", "", "dark2", None, 5])
+    @pytest.mark.parametrize("tiles", ["terrain", "", "dark2", None, 5])
     def test_unknown_preset_raises(self, geo, tmp_path, builder, tiles):
         out = tmp_path / "t.html"
         with pytest.raises(InvalidArgumentError) as exc:
             getattr(geo, builder)(out, tiles=tiles)
         assert exc.value.name == "tiles"
         assert not out.exists()
+
+    @pytest.mark.parametrize("old", ["voyager", "carto", "positron", "cartodb"])
+    def test_removed_carto_names_explain_why(self, geo, tmp_path, old):
+        with pytest.raises(InvalidArgumentError, match="CARTO basemaps were replaced"):
+            geo.map(tmp_path / "t.html", tiles=old)
 
     @pytest.mark.parametrize("tiles", [["dark"], {"url": CUSTOM_TILES}])
     def test_unhashable_tiles_raise_invalid_argument(self, geo, tmp_path, tiles):
@@ -653,11 +694,73 @@ class TestTilePresets:
 
     @pytest.mark.parametrize("builder", BUILDERS)
     def test_attribution_is_appended_to_preset_credit(self, geo, tmp_path, builder):
-        # The OpenStreetMap / CARTO credit their terms require is never dropped.
+        # The OpenStreetMap credit its licence requires is never dropped.
         cfg = parse_config(render(geo, tmp_path, builder, tiles="osm", attribution="My tiles"))
         attribution = cfg["tiles"]["options"]["attribution"]
         assert attribution.endswith(", My tiles")
         assert "openstreetmap.org/copyright" in attribution
+
+    def test_attribution_on_none_preset(self, geo, tmp_path):
+        cfg = parse_config(render(geo, tmp_path, tiles="none", attribution="Data: me"))
+        assert cfg["tiles"]["options"]["attribution"] == "Data: me"
+
+    def test_none_preset_draws_no_tile_layer(self, geo, tmp_path):
+        tiles = parse_config(render(geo, tmp_path, tiles="none"))["tiles"]
+        assert tiles["url"] is None
+        assert tiles["needsReferer"] is False
+        assert tiles["background"]
+
+    def test_dark_preset_inverts_osm_and_darkens_background(self, geo, tmp_path):
+        tiles = parse_config(render(geo, tmp_path, tiles="dark"))["tiles"]
+        assert tiles["options"]["className"] == "qg-tiles-dark"
+        assert tiles["background"] == "#0f111a"
+
+    @pytest.mark.parametrize("cls", ["qg-tiles-light", "qg-tiles-dark"])
+    def test_tile_style_classes_defined(self, geo, tmp_path, cls):
+        assert re.search(r"\." + cls + r"\s*\{\s*filter:", render(geo, tmp_path))
+
+    def test_tile_presets_lists_every_name(self):
+        presets = tile_presets()
+        assert list(presets) == list(_TILES)
+        assert all(isinstance(v, str) and v for v in presets.values())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Basemaps — OpenStreetMap and pages opened from disk
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFileNotice:
+    @pytest.mark.parametrize("name", REFERER_PRESETS)
+    def test_osm_policy_presets_need_a_referer(self, geo, tmp_path, name):
+        tiles = parse_config(render(geo, tmp_path, tiles=name))["tiles"]
+        assert tiles["needsReferer"] is True
+        assert tiles["options"]["referrerPolicy"] == "strict-origin-when-cross-origin"
+
+    @pytest.mark.parametrize("name", sorted(set(PRESET_URLS) - set(REFERER_PRESETS)))
+    def test_other_presets_do_not(self, geo, tmp_path, name):
+        assert parse_config(render(geo, tmp_path, tiles=name))["tiles"]["needsReferer"] is False
+
+    def test_custom_tiles_do_not(self, geo, tmp_path):
+        assert parse_config(render(geo, tmp_path, tiles=CUSTOM_TILES))["tiles"]["needsReferer"] is False
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    def test_notice_names_the_file_and_the_fixes(self, geo, tmp_path, builder):
+        out = tmp_path / "my map.html"
+        getattr(geo, builder)(out)
+        notice = parse_config(read_page(out))["fileNotice"]
+        assert '`qoregeo serve "my map.html"`' in notice
+        assert "`geo.show()`" in notice
+        assert "'satellite'" in notice and "'topo'" in notice
+
+    def test_tiles_not_requested_from_file_protocol(self, geo, tmp_path):
+        page = render(geo, tmp_path)
+        assert 'var blocked = t.needsReferer && location.protocol === "file:";' in page
+        assert "if (blocked) showNotice(CONFIG.fileNotice);" in page
+        assert "else if (t.url) L.tileLayer(t.url, t.options).addTo(map);" in page
+        assert "textContent = part" in page   # never innerHTML
+
+    def test_html_string_notice_defaults_to_map_html(self, geo):
+        assert "`qoregeo serve map.html`" in parse_config(geo.map_html())["fileNotice"]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -670,6 +773,7 @@ class TestCustomTiles:
         page = render(geo, tmp_path, builder, tiles=CUSTOM_TILES, attribution="&copy; Example")
         tiles = parse_config(page)["tiles"]
         assert tiles["url"] == CUSTOM_TILES
+        assert tiles["name"] == "custom"
         assert tiles["options"]["attribution"] == "&copy; Example"
         assert tiles["options"]["maxZoom"] == 19
 
@@ -683,6 +787,10 @@ class TestCustomTiles:
         without_s = parse_config(render(geo, tmp_path, tiles=CUSTOM_TILES))["tiles"]["options"]
         assert with_s["subdomains"] == "abc"
         assert "subdomains" not in without_s
+
+    def test_key_in_custom_url_kept_verbatim(self, geo, tmp_path):
+        url = "https://tiles.example.com/{z}/{x}/{y}.png?api_key=abc"
+        assert parse_config(render(geo, tmp_path, tiles=url))["tiles"]["url"] == url
 
     @pytest.mark.parametrize("builder", BUILDERS)
     @pytest.mark.parametrize("url", [
@@ -707,118 +815,16 @@ class TestCustomTiles:
         with pytest.raises(InvalidArgumentError):
             geo.map(tmp_path / "t.html", tiles=url)
 
-    def test_custom_tiles_warn_that_api_key_is_unused(self, geo, tmp_path):
-        with pytest.warns(UserWarning, match="only added to CARTO tile URLs"):
-            page = render(geo, tmp_path, tiles=CUSTOM_TILES, tile_api_key="secret")
-        assert parse_config(page)["tiles"]["url"] == CUSTOM_TILES
-        assert "secret" not in page
-
-    def test_custom_tiles_without_key_never_warn(self, geo, tmp_path, monkeypatch):
-        monkeypatch.delenv("QOREGEO_CARTO_API_KEY", raising=False)
+    def test_custom_tiles_never_warn(self, geo, tmp_path):
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             page = render(geo, tmp_path, tiles=CUSTOM_TILES)
         assert parse_config(page)["tiles"]["url"] == CUSTOM_TILES
 
-    def test_custom_carto_style_gets_the_key(self, geo, tmp_path):
-        url = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
-        cfg = parse_config(render(geo, tmp_path, tiles=url, tile_api_key="k&1"))
-        assert cfg["tiles"]["url"] == url + "?key=k%261"
-        assert cfg["tiles"]["options"]["subdomains"] == "abcd"
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CARTO API key
-# ─────────────────────────────────────────────────────────────────────────────
-
-class TestCartoApiKey:
     @pytest.mark.parametrize("builder", BUILDERS)
-    @pytest.mark.parametrize("preset", CARTO_PRESETS)
-    def test_key_appended_to_tile_url(self, geo, tmp_path, builder, preset):
-        cfg = parse_config(render(geo, tmp_path, builder, tiles=preset, tile_api_key="abc123"))
-        assert cfg["tiles"]["url"] == PRESET_URLS[preset] + "?key=abc123"
-
-    def test_key_is_url_encoded(self, geo, tmp_path):
-        page = render(geo, tmp_path, tile_api_key="a b/c+d&e?=é")
-        assert parse_config(page)["tiles"]["url"] == \
-            PRESET_URLS["dark"] + "?key=a%20b%2Fc%2Bd%26e%3F%3D%C3%A9"
-        assert "a b/c" not in page
-
-    def test_env_var_used_when_no_argument(self, geo, tmp_path, monkeypatch):
-        monkeypatch.setenv(CARTO_KEY_ENV, "from-env")
-        cfg = parse_config(render(geo, tmp_path, tiles="light"))
-        assert cfg["tiles"]["url"] == PRESET_URLS["light"] + "?key=from-env"
-
-    def test_env_var_whitespace_stripped(self, geo, tmp_path, monkeypatch):
-        monkeypatch.setenv(CARTO_KEY_ENV, "  padded  ")
-        assert parse_config(render(geo, tmp_path))["tiles"]["url"].endswith("?key=padded")
-
-    def test_argument_overrides_env_var(self, geo, tmp_path, monkeypatch):
-        monkeypatch.setenv(CARTO_KEY_ENV, "from-env")
-        page = render(geo, tmp_path, tile_api_key="from-arg")
-        assert parse_config(page)["tiles"]["url"].endswith("?key=from-arg")
-        assert "from-env" not in page
-
-    def test_empty_argument_falls_back_to_env_var(self, geo, tmp_path, monkeypatch):
-        monkeypatch.setenv(CARTO_KEY_ENV, "from-env")
-        cfg = parse_config(render(geo, tmp_path, tile_api_key=""))
-        assert cfg["tiles"]["url"].endswith("?key=from-env")
-
-    @pytest.mark.parametrize("builder", BUILDERS)
-    def test_osm_never_gets_key(self, geo, tmp_path, monkeypatch, builder):
-        monkeypatch.setenv(CARTO_KEY_ENV, "from-env")
-        page = render(geo, tmp_path, builder, tiles="osm", tile_api_key="from-arg")
-        assert parse_config(page)["tiles"]["url"] == PRESET_URLS["osm"]
-        assert "from-arg" not in page
-        assert "from-env" not in page
-
-    @pytest.mark.parametrize("builder", BUILDERS)
-    @pytest.mark.parametrize("preset", CARTO_PRESETS)
-    def test_warns_without_key(self, geo, tmp_path, builder, preset):
-        with pytest.warns(UserWarning, match="API key"):
-            getattr(geo, builder)(tmp_path / "w.html", tiles=preset)
-
-    def test_warning_names_preset_and_remedies(self, geo, tmp_path):
-        with pytest.warns(UserWarning, match="API key") as record:
-            geo.map(tmp_path / "w.html", tiles="voyager")
-        message = str(record[0].message)
-        assert "'voyager'" in message
-        assert CARTO_KEY_ENV in message
-        assert "tile_api_key" in message
-        assert "tiles='osm'" in message
-        assert "https://carto.com/basemaps/apikey/" in message
-
-    @pytest.mark.parametrize("builder", BUILDERS)
-    def test_warning_points_at_caller(self, geo, tmp_path, builder):
-        with pytest.warns(UserWarning, match="API key") as record:
-            getattr(geo, builder)(tmp_path / "w.html")
-        assert len(record) == 1
-        assert Path(record[0].filename).name == Path(__file__).name
-
-    @pytest.mark.parametrize(("env", "key"), [("   ", None), (None, "")],
-                             ids=["blank-env-var", "empty-argument"])
-    def test_blank_key_still_warns(self, geo, tmp_path, monkeypatch, env, key):
-        if env is not None:
-            monkeypatch.setenv(CARTO_KEY_ENV, env)
-        with pytest.warns(UserWarning, match="API key"):
-            geo.map(tmp_path / "w.html", tile_api_key=key)
-
-    @pytest.mark.parametrize("builder", BUILDERS)
-    @pytest.mark.parametrize("kwargs", [
-        {"tiles": "osm"},
-        {"tiles": "dark", "tile_api_key": "k"},
-        {"tiles": CUSTOM_TILES},
-    ], ids=["osm", "dark-with-key", "custom-url"])
-    def test_no_warning_when_not_needed(self, geo, tmp_path, builder, kwargs):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            getattr(geo, builder)(tmp_path / "w.html", **kwargs)
-
-    def test_no_warning_with_env_var(self, geo, tmp_path, monkeypatch):
-        monkeypatch.setenv(CARTO_KEY_ENV, "from-env")
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
-            geo.map(tmp_path / "w.html", tiles="dark")
+    def test_tile_api_key_parameter_removed(self, geo, tmp_path, builder):
+        with pytest.raises(TypeError):
+            getattr(geo, builder)(tmp_path / "t.html", tile_api_key="k")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -827,23 +833,47 @@ class TestCartoApiKey:
 
 class TestAttribution:
     @pytest.mark.parametrize("builder", BUILDERS)
-    def test_osm_attribution_links_copyright_page(self, geo, tmp_path, builder):
-        options = parse_config(render(geo, tmp_path, builder, tiles="osm"))["tiles"]["options"]
-        assert options["attribution"] == f"&copy; {OSM_COPYRIGHT_LINK} contributors"
+    @pytest.mark.parametrize("name", OSM_PRESETS)
+    def test_osm_attribution_links_copyright_page(self, geo, tmp_path, builder, name):
+        options = parse_config(render(geo, tmp_path, builder, tiles=name))["tiles"]["options"]
+        assert options["attribution"] == OSM_ATTRIBUTION
 
-    @pytest.mark.parametrize("preset", CARTO_PRESETS)
-    def test_carto_attribution_credits_osm_and_carto(self, geo, tmp_path, preset):
-        options = parse_config(render(geo, tmp_path, tiles=preset))["tiles"]["options"]
+    @pytest.mark.parametrize("name", sorted(set(PRESET_URLS) - {"none", "satellite"}))
+    def test_every_osm_basemap_credits_openstreetmap(self, geo, tmp_path, name):
+        options = parse_config(render(geo, tmp_path, tiles=name))["tiles"]["options"]
         assert OSM_COPYRIGHT_LINK in options["attribution"]
-        assert '<a href="https://carto.com/attribution/">CARTO</a>' in options["attribution"]
-        assert options["subdomains"] == "abcd"
-        assert options["maxZoom"] == 20
+
+    @pytest.mark.parametrize(("name", "credit"), [
+        ("humanitarian", "hotosm.org"), ("topo", "opentopomap.org"), ("cyclosm", "CyclOSM"),
+        ("osm-fr", "openstreetmap.fr"), ("osm-de", "openstreetmap.de"), ("satellite", "NASA GIBS"),
+    ])
+    def test_style_authors_credited(self, geo, tmp_path, name, credit):
+        options = parse_config(render(geo, tmp_path, tiles=name))["tiles"]["options"]
+        assert credit in options["attribution"]
 
     def test_osm_tiles_use_single_host_without_subdomains(self, geo, tmp_path):
         tiles = parse_config(render(geo, tmp_path, tiles="osm"))["tiles"]
         assert "{s}" not in tiles["url"]
         assert "subdomains" not in tiles["options"]
         assert tiles["options"]["maxZoom"] == 19
+
+    @pytest.mark.parametrize("name", sorted(set(PRESET_URLS) - {"none"}))
+    def test_max_zoom_set(self, geo, tmp_path, name):
+        options = parse_config(render(geo, tmp_path, tiles=name))["tiles"]["options"]
+        assert 10 <= options["maxZoom"] <= 20
+
+    def test_satellite_overzooms_native_level_8(self, geo, tmp_path):
+        options = parse_config(render(geo, tmp_path, tiles="satellite"))["tiles"]["options"]
+        assert options["maxNativeZoom"] == 8
+
+    @pytest.mark.parametrize("name", sorted(set(PRESET_URLS) - {"none"}))
+    def test_tile_urls_are_https_and_keyless(self, geo, tmp_path, name):
+        url = parse_config(render(geo, tmp_path, tiles=name))["tiles"]["url"]
+        assert url.startswith("https://") and "key" not in url.lower()
+
+    def test_osm_url_is_exactly_the_policy_url(self):
+        # The OSMF policy requires this exact URL (no {s} subdomains, no http).
+        assert {_TILES[n]["url"] for n in OSM_PRESETS} == {"https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1184,23 +1214,50 @@ class TestJsonSafe:
 # White-box: map_builder._to_js
 # ─────────────────────────────────────────────────────────────────────────────
 
+def unwrap(text: str) -> str:
+    """The JSON text inside ``JSON.parse("…")``."""
+    assert text.startswith("JSON.parse(") and text.endswith(")"), text
+    inner: str = json.loads(text[len("JSON.parse("):-1])
+    return inner
+
+
 class TestToJs:
     @pytest.mark.parametrize(("value", "expected"), [
-        ("</script>", '"\\u003c/script\\u003e"'),
-        ("a&b", '"a\\u0026b"'),
-        ("<!--", '"\\u003c!--"'),
-        ("\u2028\u2029", '"\\u2028\\u2029"'),
+        ("</script>", '"</script>"'),
+        ("a&b", '"a&b"'),
+        ("<!--", '"<!--"'),
+        ("\u2028\u2029", '"\u2028\u2029"'),
         ("é東😀", '"é東😀"'),
-        ({"<k>": 1}, '{"\\u003ck\\u003e": 1}'),
+        ({"<k>": 1}, '{"<k>": 1}'),
         (float("nan"), "null"),
         ({"x": float("inf")}, '{"x": null}'),
     ])
-    def test_exact_output(self, value, expected):
+    def test_exact_json(self, value, expected):
+        assert unwrap(_to_js(value)) == expected
+
+    @pytest.mark.parametrize(("value", "expected"), [
+        ("</script>", 'JSON.parse("\\"\\u003c/script\\u003e\\"")'),
+        ("a&b", 'JSON.parse("\\"a\\u0026b\\"")'),
+        ("\u2028", 'JSON.parse("\\"\\u2028\\"")'),
+        ({"a": 1}, 'JSON.parse("{\\"a\\": 1}")'),
+    ])
+    def test_exact_literal(self, value, expected):
         assert _to_js(value) == expected
 
     def test_output_round_trips_as_json(self):
         obj = {"html": XSS, "amp": "&", "list": [1, 2.5, None, True], "nested": {"q": '"'}}
-        assert json.loads(_to_js(obj)) == obj
+        assert json.loads(unwrap(_to_js(obj))) == obj
+
+    def test_proto_key_is_plain_data(self):
+        # An object literal would turn "__proto__" into the prototype; JSON.parse keeps it.
+        obj = {"__proto__": {"polluted": 1}, "constructor": "x"}
+        assert _to_js(obj).startswith("JSON.parse(")
+        assert json.loads(unwrap(_to_js(obj))) == obj
+
+    def test_lone_surrogates_escaped(self):
+        text = _to_js({"s": "a\udc80b"})
+        text.encode("utf-8")   # no unencodable code points in the page
+        assert "\\\\udc80" in text
 
     def test_dates_times_decimals_sets(self):
         obj = {
@@ -1211,22 +1268,22 @@ class TestToJs:
             "set": {"b", "a"},
             "fs": frozenset({2, 1}),
         }
-        assert json.loads(_to_js(obj)) == {
+        assert json.loads(unwrap(_to_js(obj))) == {
             "dt": "2026-10-19T08:30:00", "d": "2026-10-19", "t": "08:30:01",
             "dec": 0.1, "set": ["a", "b"], "fs": [1, 2],
         }
 
     def test_set_order_is_deterministic(self):
         # Sorted by str() so mixed types never raise and output is stable.
-        assert _to_js({10, 9}) == "[10, 9]"
-        assert _to_js({1, "a"}) == '[1, "a"]'
+        assert unwrap(_to_js({10, 9})) == "[10, 9]"
+        assert unwrap(_to_js({1, "a"})) == '[1, "a"]'
 
     def test_unknown_objects_fall_back_to_str(self):
-        assert _to_js(complex(1, 2)) == '"(1+2j)"'
-        assert _to_js(Path("a")) == json.dumps(str(Path("a")))
+        assert unwrap(_to_js(complex(1, 2))) == '"(1+2j)"'
+        assert unwrap(_to_js(Path("a"))) == json.dumps(str(Path("a")))
 
     def test_non_string_keys_become_strings(self):
-        assert json.loads(_to_js({1: "a", None: "b"})) == {"1": "a", "null": "b"}
+        assert json.loads(unwrap(_to_js({1: "a", None: "b"}))) == {"1": "a", "null": "b"}
 
     def test_randomised_strings_never_leak_dangerous_chars(self):
         rng = random.Random(20261019)
@@ -1236,4 +1293,4 @@ class TestToJs:
             obj = {s: [s, {"k": s}]}
             text = _to_js(obj)
             assert not set(text) & set("<>&\n\u2028\u2029"), repr(s)
-            assert json.loads(text) == obj
+            assert json.loads(unwrap(text)) == obj

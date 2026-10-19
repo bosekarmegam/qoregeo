@@ -38,7 +38,9 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Leaflet and leaflet.heat are loaded with **Subresource Integrity** hashes (verified
   against the npm-published files; v1.0.2 shipped a mistyped hash, which v1.0.3 worked
   around by dropping SRI) and fall back to a second CDN.
-- The error overlay no longer uses `innerHTML`.
+- The error overlay no longer uses `innerHTML`; map data is embedded with `JSON.parse`, so
+  a property named `__proto__` can't change the object's prototype.
+- `map()`, `heatmap()` and `image()` refuse to overwrite the data file that was loaded.
 - `save()` and map output are written atomically: a failure never truncates an
   existing file (symlinks are followed and read-only files are still refused).
 
@@ -109,12 +111,32 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and phone numbers as strings.
 - `load_data()` accepts FeatureCollections, Features, Geometries and any iterable
   (Feature dicts with a missing or mis-cased `"type"` are still accepted, as in 1.0).
-- Maps: all geometry types, `tiles=` (`dark`, `light`, `voyager`, `osm`, or a custom
-  URL with `attribution=`), `tile_api_key=` / `QOREGEO_CARTO_API_KEY` (CARTO basemaps
-  require a free key since August 2026 — QOREgeo warns when it is missing; the key is
-  also added to custom CARTO style URLs),
-  `overlays=` (e.g. draw a buffer), canvas-rendered markers, OSM/CARTO attribution
-  as their terms require; heatmap `radius` / `blur`.
+- Maps: all geometry types, `overlays=` (e.g. draw a buffer), canvas-rendered markers,
+  heatmap `radius` / `blur`.
+- **Open, keyless basemaps** — `tiles=` `light` (default: OpenStreetMap with muted
+  colours), `osm`, `dark`, `humanitarian`, `cyclosm`, `osm-fr`, `osm-de`, `topo`
+  (OpenTopoMap), `satellite` (NASA Blue Marble) and `none`, or a custom URL template with
+  `attribution=`; `tile_presets()` lists them. CARTO basemaps were dropped because they
+  need an API key since 2026. OpenStreetMap tiles are requested with the Referer their
+  policy requires; a page opened from disk (which can't send one) shows how to view it
+  instead of requesting tiles.
+- **`geo.show()`** and **`qoregeo serve map.html`** serve a map from `127.0.0.1` and open
+  the browser; `map_html()` / `heatmap_html()` return pages as strings; a `GeoEngine`
+  displays as an interactive map in Jupyter.
+- **Static PNG / SVG maps** in pure Python: `geo.image("map.png" | "map.svg")`,
+  `to_png()`, `to_svg()`, `qoregeo.render_png()` / `render_svg()`.
+- **Geocoding**: `qoregeo.Geocoder` for OpenStreetMap Nominatim, Photon or a self-hosted
+  server — 1 request/second per public server, identifying User-Agent, LRU cache,
+  `GeocodingError` with actionable hints.
+- **`intersects()`** and **`filter_intersects()`** for any GeoJSON (exact for buffers).
+- `save(csv_safe=True)` escapes spreadsheet formulas (CSV injection).
+- **Command line**: `qoregeo info | distance | map | image | export | serve | geocode |
+  reverse | tiles | tools | call | mcp | skill` (also `python -m qoregeo`).
+- **AI integration**: a zero-dependency **MCP server** (`qoregeo mcp`, protocol
+  2024-11-05 … 2026-07-28, folder sandbox, opt-in writes and geocoding, PNG previews the
+  model can see); **Claude / OpenAI tool schemas** (`qoregeo.tools`); an **Agent Skill**
+  (`qoregeo skill install | zip`); a Claude Code / Codex **plugin + marketplace**, a Gemini
+  CLI extension, an MCP Registry `server.json`, `AGENTS.md` and `llms.txt`.
 - `buffer()` rings follow the RFC 7946 right-hand rule (counter-clockwise).
 - Exceptions inherit the matching built-ins (`ValueError`, `LookupError`,
   `RuntimeError`, `FileNotFoundError`) and expose attributes (`.lat`, `.unit`,
@@ -125,7 +147,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `py.typed` marker and a public `PointLike` type — the inline type hints are now
   visible to type checkers (the package passes `mypy --strict`; `bearing()` has
   precise overloads).
-- ~1,480 tests (geometry, I/O, dataset operations, maps, exceptions).
+- Thousands of offline tests (geometry, I/O, dataset operations, maps, rendering,
+  geocoding, CLI, MCP protocol conformance, tools).
 
 ### Changed
 - Version is single-sourced from `qoregeo/_version.py`.

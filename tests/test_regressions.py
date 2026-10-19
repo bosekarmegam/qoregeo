@@ -47,9 +47,9 @@ def _names(geo: GeoEngine) -> list[str]:
 
 def parse_config(page: str) -> dict[str, Any]:
     """The JSON assigned to ``var CONFIG`` in a generated map page."""
-    found = re.findall(r"^[ \t]*var CONFIG = (.*);[ \t]*$", page, re.MULTILINE)
+    found = re.findall(r"^[ \t]*var CONFIG = JSON\.parse\((.*)\);[ \t]*$", page, re.MULTILINE)
     assert len(found) == 1
-    result: dict[str, Any] = json.loads(found[0])
+    result: dict[str, Any] = json.loads(json.loads(found[0]))
     return result
 
 
@@ -345,10 +345,46 @@ class TestAntimeridianMaps:
         assert cfg["worldCopyJump"] is False
         assert _lngs(cfg) == pytest.approx([180.5])
 
-    @pytest.mark.parametrize("kwargs", [{"tile_api_key": 123}, {"attribution": 5}])
+    @pytest.mark.parametrize("kwargs", [{"attribution": 5}, {"attribution": ["x"]}])
     def test_non_string_tile_options_rejected(self, two_cities, tmp_path, kwargs):
         with pytest.raises(InvalidArgumentError):
             two_cities.map(tmp_path / "t.html", **kwargs)
+
+
+class TestWorldSpanningMaps:
+    """World-wide data stays a world map: no antimeridian folding (HTML and images agree)."""
+
+    WORLD_BOX = {"type": "Polygon",
+                 "coordinates": [[[-180, -60], [180, -60], [180, 60], [-180, 60], [-180, -60]]]}
+
+    def test_world_box_with_a_point_is_not_folded(self):
+        geo = GeoEngine(verbose=False).load_data([
+            {"type": "Feature", "geometry": self.WORLD_BOX, "properties": {}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [77.2, 28.6]}, "properties": {}},
+        ])
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is True
+        assert cfg["data"]["features"][0]["geometry"] == self.WORLD_BOX
+
+    def test_world_box_overlay_prevents_folding(self):
+        geo = GeoEngine(verbose=False).add_point(-17.0, 179.5).add_point(-17.5, -179.5)
+        cfg = parse_config(geo.map_html(overlays=[self.WORLD_BOX]))
+        assert cfg["worldCopyJump"] is True
+        assert sorted(_lngs(cfg)) == [-179.5, 179.5]
+
+    def test_crossing_span_wider_than_a_hemisphere_is_not_shifted(self):
+        geo = GeoEngine(verbose=False)
+        for lng in (100.0, 170.0, -170.0, -60.0):    # tightest span 100° → -60° is 200° wide
+            geo.add_point(0.0, lng)
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is True
+        assert sorted(_lngs(cfg)) == [-170.0, -60.0, 100.0, 170.0]
+
+    def test_narrow_cluster_still_unwrapped(self):
+        geo = GeoEngine(verbose=False).add_point(-18.1, 178.4).add_point(-16.8, -179.9)
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is False
+        assert sorted(_lngs(cfg)) == pytest.approx([178.4, 180.1])
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only path check")

@@ -1,9 +1,9 @@
 """
 qoregeo
 =======
-Quantum-Powered Spatial Intelligence for Python.
+Zero-dependency geospatial toolkit for Python — and for AI assistants.
 
-Zero C++ dependencies. Pure Python. Installs in 2 seconds.
+Pure standard library: installs in seconds anywhere Python 3.10+ runs.
 
 Quick Start
 -----------
@@ -24,8 +24,16 @@ Quick Start
     zone = geo.buffer((28.6139, 77.2090), radius=10)
     inside = geo.point_in_polygon((28.65, 77.22), zone)
 
-    # Filter by radius and export a map
-    geo.filter_by_radius(28.61, 77.20, radius=400).map("nearby.html")
+    # Filter by radius, then an OpenStreetMap map and a static image
+    nearby = geo.filter_by_radius(28.61, 77.20, radius=400)
+    nearby.map("nearby.html")       # view with: qoregeo serve nearby.html
+    nearby.image("nearby.png")
+
+AI assistants
+-------------
+    qoregeo mcp                     # MCP server (Claude, Codex, Cursor, VS Code, Gemini …)
+    qoregeo skill install           # Agent Skill for Claude Code / Codex / Gemini / Copilot
+    from qoregeo.tools import tool_definitions, call_tool   # Claude / OpenAI function calling
 
 Links
 -----
@@ -34,7 +42,7 @@ Links
 - Issues   : https://github.com/bosekarmegam/qoregeo/issues
 """
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import exceptions as _exceptions
 from ._version import __version__
@@ -43,6 +51,7 @@ from .exceptions import (
     ColumnNotFoundError,
     EmptyDatasetError,
     FileReadError,
+    GeocodingError,
     GeoFileNotFoundError,
     InvalidArgumentError,
     InvalidBufferError,
@@ -54,6 +63,21 @@ from .exceptions import (
     QOREgeoError,
     UnsupportedFormatError,
 )
+from .map_builder import tile_presets
+
+if TYPE_CHECKING:
+    from .geocode import Geocoder
+    from .render import render_png, render_svg
+    from .serve import serve_file, serve_html
+
+# Loaded on first use so `import qoregeo` doesn't pull in urllib / http.server.
+_LAZY = {
+    "Geocoder": "geocode",
+    "render_png": "render",
+    "render_svg": "render",
+    "serve_file": "serve",
+    "serve_html": "serve",
+}
 
 __author__   = "Suneel Bose"
 __email__    = "suneelbosekarmegam@gmail.com"
@@ -66,6 +90,12 @@ def __getattr__(name: str) -> Any:
     # ``from qoregeo import *`` never shadows the built-in.
     if name == "FileNotFoundError":
         return _exceptions._deprecated_file_not_found()
+    if name in _LAZY:
+        import importlib
+
+        value = getattr(importlib.import_module(f".{_LAZY[name]}", __name__), name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -73,6 +103,13 @@ __all__ = [
     # Main class
     "GeoEngine",
     "PointLike",
+    # Geocoding, images, maps
+    "Geocoder",
+    "render_png",
+    "render_svg",
+    "serve_file",
+    "serve_html",
+    "tile_presets",
     # Exceptions
     "QOREgeoError",
     "NoDataError",
@@ -87,5 +124,6 @@ __all__ = [
     "EmptyDatasetError",
     "InvalidRadiusError",
     "InvalidBufferError",
+    "GeocodingError",
     "__version__",
 ]

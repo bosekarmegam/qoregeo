@@ -1,0 +1,22 @@
+# qoregeo
+
+> Zero-dependency, pure-Python GIS toolkit (Python 3.10+): distances, bearings, buffers, point-in-polygon, intersections, area/length, nearest-neighbour and attribute filters over CSV/GeoJSON, interactive OpenStreetMap maps and heatmaps, static PNG/SVG map images and OpenStreetMap geocoding — plus a CLI, a zero-dependency MCP server and an Agent Skill for AI assistants.
+
+Install with `pip install qoregeo` (or run `uvx qoregeo …`). Python API: `from qoregeo import GeoEngine`; points are `(lat, lng)`, GeoJSON coordinates are `[lng, lat]`. MCP server: `qoregeo mcp` (stdio; tools take `{"lat", "lng"}` objects; files confined to a root folder; geocoding only with `--allow-network`). HTML maps use OpenStreetMap tiles, which need the page served over http: `qoregeo serve map.html` or `geo.show()`.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/README.md): installation, full Python API, maps, CLI, MCP client setup
+- [Agent Skill](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/skills/qoregeo/SKILL.md): when and how an agent should use qoregeo (CLI, MCP, Python)
+- [Python API reference](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/skills/qoregeo/references/python-api.md): every GeoEngine method and parameter
+- [Recipes](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/skills/qoregeo/references/recipes.md): store locator, delivery zones, geocoding a CSV, route corridors
+
+## Integration
+
+- [MCP tool registry](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/qoregeo/tools.py): tool names, JSON schemas and handlers (`tool_definitions("anthropic" | "openai" | "mcp")`)
+- [Claude API example](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/examples/claude_tools.py): qoregeo tools in a Claude tool-use loop
+- [Contributor guide for agents](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/AGENTS.md): conventions, checks, layout
+
+## Optional
+
+- [CHANGELOG](https://raw.githubusercontent.com/bosekarmegam/qoregeo/main/CHANGELOG.md): release history

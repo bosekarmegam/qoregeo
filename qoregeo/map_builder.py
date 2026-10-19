@@ -26,7 +26,6 @@ import re
 import sys
 import warnings
 from typing import Any
-from urllib.parse import quote
 
 from ._version import __version__
 from .exceptions import InvalidArgumentError
@@ -76,37 +75,126 @@ _LEAFLET_HEAT_JS: dict[str, Any] = {
 _OSM_ATTR = (
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
 )
-_CARTO_ATTR = _OSM_ATTR + ', &copy; <a href="https://carto.com/attribution/">CARTO</a>'
+_OSM_FR = '<a href="https://openstreetmap.fr/">OpenStreetMap France</a>'
+_OSM_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+# Browsers send the page's origin (never its path) as the Referer that the
+# OpenStreetMap tile policy requires; Leaflet 1.9.4 doesn't set this itself.
+_REFERRER = {"referrerPolicy": "strict-origin-when-cross-origin"}
+_OSM_OPTIONS = {
+    "attribution": _OSM_ATTR + ' | <a href="https://www.openstreetmap.org/fixthemap">Report a map issue</a>',
+    "maxZoom": 19, **_REFERRER,
+}
 
-# Environment variable consulted when no tile_api_key is passed.
-CARTO_KEY_ENV = "QOREGEO_CARTO_API_KEY"
-_CARTO_KEY_URL = "https://carto.com/basemaps/apikey/"
-
+# Open, keyless basemaps.
+# needsReferer: the tile server's policy requires a Referer, which a page
+# opened straight from disk (file://) cannot send. Such pages show a notice
+# explaining how to view the map instead of requesting tiles.
 _TILES: dict[str, dict[str, Any]] = {
-    "dark": {
-        "url": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
-        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
-        "carto": True,
-    },
-    "light": {
-        "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
-        "carto": True,
-    },
-    "voyager": {
-        "url": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
-        "carto": True,
+    "light": {   # OpenStreetMap, softened so the data stands out (the default)
+        "label": "OpenStreetMap, light (muted colours)",
+        "url": _OSM_URL,
+        "options": {**_OSM_OPTIONS, "className": "qg-tiles-light"},
+        "needsReferer": True,
     },
     "osm": {
-        "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        # OSM's tile policy requires a Referer; this sends the page's origin
-        # when the map is served over http(s).
-        "options": {"attribution": _OSM_ATTR, "maxZoom": 19,
-                    "referrerPolicy": "strict-origin-when-cross-origin"},
-        "carto": False,
+        "label": "OpenStreetMap (standard)",
+        "url": _OSM_URL,
+        "options": dict(_OSM_OPTIONS),
+        "needsReferer": True,
+    },
+    "dark": {
+        "label": "OpenStreetMap, dark (inverted colours)",
+        "url": _OSM_URL,
+        "options": {**_OSM_OPTIONS, "className": "qg-tiles-dark"},
+        "needsReferer": True,
+        "background": "#0f111a",
+    },
+    "humanitarian": {
+        "label": "Humanitarian OpenStreetMap (HOT)",
+        "url": "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+        "options": {
+            "attribution": _OSM_ATTR + ', Tiles style by <a href="https://www.hotosm.org/">'
+                           f"Humanitarian OpenStreetMap Team</a> hosted by {_OSM_FR}",
+            "subdomains": "abc", "maxZoom": 20, **_REFERRER,
+        },
+        "needsReferer": True,
+    },
+    "cyclosm": {
+        "label": "CyclOSM (cycling)",
+        "url": "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png",
+        "options": {
+            "attribution": f'<a href="https://www.cyclosm.org">CyclOSM</a> hosted by {_OSM_FR} | '
+                           "Map data " + _OSM_ATTR,
+            "subdomains": "abc", "maxZoom": 20, **_REFERRER,
+        },
+        "needsReferer": True,
+    },
+    "osm-fr": {
+        "label": "OpenStreetMap France style",
+        "url": "https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png",
+        "options": {
+            "attribution": f"&copy; {_OSM_FR} | " + _OSM_ATTR,
+            "subdomains": "abc", "maxZoom": 20, **_REFERRER,
+        },
+        "needsReferer": True,
+    },
+    "osm-de": {  # FOSSGIS: free for non-commercial and small sites
+        "label": "OpenStreetMap Germany style (non-commercial use)",
+        "url": "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+        "options": {
+            "attribution": _OSM_ATTR + ', tiles by <a href="https://www.openstreetmap.de/">'
+                           "OpenStreetMap Deutschland</a>",
+            "maxZoom": 18, **_REFERRER,
+        },
+        "needsReferer": False,
+    },
+    "topo": {
+        "label": "OpenTopoMap (topographic, up to zoom 17)",
+        "url": "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+        "options": {
+            "attribution": "Map data: " + _OSM_ATTR + ', <a href="http://viewfinderpanoramas.org">SRTM</a>'
+                           ' | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> '
+                           '(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+            "subdomains": "abc", "maxZoom": 17, **_REFERRER,
+        },
+        "needsReferer": False,
+    },
+    "satellite": {  # public-domain NASA imagery; 500 m pixels, so an overview map
+        "label": "NASA Blue Marble satellite imagery (overview, up to zoom 10)",
+        "url": "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_NextGeneration/default/"
+               "GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg",
+        "options": {
+            "attribution": 'Imagery: <a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a> '
+                           "(Blue Marble, ESDIS)",
+            "maxNativeZoom": 8, "maxZoom": 10,
+        },
+        "needsReferer": False,
+        "background": "#0b1a2e",
+    },
+    "none": {    # no basemap: nothing is fetched from a tile server
+        "label": "No basemap (nothing is downloaded)",
+        "url": None,
+        "options": {},
+        "needsReferer": False,
+        "background": "#f4f5f7",
     },
 }
+
+# Other accepted spellings.
+_TILE_ALIASES = {
+    "osm-light": "light", "osm_light": "light", "osm-dark": "dark", "osm_dark": "dark",
+    "hot": "humanitarian", "cycling": "cyclosm", "opentopomap": "topo",
+    "osm_fr": "osm-fr", "osm_de": "osm-de", "nasa": "satellite", "bluemarble": "satellite",
+    "blank": "none",
+}
+
+# Shown (instead of requesting tiles) when a page using a needsReferer
+# basemap is opened from disk.
+_FILE_NOTICE = (
+    "OpenStreetMap only serves map tiles to web pages, not to files opened from disk, so "
+    "the basemap is hidden. Run `qoregeo serve {file}` (or `geo.show()` in Python) to see it, "
+    "or create the map with tiles='satellite' or 'topo', which work from disk."
+)
 
 # Placeholders Leaflet's TileLayer understands in a URL template.
 _TILE_PLACEHOLDERS = {"s", "z", "x", "y", "-y", "r"}
@@ -140,14 +228,16 @@ _JS_ESCAPES = {
 
 def _to_js(obj: Any) -> str:
     """
-    Serialise ``obj`` as a JS literal that is safe inside an inline <script>.
+    Serialise ``obj`` as ``JSON.parse("…")``, safe inside an inline <script>.
 
     Values are made JSON-safe first (NaN → null, sets → lists, …, and
     integers beyond 2**53 → strings so no digits are lost in the browser).
+    JSON.parse — unlike an object literal — keeps a property named
+    ``__proto__`` as ordinary data instead of turning it into the prototype.
     """
     text = json.dumps(_json_safe(obj, js=True), ensure_ascii=False, allow_nan=False)
-    text = _escape_surrogates(text)
-    return re.sub("[<>&  ]", lambda m: _JS_ESCAPES[m.group(0)], text)
+    literal = json.dumps(_escape_surrogates(text), ensure_ascii=False)
+    return "JSON.parse(" + re.sub("[<>&\u2028\u2029]", lambda m: _JS_ESCAPES[m.group(0)], literal) + ")"
 
 
 def _render(template: str, values: dict[str, str]) -> str:
@@ -160,30 +250,27 @@ def _html_text(text: Any) -> str:
     return html.escape(str(text).encode("utf-8", "replace").decode("utf-8"))
 
 
-def _tiles_config(
-    tiles: Any,
-    api_key: str | None = None,
-    attribution: str | None = None,
-) -> dict[str, Any]:
+def tile_presets() -> dict[str, str]:
+    """The built-in basemap names and what each one shows."""
+    return {name: preset["label"] for name, preset in _TILES.items()}
+
+
+def _tiles_config(tiles: Any, attribution: str | None = None) -> dict[str, Any]:
     """
     Resolve a basemap name (or a custom ``https://…/{z}/{x}/{y}…`` URL
-    template) to a Leaflet tileLayer config.
+    template) to the page's tile config.
 
-    CARTO basemaps require a free per-user API key since August 2026; it is
-    taken from ``api_key`` or the QOREGEO_CARTO_API_KEY environment variable.
-    Without one CARTO serves tiles with an "API key required" watermark.
-    ``attribution`` is trusted HTML; for presets it is appended to the
-    required OpenStreetMap / CARTO credit.
+    Every preset is open and keyless. ``attribution`` is trusted HTML; for
+    presets it is appended to the provider's required credit.
     """
     presets = " | ".join(repr(k) for k in _TILES)
-    for name, value in (("tile_api_key", api_key), ("attribution", attribution)):
-        if value is not None and not isinstance(value, str):
-            raise InvalidArgumentError(name, value, "a string or None",
-                                       f"geo.map('out.html', {name}='…')")
+    if attribution is not None and not isinstance(attribution, str):
+        raise InvalidArgumentError("attribution", attribution, "a string or None",
+                                   "geo.map('out.html', attribution='&copy; Example')")
     if not isinstance(tiles, str):
         raise InvalidArgumentError(
             "tiles", tiles, f"{presets} or a custom https:// URL template",
-            "geo.map('out.html', tiles='light')",
+            "geo.map('out.html', tiles='topo')",
         )
 
     if tiles.strip().lower().startswith(("https://", "http://")):
@@ -201,45 +288,31 @@ def _tiles_config(
             )
         options: dict[str, Any] = {"maxZoom": 19, "attribution": attribution or ""}
         if "s" in names:
-            options["subdomains"] = "abcd" if ".basemaps.cartocdn.com/" in url else "abc"
-        if ".basemaps.cartocdn.com/" in url and "key=" not in url:
-            # Other CARTO styles (e.g. light_nolabels) need the same key.
-            key = (api_key or os.environ.get(CARTO_KEY_ENV, "")).strip()
-            if key:
-                url += ("&" if "?" in url else "?") + "key=" + quote(key, safe="")
-        elif api_key:
-            warnings.warn(
-                "QOREgeo: tile_api_key is only added to CARTO tile URLs; put your provider's "
-                "key in the tiles= URL template instead.",
-                stacklevel=4,
-            )
-        return {"url": url, "options": options}
+            options["subdomains"] = "abc"
+        return {"name": "custom", "url": url, "options": options, "needsReferer": False}
 
     name = tiles.strip().lower()
+    name = _TILE_ALIASES.get(name, name)
     if name not in _TILES:
+        hint = ""
+        if name in ("voyager", "positron", "dark_matter", "carto", "cartodb"):
+            hint = " (CARTO basemaps were replaced by open, keyless ones in 1.1.0)"
         raise InvalidArgumentError(
-            "tiles", tiles, f"{presets} or a custom https:// URL template",
+            "tiles", tiles, f"{presets} or a custom https:// URL template{hint}",
             "geo.map('out.html', tiles='light')",
         )
     preset = _TILES[name]
-    config = {"url": preset["url"], "options": dict(preset["options"])}
+    config: dict[str, Any] = {
+        "name": name,
+        "url": preset["url"],
+        "options": dict(preset["options"]),
+        "needsReferer": preset["needsReferer"],
+    }
+    if "background" in preset:
+        config["background"] = preset["background"]
     if attribution:
-        config["options"]["attribution"] += ", " + attribution
-
-    if preset["carto"]:
-        key = (api_key or os.environ.get(CARTO_KEY_ENV, "")).strip()
-        if key:
-            config["url"] += "?key=" + quote(key, safe="")
-        else:
-            warnings.warn(
-                f"QOREgeo: CARTO basemaps ('{name}') need a free API key since August 2026 — "
-                f"without one the tiles show an 'API key required' watermark. Get a key at "
-                f"{_CARTO_KEY_URL} and pass tile_api_key='…' (or set {CARTO_KEY_ENV}), or pass "
-                f"your own tiles='https://…/{{z}}/{{x}}/{{y}}.png'. (tiles='osm' also works, but "
-                f"only when the page is served over http(s): OpenStreetMap rejects tile requests "
-                f"from local files.)",
-                stacklevel=4,
-            )
+        current = config["options"].get("attribution")
+        config["options"]["attribution"] = f"{current}, {attribution}" if current else attribution
     return config
 
 
@@ -251,15 +324,46 @@ def _view_config(zoom: int | None, center: Coord | None) -> dict[str, Any]:
     }
 
 
-def _antimeridian_west(lngs: list[float]) -> float | None:
+def _paths(geometry: Any) -> list[Any]:
+    """The lines and rings of ``geometry`` (as coordinate lists)."""
+    if not isinstance(geometry, dict):
+        return []
+    gtype, coords = geometry.get("type"), geometry.get("coordinates")
+    if gtype == "GeometryCollection":
+        return [p for g in geometry.get("geometries") or [] for p in _paths(g)]
+    if not isinstance(coords, list):
+        return []
+    if gtype == "LineString":
+        return [coords]
+    if gtype in ("MultiLineString", "Polygon"):
+        return list(coords)
+    if gtype == "MultiPolygon":
+        return [ring for poly in coords if isinstance(poly, list) for ring in poly]
+    return []
+
+
+def _spans_world(geometries: list[Any]) -> bool:
+    """True if a line or ring runs all the way round the globe (e.g. -180° to 180°)."""
+    for path in (p for g in geometries for p in _paths(g)):
+        xs = [float(c[0]) for c in path if isinstance(c, list) and c and isinstance(c[0], (int, float))]
+        if xs and max(xs) - min(xs) >= 360.0:
+            return True
+    return False
+
+
+def _antimeridian_west(lngs: list[float], geometries: list[Any] | None = None) -> float | None:
     """
-    If the tightest longitude span of ``lngs`` crosses ±180°, return its
-    western edge (longitudes below it belong east of 180°); else None.
+    If the data is one cluster across ±180° — its tightest longitude span
+    crosses the antimeridian and is under 180° wide, and no shape runs round
+    the whole globe (Antarctica, a world bbox) — return the span's western
+    edge (longitudes below it belong east of 180°); else None.
     """
     if not lngs:
         return None
     west, east = _lng_span(lngs)
-    return west if west > east else None
+    if west <= east or east + 360.0 - west >= 180.0 or _spans_world(geometries or []):
+        return None
+    return west
 
 
 def _unwrap_lng(lng: float, west: float) -> float:
@@ -380,6 +484,13 @@ _PAGE = """\
   .qg-popup td { padding:2px 0; vertical-align:top; word-break:break-word; }
   .qg-popup td.qg-k { padding-right:8px; color:#6b6b7b; font-weight:600; white-space:nowrap; }
   .qg-empty { color:#6b6b7b; }
+  .qg-tiles-light { filter:grayscale(.7) brightness(1.04) contrast(.92); }
+  .qg-tiles-dark { filter:invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.45); }
+  #qg-notice { top:16px; left:56px; max-width:min(calc(100vw - 72px), 520px); padding:10px 34px 10px 14px;
+               line-height:1.45; color:#fff; border-color:rgba(255,215,0,.5); }
+  #qg-notice code { color:#FFD700; font-family:ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #qg-notice button { position:absolute; top:6px; right:8px; background:none; border:0; color:#fff;
+                      font-size:18px; line-height:1; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -433,10 +544,34 @@ __EXTRA_HTML__
     showError(err && err.message ? err.message : String(err));
   });
 
+  function showNotice(text) {
+    var box = document.createElement("div");
+    box.id = "qg-notice";
+    box.className = "qg-panel";
+    box.setAttribute("role", "status");
+    text.split("`").forEach(function (part, i) {
+      var node = document.createElement(i % 2 ? "code" : "span");
+      node.textContent = part;
+      box.appendChild(node);
+    });
+    var close = document.createElement("button");
+    close.type = "button";
+    close.setAttribute("aria-label", "Dismiss");
+    close.textContent = "\u00d7";
+    close.onclick = function () { box.remove(); };
+    box.appendChild(close);
+    document.body.appendChild(box);
+  }
+
   function baseMap(L) {
     var map = L.map("map", { zoomControl: true, preferCanvas: true,
                              worldCopyJump: CONFIG.worldCopyJump });
-    L.tileLayer(CONFIG.tiles.url, CONFIG.tiles.options).addTo(map);
+    var t = CONFIG.tiles;
+    var blocked = t.needsReferer && location.protocol === "file:";
+    var background = blocked ? "#f4f5f7" : t.background;
+    if (background) map.getContainer().style.background = background;
+    if (blocked) showNotice(CONFIG.fileNotice);
+    else if (t.url) L.tileLayer(t.url, t.options).addTo(map);
     return map;
   }
 
@@ -526,19 +661,43 @@ _MAP_INIT = """\
 """
 
 
-def build_map(
+def _file_notice(output_path: str | None) -> str:
+    name = os.path.basename(output_path) if output_path else "map.html"
+    if any(ch.isspace() for ch in name):
+        name = f'"{name}"'
+    return _FILE_NOTICE.format(file=name)
+
+
+def _shell(title: str, extra_html: str, config: dict[str, Any], init: str) -> str:
+    return _render(_PAGE, {
+        "VERSION": __version__,
+        "TITLE": _html_text(title),
+        "CSS_URL": _LEAFLET_CSS["urls"][0],
+        "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
+        "CSS_SRI": _LEAFLET_CSS["integrity"],
+        "EXTRA_HTML": extra_html,
+        "CONFIG": _to_js(config),
+        "INIT": init,
+    })
+
+
+def map_page(
     features: list[Feature],
-    output_path: str,
     title: str = "QOREgeo Map",
     zoom: int | None = None,
     center: Coord | None = None,
-    tiles: str = "dark",
+    tiles: str = "light",
     overlays: list[dict[str, Any]] | None = None,
-    verbose: bool = True,
-    tile_api_key: str | None = None,
     attribution: str | None = None,
-) -> None:
-    """Write an interactive Leaflet map of ``features`` to ``output_path``."""
+    output_path: str | None = None,
+) -> tuple[str, int]:
+    """
+    Build an interactive Leaflet map page of ``features``.
+
+    Returns ``(html, located)`` where ``located`` is the number of features
+    that have a location. ``output_path`` only names the file in the page's
+    "how to view this map" notice.
+    """
     overlay_list = []
     for i, shape in enumerate(overlays or []):
         problem = _overlay_problem(shape)
@@ -550,14 +709,15 @@ def build_map(
             )
         overlay_list.append(shape)
 
-    tiles_cfg = _tiles_config(tiles, tile_api_key, attribution)
+    tiles_cfg = _tiles_config(tiles, attribution)
 
     # Data spanning the antimeridian is drawn on one continuous longitude
     # range (e.g. 170°…190°) so it opens as one cluster, not a world view.
     lngs = [float(p[0]) for f in features for p in _iter_positions(f.get("geometry"))]
     lngs += [float(p[0]) for s in overlay_list for g in _overlay_geometries(s)
              for p in _iter_positions(g)]
-    west = _antimeridian_west(lngs)
+    west = _antimeridian_west(lngs, [f.get("geometry") for f in features]
+                              + [g for s in overlay_list for g in _overlay_geometries(s)])
     if west is not None:
         features = [{**f, "geometry": _shift_geometry(f.get("geometry"), west)} for f in features]
         overlay_list = [_shift_overlay(s, west) for s in overlay_list]
@@ -566,23 +726,32 @@ def build_map(
         "data": {"type": "FeatureCollection", "features": features},
         "overlays": overlay_list,
         "tiles": tiles_cfg,
+        "fileNotice": _file_notice(output_path),
         "view": _view_config(zoom, _view_center(center, west)),
         "worldCopyJump": west is None,
         "style": _STYLE,
         "scripts": [_LEAFLET_JS],
     }
-    page = _render(_PAGE, {
-        "VERSION": __version__,
-        "TITLE": _html_text(title),
-        "CSS_URL": _LEAFLET_CSS["urls"][0],
-        "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
-        "CSS_SRI": _LEAFLET_CSS["integrity"],
-        "EXTRA_HTML": '<div id="count" class="qg-panel"><span id="n">0</span> features</div>',
-        "CONFIG": _to_js(config),
-        "INIT": _MAP_INIT,
-    })
-    _write(output_path, page)
+    page = _shell(title, '<div id="count" class="qg-panel"><span id="n">0</span> features</div>',
+                  config, _MAP_INIT)
     located = sum(1 for f in features if _representative_point(f.get("geometry")) is not None)
+    return page, located
+
+
+def build_map(
+    features: list[Feature],
+    output_path: str,
+    title: str = "QOREgeo Map",
+    zoom: int | None = None,
+    center: Coord | None = None,
+    tiles: str = "light",
+    overlays: list[dict[str, Any]] | None = None,
+    verbose: bool = True,
+    attribution: str | None = None,
+) -> None:
+    """Write an interactive Leaflet map of ``features`` to ``output_path``."""
+    page, located = map_page(features, title, zoom, center, tiles, overlays, attribution, output_path)
+    _write(output_path, page)
     _announce(f"✅  Map saved → {output_path}  ({_plural(located, 'feature')})", verbose)
 
 
@@ -659,22 +828,26 @@ def _heat_points(
     return points
 
 
-def build_heatmap(
+def heatmap_page(
     features: list[Feature],
-    output_path: str,
     title: str = "QOREgeo Heatmap",
     intensity_col: str | None = None,
     zoom: int | None = None,
     center: Coord | None = None,
-    tiles: str = "dark",
+    tiles: str = "light",
     radius: int = 25,
     blur: int = 18,
-    verbose: bool = True,
-    tile_api_key: str | None = None,
     attribution: str | None = None,
-) -> None:
-    """Write a Leaflet heatmap of ``features`` to ``output_path``."""
-    tiles_cfg = _tiles_config(tiles, tile_api_key, attribution)
+    output_path: str | None = None,
+    stacklevel: int = 3,
+) -> tuple[str, int]:
+    """
+    Build a Leaflet heatmap page of ``features``.
+
+    Returns ``(html, points)``. Rows that add no heat are reported with a
+    warning attributed ``stacklevel`` frames up (3 = the caller's caller).
+    """
+    tiles_cfg = _tiles_config(tiles, attribution)
     dropped: list[Any] = []
     points = _heat_points(features, intensity_col, dropped)
     if dropped:
@@ -684,7 +857,7 @@ def build_heatmap(
             f"non-positive '{intensity_col}' value ({examples}) "
             f"{'adds' if len(dropped) == 1 else 'add'} no heat"
             + (" — the heatmap is empty." if not points else "."),
-            stacklevel=3,
+            stacklevel=stacklevel,
         )
 
     west = _antimeridian_west([p[1] for p in points])
@@ -706,19 +879,29 @@ def build_heatmap(
             "gradient": _HEAT_GRADIENT,
         },
         "tiles": tiles_cfg,
+        "fileNotice": _file_notice(output_path),
         "view": _view_config(zoom, _view_center(center, west)),
         "worldCopyJump": west is None,
         "scripts": [_LEAFLET_JS, _LEAFLET_HEAT_JS],
     }
-    page = _render(_PAGE, {
-        "VERSION": __version__,
-        "TITLE": _html_text(title),
-        "CSS_URL": _LEAFLET_CSS["urls"][0],
-        "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
-        "CSS_SRI": _LEAFLET_CSS["integrity"],
-        "EXTRA_HTML": "",
-        "CONFIG": _to_js(config),
-        "INIT": _HEAT_INIT,
-    })
+    return _shell(title, "", config, _HEAT_INIT), len(points)
+
+
+def build_heatmap(
+    features: list[Feature],
+    output_path: str,
+    title: str = "QOREgeo Heatmap",
+    intensity_col: str | None = None,
+    zoom: int | None = None,
+    center: Coord | None = None,
+    tiles: str = "light",
+    radius: int = 25,
+    blur: int = 18,
+    verbose: bool = True,
+    attribution: str | None = None,
+) -> None:
+    """Write a Leaflet heatmap of ``features`` to ``output_path``."""
+    page, n = heatmap_page(features, title, intensity_col, zoom, center, tiles, radius, blur,
+                           attribution, output_path, stacklevel=4)
     _write(output_path, page)
-    _announce(f"✅  Heatmap saved → {output_path}  ({_plural(len(points), 'point')})", verbose)
+    _announce(f"✅  Heatmap saved → {output_path}  ({_plural(n, 'point')})", verbose)

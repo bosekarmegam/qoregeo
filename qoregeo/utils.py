@@ -24,7 +24,7 @@ import shutil
 import threading
 import warnings
 from collections.abc import Iterator, Sequence
-from typing import Any
+from typing import IO, Any
 
 from .exceptions import (
     ColumnNotFoundError,
@@ -677,6 +677,226 @@ def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Intersection test
+# ─────────────────────────────────────────────────────────────────────────────
+
+_XY = tuple[float, float]   # (lng, lat) — planar GeoJSON order
+
+
+class _Shape:
+    """A geometry decomposed into points, line strings and polygons (lng, lat)."""
+
+    def __init__(self) -> None:
+        self.points: list[_XY] = []
+        self.lines: list[list[_XY]] = []
+        self.polygons: list[list[list[_XY]]] = []
+        self.circles: list[tuple[float, float, float]] = []   # (lat, lng, radius_km)
+
+    def segments(self) -> Iterator[tuple[_XY, _XY]]:
+        for line in self.lines:
+            for i in range(1, len(line)):
+                yield line[i - 1], line[i]
+        for rings in self.polygons:
+            for ring in rings:
+                for i in range(1, len(ring)):
+                    yield ring[i - 1], ring[i]
+                if ring and ring[0] != ring[-1]:
+                    yield ring[-1], ring[0]
+
+    def vertices(self) -> Iterator[_XY]:
+        yield from self.points
+        for line in self.lines:
+            yield from line
+        for rings in self.polygons:
+            for ring in rings:
+                yield from ring
+
+    def is_empty(self) -> bool:
+        return not (self.points or self.lines or self.polygons or self.circles)
+
+
+def _decompose(obj: Any, name: str = "geometry") -> _Shape:
+    """
+    Break a geometry / Feature / FeatureCollection / buffer() result into a
+    _Shape. Raises InvalidArgumentError for anything that isn't GeoJSON.
+    """
+    shape = _Shape()
+
+    def pos(c: Any) -> _XY:
+        return float(c[0]), float(c[1])
+
+    def add(g: Any, depth: int = 0) -> None:
+        if g is None:
+            return
+        if not isinstance(g, dict) or depth > 16:
+            raise InvalidArgumentError(name, g, "a GeoJSON geometry, Feature or FeatureCollection",
+                                       "geo.intersects(zone, {'type': 'Point', 'coordinates': [77.2, 28.6]})")
+        gtype = g.get("type")
+        if gtype == "Feature":
+            add(g.get("geometry"), depth + 1)
+            return
+        if gtype == "FeatureCollection":
+            for f in g.get("features") or []:
+                add(f, depth + 1)
+            return
+        circle = _buffer_circle(g)
+        if circle is not None:
+            shape.circles.append(circle)
+            return
+        problem = _geometry_problem(g)
+        if problem:
+            raise InvalidArgumentError(name, g, f"a valid GeoJSON geometry ({problem})",
+                                       "geo.intersects(zone, {'type': 'Point', 'coordinates': [77.2, 28.6]})")
+        coords: Any = g.get("coordinates")
+        if gtype == "GeometryCollection":
+            for sub in g.get("geometries") or []:
+                add(sub, depth + 1)
+        elif gtype == "Point":
+            shape.points.append(pos(coords))
+        elif gtype == "MultiPoint":
+            shape.points.extend(pos(c) for c in coords)
+        elif gtype in ("LineString", "MultiLineString"):
+            for line in ([coords] if gtype == "LineString" else coords):
+                pts = [pos(c) for c in line]
+                if len(pts) == 1:
+                    shape.points.append(pts[0])
+                elif pts:
+                    shape.lines.append(pts)
+        elif gtype in ("Polygon", "MultiPolygon"):
+            for rings in ([coords] if gtype == "Polygon" else coords):
+                clean = [[pos(c) for c in ring] for ring in rings if len(ring) >= 3]
+                if clean:
+                    shape.polygons.append(clean)
+
+    add(obj)
+    return shape
+
+
+_EPS = 1e-12
+
+
+def _orient(a: _XY, b: _XY, c: _XY) -> float:
+    return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+
+
+def _on_segment(a: _XY, b: _XY, p: _XY) -> bool:
+    if abs(_orient(a, b, p)) > _EPS * max(1.0, abs(b[0] - a[0]) + abs(b[1] - a[1])):
+        return False
+    return (min(a[0], b[0]) - _EPS <= p[0] <= max(a[0], b[0]) + _EPS
+            and min(a[1], b[1]) - _EPS <= p[1] <= max(a[1], b[1]) + _EPS)
+
+
+def _segments_intersect(p1: _XY, p2: _XY, q1: _XY, q2: _XY) -> bool:
+    """True if the closed segments p1–p2 and q1–q2 share at least one point."""
+    d1 = _orient(q1, q2, p1)
+    d2 = _orient(q1, q2, p2)
+    d3 = _orient(p1, p2, q1)
+    d4 = _orient(p1, p2, q2)
+    if ((d1 > 0 > d2) or (d1 < 0 < d2)) and ((d3 > 0 > d4) or (d3 < 0 < d4)):
+        return True
+    return (_on_segment(q1, q2, p1) or _on_segment(q1, q2, p2)
+            or _on_segment(p1, p2, q1) or _on_segment(p1, p2, q2))
+
+
+def _point_in_rings_or_boundary(p: _XY, rings: list[list[_XY]]) -> bool:
+    for ring in rings:
+        for i in range(len(ring)):
+            if _on_segment(ring[i - 1], ring[i], p):
+                return True
+    return _point_in_polygon_rings(p[1], p[0], [[list(c) for c in r] for r in rings])
+
+
+def _point_in_shape(p: _XY, shape: _Shape) -> bool:
+    """True if point ``p`` touches ``shape`` (inside a polygon or circle, on a line, or equal)."""
+    if any(_haversine_km((p[1], p[0]), (c[0], c[1])) <= c[2] for c in shape.circles):
+        return True
+    if any(abs(p[0] - q[0]) <= _EPS and abs(p[1] - q[1]) <= _EPS for q in shape.points):
+        return True
+    for line in shape.lines:
+        if any(_on_segment(line[i - 1], line[i], p) for i in range(1, len(line))):
+            return True
+    return any(_point_in_rings_or_boundary(p, rings) for rings in shape.polygons)
+
+
+def _circle_as_polygon(c: tuple[float, float, float]) -> list[list[_XY]]:
+    ring = _generate_circle_polygon((c[0], c[1]), c[2], 128)
+    return [[(x, y) for x, y in ring]]
+
+
+def _planar_intersect(pa: _Shape, pb: _Shape) -> bool:
+    """Straight-edge lng/lat intersection of two shapes without circles."""
+    for p in pa.points:
+        if _point_in_shape(p, pb):
+            return True
+    for p in pb.points:
+        if _point_in_shape(p, pa):
+            return True
+
+    seg_b = list(pb.segments())
+    for s1 in pa.segments():
+        for s2 in seg_b:
+            if _segments_intersect(s1[0], s1[1], s2[0], s2[1]):
+                return True
+
+    # No crossing edges: one shape may still lie entirely inside the other.
+    for inner, outer in ((pa, pb), (pb, pa)):
+        for part in inner.lines + [rings[0] for rings in inner.polygons]:
+            if part and any(_point_in_rings_or_boundary(part[0], rings) for rings in outer.polygons):
+                return True
+    return False
+
+
+def _shifted(shape: _Shape, dx: float) -> _Shape:
+    """``shape`` moved ``dx`` degrees in longitude."""
+    out = _Shape()
+    out.points = [(x + dx, y) for x, y in shape.points]
+    out.lines = [[(x + dx, y) for x, y in line] for line in shape.lines]
+    out.polygons = [[[(x + dx, y) for x, y in ring] for ring in rings] for rings in shape.polygons]
+    return out
+
+
+def _geometries_intersect(a: Any, b: Any) -> bool:
+    """
+    True if two geometries share at least one point (touching counts), using
+    straight edges in lng/lat like point_in_polygon(). Buffers are tested as
+    exact circles where possible. Shapes drawn with continuous longitudes
+    across the antimeridian (e.g. 175° → 185°) also meet shapes written in
+    the usual -180°…180° range.
+    """
+    for value, name in ((a, "geometry_a"), (b, "geometry_b")):
+        if value is None:
+            raise InvalidArgumentError(name, value, "a GeoJSON geometry, Feature or FeatureCollection",
+                                       "geo.intersects(zone, {'type': 'Point', 'coordinates': [77.2, 28.6]})")
+    sa = _decompose(a, "geometry_a")
+    sb = _decompose(b, "geometry_b")
+    if sa.is_empty() or sb.is_empty():
+        return False
+
+    # Circle–circle and circle–point tests are exact on the sphere.
+    for ca in sa.circles:
+        for cb in sb.circles:
+            if _haversine_km((ca[0], ca[1]), (cb[0], cb[1])) <= ca[2] + cb[2]:
+                return True
+    for first, second in ((sa, sb), (sb, sa)):
+        for c in first.circles:
+            if any(_haversine_km((p[1], p[0]), (c[0], c[1])) <= c[2] for p in second.points):
+                return True
+
+    # Other combinations with circles use a fine polygon approximation.
+    def with_circles_as_polygons(shape: _Shape) -> _Shape:
+        out = _Shape()
+        out.points, out.lines = shape.points, shape.lines
+        out.polygons = shape.polygons + [_circle_as_polygon(c) for c in shape.circles]
+        return out
+
+    pa, pb = with_circles_as_polygons(sa), with_circles_as_polygons(sb)
+    offsets = [0.0]
+    if any(abs(x) > 180.0 for shape in (pa, pb) for x, _ in shape.vertices()):
+        offsets += [360.0, -360.0]   # compare on the other world copy too
+    return any(_planar_intersect(pa, _shifted(pb, dx) if dx else pb) for dx in offsets)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Area and length
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1080,10 +1300,11 @@ def _escape_surrogates(text: str) -> str:
     return _SURROGATE_RE.sub(lambda m: f"\\u{ord(m.group(0)):04x}", text)
 
 
-def _atomic_write(path: str, text: str, encoding: str = "utf-8", errors: str = "strict") -> None:
+def _atomic_write(path: str, text: str | bytes, encoding: str = "utf-8", errors: str = "strict") -> None:
     """
-    Write ``text`` to ``path`` via a temporary file in the same directory and
-    an atomic rename, so a failure never leaves a truncated file behind.
+    Write ``text`` (str, or bytes for binary files) to ``path`` via a
+    temporary file in the same directory and an atomic rename, so a failure
+    never leaves a truncated file behind.
 
     Symlinks are followed (the file they point to is updated), a read-only
     target raises PermissionError like a plain ``open(path, "w")`` would, and
@@ -1094,8 +1315,13 @@ def _atomic_write(path: str, text: str, encoding: str = "utf-8", errors: str = "
     parent = os.path.dirname(real)
     os.makedirs(parent, exist_ok=True)
 
+    def open_for(name: str, mode: str) -> IO[Any]:
+        if isinstance(text, bytes):
+            return open(name, mode + "b")
+        return open(name, mode, encoding=encoding, errors=errors, newline="")
+
     def write_in_place() -> None:
-        with open(real, "w", encoding=encoding, errors=errors, newline="") as f:
+        with open_for(real, "w") as f:
             f.write(text)
 
     if os.path.exists(real):
@@ -1107,7 +1333,7 @@ def _atomic_write(path: str, text: str, encoding: str = "utf-8", errors: str = "
 
     tmp = os.path.join(parent, f".qg-{secrets.token_hex(6)}.tmp")
     try:
-        f = open(tmp, "x", encoding=encoding, errors=errors, newline="")
+        f = open_for(tmp, "x")
     except OSError:
         write_in_place()       # e.g. a writable file in a read-only folder
         return

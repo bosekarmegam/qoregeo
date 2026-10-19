@@ -333,6 +333,29 @@ class InvalidArgumentError(QOREgeoError, ValueError):
         super().__init__(msg)
 
 
+class GeocodingError(QOREgeoError, RuntimeError):
+    """
+    Raised when a geocoding request fails: network error, timeout, an HTTP
+    error status (``status``) or a response that is not what was expected.
+    """
+
+    def __init__(self, message: str, hint: str | None = None, status: int | None = None) -> None:
+        self.reason = message
+        self.hint = hint
+        self.status = status
+        fix = hint or "Check your internet connection, then try again in a moment."
+        fix_lines = "\n".join(f"    {line}" if line.strip() else "" for line in fix.splitlines())
+        code = f"HTTP status: {status}\n" if status is not None else ""
+        msg = (
+            f"\n\n❌  QOREgeo — Geocoding Failed\n{_LINE}\n"
+            f"{message}\n"
+            f"{code}\n"
+            f"Fix it:\n"
+            f"{fix_lines}"
+        )
+        super().__init__(msg)
+
+
 def _deprecated_file_not_found() -> type[GeoFileNotFoundError]:
     # ``FileNotFoundError`` is the 1.0 name of GeoFileNotFoundError. It still
     # works, but importing it by name shadows the built-in in the caller's
@@ -366,4 +389,5 @@ __all__ = [
     "EmptyDatasetError",
     "InvalidRadiusError",
     "InvalidBufferError",
+    "GeocodingError",
 ]

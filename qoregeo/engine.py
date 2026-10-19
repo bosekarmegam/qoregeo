@@ -17,6 +17,7 @@ import codecs
 import csv
 import difflib
 import heapq
+import html
 import io
 import json
 import math
@@ -40,7 +41,7 @@ from .exceptions import (
     NoDataError,
     UnsupportedFormatError,
 )
-from .map_builder import build_heatmap, build_map
+from .map_builder import _announce, _plural, _tiles_config, _write, heatmap_page, map_page
 from .utils import (
     _LAT_CANDIDATES,
     _LNG_CANDIDATES,
@@ -60,6 +61,7 @@ from .utils import (
     _generate_circle_polygon,
     _geohash_bounds,
     _geohash_encode,
+    _geometries_intersect,
     _geometry_problem,
     _infer_value,
     _initial_bearing_deg,
@@ -180,6 +182,16 @@ def _json_cell(value: Any) -> Any:
     return value
 
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _formula_safe(value: Any) -> Any:
+    """Neutralise a CSV cell a spreadsheet would evaluate as a formula (OWASP)."""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES) and _as_number(value) is None:
+        return "'" + value
+    return value
+
+
 def _fspath(path: Any, example: str) -> str:
     """Return ``path`` as a str (accepts str, bytes and os.PathLike)."""
     try:
@@ -188,6 +200,31 @@ def _fspath(path: Any, example: str) -> str:
         raise InvalidArgumentError(
             "path", path, "a file path (str or pathlib.Path)", example
         ) from None
+
+
+def serve_html(*args: Any, **kwargs: Any) -> str:
+    """qoregeo.serve.serve_html, imported on first use (keeps ``import qoregeo`` light)."""
+    from .serve import serve_html as serve
+
+    return serve(*args, **kwargs)
+
+
+def _same_file(a: str, b: str) -> bool:
+    """True if paths ``a`` and ``b`` name the same file (existing or not)."""
+    try:
+        return os.path.samefile(a, b)
+    except (OSError, ValueError):
+        def norm(p: str) -> str:
+            return os.path.normcase(os.path.realpath(os.path.abspath(p)))
+        return norm(a) == norm(b)
+
+
+def _view_hint(path: str, tiles: str) -> str:
+    """How to open a saved map whose basemap won't load from file://."""
+    if not _tiles_config(tiles)["needsReferer"]:
+        return ""
+    shown = f'"{path}"' if any(ch.isspace() for ch in path) else path
+    return f" — view it with: qoregeo serve {shown}"
 
 
 def _check_encoding(encoding: Any) -> str:
@@ -769,7 +806,7 @@ class GeoEngine:
         )
         return self
 
-    def save(self, path: PathLike, encoding: str = "utf-8") -> GeoEngine:
+    def save(self, path: PathLike, encoding: str = "utf-8", csv_safe: bool = False) -> GeoEngine:
         """
         Save current features to a GeoJSON or CSV file.
 
@@ -784,6 +821,10 @@ class GeoEngine:
         ----------
         path     : output path (.geojson, .json, .csv or .tsv)
         encoding : file encoding
+        csv_safe : for CSV/TSV, prefix text cells that spreadsheet apps would
+                   run as a formula (starting with ``= + - @``, tab or CR) with
+                   ``'`` — protects files you share from CSV/formula
+                   injection. Real numbers such as ``-12.5`` are left alone.
 
         Returns
         -------
@@ -846,6 +887,8 @@ class GeoEngine:
             for k, v in feat.get("properties", {}).items():
                 if k not in reserved:
                     row[k] = _json_cell(v)
+                    if csv_safe:
+                        row[k] = _formula_safe(row[k])
             writer.writerow(row)
 
         _atomic_write(path_str, buffer.getvalue(), encoding=encoding, errors="backslashreplace")
@@ -1438,6 +1481,43 @@ class GeoEngine:
             feat for _, feat, (la, lo) in self._located() if _point_in_geometry(la, lo, polygon)
         ])
 
+    def intersects(self, geometry_a: Any, geometry_b: Any) -> bool:
+        """
+        True if two shapes share at least one point (touching counts).
+
+        Accepts GeoJSON geometries of any type, Features, FeatureCollections
+        and ``buffer()`` results (tested as exact circles where possible).
+        Edges are straight lines in lng/lat, as in ``point_in_polygon()``.
+
+        Examples
+        --------
+        >>> zone_a = geo.buffer((28.61, 77.20), 10)
+        >>> zone_b = geo.buffer((28.70, 77.21), 5)
+        >>> geo.intersects(zone_a, zone_b)
+        True
+        """
+        return _geometries_intersect(geometry_a, geometry_b)
+
+    def filter_intersects(self, geometry: Any) -> GeoEngine:
+        """
+        Keep features whose *whole geometry* intersects ``geometry`` — e.g.
+        roads crossing a flood zone, or districts touching a delivery area.
+        (``filter_by_polygon`` instead tests each feature's single
+        representative point.)
+
+        Examples
+        --------
+        >>> zone = geo.buffer((19.07, 72.87), radius=200)
+        >>> geo.filter_intersects(zone).count()
+        2
+        """
+        self._require_data("filter_intersects")
+        _geometries_intersect(geometry, {"type": "GeometryCollection", "geometries": []})  # validate
+        return self._clone_with([
+            f for f in self._features()
+            if f.get("geometry") is not None and _geometries_intersect(f["geometry"], geometry)
+        ])
+
     def filter_by_line(self, line: Any, distance: float, unit: str = "km") -> GeoEngine:
         """
         Keep features within ``distance`` of a path — a "line buffer", e.g.
@@ -1587,38 +1667,84 @@ class GeoEngine:
                                        "geo.map('out.html', zoom=6)")
         return zoom
 
+    def _output_path(self, output_path: Any, example: str) -> str:
+        """``output_path`` as a str, refusing the file the data was loaded from."""
+        path = _fspath(output_path, example)
+        if self._source_path is not None and _same_file(path, self._source_path):
+            raise InvalidArgumentError(
+                "output_path", path,
+                "a different file — this is the data file that was loaded, and writing "
+                "here would overwrite it",
+                example,
+            )
+        return path
+
+    @staticmethod
+    def _overlay_list(overlays: Any) -> list[dict[str, Any]] | None:
+        if overlays is None or isinstance(overlays, dict):
+            return [overlays] if overlays else None
+        if isinstance(overlays, (str, bytes)) or not isinstance(overlays, Iterable):
+            raise InvalidArgumentError(
+                "overlays", overlays, "a list of GeoJSON dicts (e.g. geo.buffer() results)",
+                "geo.map('out.html', overlays=[geo.buffer((28.61, 77.20), 10)])",
+            )
+        return list(overlays)
+
+    def _map_page(
+        self,
+        title: str,
+        zoom: int | None,
+        center: PointLike | None,
+        tiles: str,
+        overlays: Any,
+        attribution: str | None,
+        output_path: str | None,
+    ) -> tuple[str, int]:
+        self._require_data("map")
+        return map_page(
+            self._features(),
+            title=title,
+            zoom=self._check_zoom(zoom),
+            center=_coerce_point(center) if center is not None else None,
+            tiles=tiles,
+            overlays=self._overlay_list(overlays),
+            attribution=attribution,
+            output_path=output_path,
+        )
+
     def map(
         self,
         output_path: PathLike = "map.html",
         title: str = "QOREgeo Map",
         zoom: int | None = None,
         center: PointLike | None = None,
-        tiles: str = "dark",
+        tiles: str = "light",
         overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
-        tile_api_key: str | None = None,
         attribution: str | None = None,
     ) -> GeoEngine:
         """
         Export an interactive Leaflet.js map to an HTML file.
 
-        Opens in any browser — no server required. Points, lines and
-        polygons are all drawn; property popups are HTML-escaped.
+        Points, lines and polygons are all drawn; property popups are
+        HTML-escaped. The basemap is OpenStreetMap, whose tile servers only
+        serve web pages — view the file with ``geo.show()`` or
+        ``qoregeo serve map.html`` (or pick ``tiles='humanitarian'``,
+        ``'topo'`` or ``'none'``, which also work when opened from disk).
 
         Parameters
         ----------
-        output_path : where to write the HTML file
+        output_path : where to write the HTML file (never the loaded data file)
         title       : map title shown in the browser tab
         zoom        : with ``center``: the initial zoom (default 10);
                       without: the maximum zoom used when fitting the data
         center      : (lat, lng) initial center; fits all features if None
-        tiles       : basemap — 'dark' | 'light' | 'voyager' (CARTO) | 'osm',
-                      or a custom ``https://…/{z}/{x}/{y}.png`` URL template
+        tiles       : basemap — 'light' (OpenStreetMap, softened; default) |
+                      'osm' | 'dark' | 'humanitarian' | 'topo' | 'cyclosm' |
+                      'osm-de' | 'osm-fr' | 'none', or a custom
+                      ``https://…/{z}/{x}/{y}.png`` URL template.
+                      All presets are open and need no API key.
         overlays    : extra shapes drawn as outlines, e.g. ``[geo.buffer(...)]``
-        tile_api_key: CARTO API key (free at https://carto.com/basemaps/apikey/);
-                      defaults to the QOREGEO_CARTO_API_KEY environment
-                      variable. Without one, CARTO tiles carry a watermark.
-                      Note the key is written into the HTML file.
-        attribution : attribution HTML for a custom tile URL
+        attribution : attribution HTML (required for a custom tile URL)
 
         Returns
         -------
@@ -1628,70 +1754,40 @@ class GeoEngine:
         --------
         >>> geo.load("cities.csv").map("cities.html", title="India Cities")
         """
-        self._require_data("map")
-        zoom = self._check_zoom(zoom)
-        view_center = _coerce_point(center) if center is not None else None
-        if overlays is None or isinstance(overlays, dict):
-            overlay_list = [overlays] if overlays else None
-        elif isinstance(overlays, (str, bytes)) or not isinstance(overlays, Iterable):
-            raise InvalidArgumentError(
-                "overlays", overlays, "a list of GeoJSON dicts (e.g. geo.buffer() results)",
-                "geo.map('out.html', overlays=[geo.buffer((28.61, 77.20), 10)])",
-            )
-        else:
-            overlay_list = list(overlays)
-        build_map(
-            features=self._features(),
-            output_path=_fspath(output_path, "geo.map('out.html')"),
-            title=title,
-            zoom=zoom,
-            center=view_center,
-            tiles=tiles,
-            overlays=overlay_list,
-            verbose=self.verbose,
-            tile_api_key=tile_api_key,
-            attribution=attribution,
-        )
+        path = self._output_path(output_path, "geo.map('out.html')")
+        page, located = self._map_page(title, zoom, center, tiles, overlays, attribution, path)
+        _write(path, page)
+        _announce(f"✅  Map saved → {path}  ({_plural(located, 'feature')})"
+                  + _view_hint(path, tiles), self.verbose)
         return self
 
-    def heatmap(
+    def map_html(
         self,
-        output_path: PathLike = "heatmap.html",
-        title: str = "QOREgeo Heatmap",
-        intensity_col: str | None = None,
+        title: str = "QOREgeo Map",
         zoom: int | None = None,
         center: PointLike | None = None,
-        tiles: str = "dark",
-        radius: int = 25,
-        blur: int = 18,
-        tile_api_key: str | None = None,
+        tiles: str = "light",
+        overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
         attribution: str | None = None,
-    ) -> GeoEngine:
+    ) -> str:
         """
-        Export a density heatmap to an HTML file.
-
-        Parameters
-        ----------
-        output_path   : where to write the HTML file
-        title         : page title
-        intensity_col : numeric property used as heat weight (normalised to
-                        the largest value); rows with missing, negative or
-                        non-numeric values get no weight
-        zoom          : see map()
-        center        : (lat, lng) initial center; fits all points if None
-        tiles         : basemap — see map()
-        radius, blur  : heat point radius and blur in pixels
-        tile_api_key  : CARTO API key — see map()
-        attribution   : attribution HTML for a custom tile URL
-
-        Returns
-        -------
-        self
-
-        Examples
-        --------
-        >>> geo.load("stores.csv").heatmap("heat.html", intensity_col="sales")
+        The interactive map as an HTML string (same options as ``map()``),
+        e.g. to return from a web framework or embed in a report.
         """
+        return self._map_page(title, zoom, center, tiles, overlays, attribution, None)[0]
+
+    def _heatmap_page(
+        self,
+        title: str,
+        intensity_col: str | None,
+        zoom: int | None,
+        center: PointLike | None,
+        tiles: str,
+        radius: int,
+        blur: int,
+        attribution: str | None,
+        output_path: str | None,
+    ) -> tuple[str, int]:
         self._require_data("heatmap")
         zoom = self._check_zoom(zoom)
         view_center = _coerce_point(center) if center is not None else None
@@ -1706,18 +1802,198 @@ class GeoEngine:
                     intensity_col, sorted(keys), self._source_path or "dataset",
                     hint="geo.heatmap('heat.html', intensity_col='<numeric column>')",
                 )
-        build_heatmap(
-            features=self._features(),
-            output_path=_fspath(output_path, "geo.map('out.html')"),
-            title=title,
-            intensity_col=intensity_col,
-            zoom=zoom,
-            center=view_center,
-            tiles=tiles,
-            radius=radius,
-            blur=blur,
-            verbose=self.verbose,
-            tile_api_key=tile_api_key,
-            attribution=attribution,
+        # Warnings about rows without heat point at the user's call
+        # (heatmap_page → _heatmap_page → heatmap()/heatmap_html() → caller).
+        return heatmap_page(
+            self._features(), title, intensity_col, zoom, view_center, tiles, radius, blur,
+            attribution, output_path, stacklevel=4,
         )
+
+    def heatmap(
+        self,
+        output_path: PathLike = "heatmap.html",
+        title: str = "QOREgeo Heatmap",
+        intensity_col: str | None = None,
+        zoom: int | None = None,
+        center: PointLike | None = None,
+        tiles: str = "light",
+        radius: int = 25,
+        blur: int = 18,
+        attribution: str | None = None,
+    ) -> GeoEngine:
+        """
+        Export a density heatmap to an HTML file.
+
+        Parameters
+        ----------
+        output_path   : where to write the HTML file (never the loaded data file)
+        title         : page title
+        intensity_col : numeric property used as heat weight (normalised to
+                        the largest value); rows with missing, negative or
+                        non-numeric values get no weight
+        zoom          : see map()
+        center        : (lat, lng) initial center; fits all points if None
+        tiles         : basemap — see map()
+        radius, blur  : heat point radius and blur in pixels
+        attribution   : attribution HTML (required for a custom tile URL)
+
+        Returns
+        -------
+        self
+
+        Examples
+        --------
+        >>> geo.load("stores.csv").heatmap("heat.html", intensity_col="sales")
+        """
+        path = self._output_path(output_path, "geo.heatmap('heat.html')")
+        page, n = self._heatmap_page(title, intensity_col, zoom, center, tiles, radius, blur,
+                                     attribution, path)
+        _write(path, page)
+        _announce(f"✅  Heatmap saved → {path}  ({_plural(n, 'point')})"
+                  + _view_hint(path, tiles), self.verbose)
         return self
+
+    def heatmap_html(
+        self,
+        title: str = "QOREgeo Heatmap",
+        intensity_col: str | None = None,
+        zoom: int | None = None,
+        center: PointLike | None = None,
+        tiles: str = "light",
+        radius: int = 25,
+        blur: int = 18,
+        attribution: str | None = None,
+    ) -> str:
+        """The heatmap as an HTML string (same options as ``heatmap()``)."""
+        return self._heatmap_page(title, intensity_col, zoom, center, tiles, radius, blur,
+                                  attribution, None)[0]
+
+    def _render_options(
+        self,
+        title: str | None,
+        width: int,
+        height: int,
+        overlays: Any,
+        background: str,
+    ) -> dict[str, Any]:
+        return {"title": title, "width": width, "height": height,
+                "overlays": self._overlay_list(overlays), "background": background}
+
+    def to_png(
+        self,
+        title: str | None = None,
+        width: int = 1200,
+        height: int = 800,
+        overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
+        background: str = "#ffffff",
+    ) -> bytes:
+        """
+        A static PNG map of the features (no basemap, no browser, no
+        dependencies) — for reports, e-mails, notebooks and AI vision models.
+        """
+        from .render import render_png
+
+        self._require_data("to_png")
+        return render_png(self._features(), **self._render_options(title, width, height, overlays,
+                                                                    background))
+
+    def to_svg(
+        self,
+        title: str | None = None,
+        width: int = 1200,
+        height: int = 800,
+        overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
+        background: str = "#ffffff",
+    ) -> str:
+        """A static SVG map of the features (same options as ``to_png()``)."""
+        from .render import render_svg
+
+        self._require_data("to_svg")
+        return render_svg(self._features(), **self._render_options(title, width, height, overlays,
+                                                                    background))
+
+    def image(
+        self,
+        output_path: PathLike = "map.png",
+        title: str | None = None,
+        width: int = 1200,
+        height: int = 800,
+        overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
+        background: str = "#ffffff",
+    ) -> GeoEngine:
+        """
+        Save a static map image — ``.png`` or ``.svg`` by file extension.
+
+        Unlike ``map()`` it needs no browser or internet: points, lines and
+        polygons are drawn on a plain background in the same colours.
+
+        Examples
+        --------
+        >>> geo.load("stores.csv").filter_by_radius(28.61, 77.21, 10).image("stores.png")
+        """
+        path = self._output_path(output_path, "geo.image('map.png')")
+        ext = os.path.splitext(path)[1].lower()
+        if ext not in (".png", ".svg"):
+            raise InvalidArgumentError("output_path", path, "a file name ending in .png or .svg",
+                                       "geo.image('map.png')")
+        if ext == ".png":
+            _atomic_write(path, self.to_png(title, width, height, overlays, background))
+        else:
+            _atomic_write(path, self.to_svg(title, width, height, overlays, background))
+        _announce(f"✅  Image saved → {path}  ({_plural(self.count(), 'feature')})", self.verbose)
+        return self
+
+    def show(
+        self,
+        heatmap: bool = False,
+        port: int = 0,
+        block: bool | None = None,
+        open_browser: bool = True,
+        **options: Any,
+    ) -> str:
+        """
+        Open the map (or heatmap) in the browser via a local web server.
+
+        The page is served from ``http://127.0.0.1`` — never from disk —
+        because OpenStreetMap's tile servers only serve web pages. Nothing is
+        written to disk and only this machine can connect.
+
+        Parameters
+        ----------
+        heatmap      : show ``heatmap_html(**options)`` instead of ``map_html(**options)``
+        port         : TCP port (0 = pick a free one)
+        block        : keep serving until Ctrl+C. Default: block in scripts,
+                       serve in the background in interactive sessions/notebooks
+        open_browser : open the default browser
+        **options    : passed to map_html() / heatmap_html() (title, tiles, …)
+
+        Returns
+        -------
+        The URL being served.
+
+        Examples
+        --------
+        >>> geo.load("cities.csv").show(title="Cities", tiles="topo")
+        """
+        page = self.heatmap_html(**options) if heatmap else self.map_html(**options)
+        name = "heatmap.html" if heatmap else "map.html"
+        return serve_html(page, name, port=port, block=block, open_browser=open_browser,
+                          verbose=self.verbose)
+
+    # Above this many features a notebook shows the text repr instead of a map
+    # (the whole dataset would be embedded in the notebook file).
+    _NOTEBOOK_MAP_LIMIT = 20_000
+
+    def _repr_html_(self) -> str | None:
+        """Jupyter / IPython display: an interactive map of the features."""
+        if self._data is None or self.count() > self._NOTEBOOK_MAP_LIMIT:
+            return None
+        try:
+            page = self.map_html(title=f"QOREgeo · {self.count()} features")
+        except Exception:   # noqa: BLE001 — display must never raise in a notebook
+            return None
+        return (
+            '<iframe srcdoc="' + html.escape(page, quote=True) + '" '
+            'style="width:100%;height:460px;border:0;border-radius:8px" '
+            'title="QOREgeo map" loading="lazy" allowfullscreen></iframe>'
+        )

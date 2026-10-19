@@ -1,20 +1,27 @@
 # QOREgeo
 
-**Quantum-Powered Spatial Intelligence for Python.**
+**Zero-dependency geospatial toolkit for Python — and for AI assistants.**
 
 [![PyPI version](https://img.shields.io/pypi/v/qoregeo.svg?logo=pypi&logoColor=white)](https://pypi.org/project/qoregeo)
 [![Python versions](https://img.shields.io/pypi/pyversions/qoregeo.svg?logo=python&logoColor=white)](https://pypi.org/project/qoregeo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://github.com/bosekarmegam/qoregeo/actions/workflows/tests.yml/badge.svg)](https://github.com/bosekarmegam/qoregeo/actions)
 [![Zero dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](https://pypi.org/project/qoregeo)
+[![MCP server](https://img.shields.io/badge/MCP-server-8A2BE2)](#ai-assistants-mcp-skills-claude-codex)
+
+<!-- mcp-name: io.github.bosekarmegam/qoregeo -->
 
 ---
 
-> *"The Pandas of Spatial Data Science."*
+Distances, nearest places, geofences, buffers, intersections, CSV/GeoJSON filtering,
+OpenStreetMap maps and heatmaps, static PNG/SVG map images and geocoding — in **pure Python**.
+No GDAL, GEOS or PROJ, no API keys, no compiled wheels: QOREgeo installs wherever Python 3.10+
+runs — Windows, macOS, Linux, Raspberry Pi, AWS Lambda, slim Docker images, Pyodide, and AI
+code sandboxes without internet access.
 
-QOREgeo is the only Python GIS library that **works everywhere Python works** — Windows, Mac, Linux, Raspberry Pi, AWS Lambda — with zero C++ dependencies and a roadmap to quantum spatial algorithms via [QORE OS](https://github.com/bosekarmegam).
-
----
+It also ships everything an AI assistant needs to do GIS work: an **MCP server** (Claude Code,
+Claude Desktop, OpenAI Codex, Cursor, VS Code, Gemini CLI, …), an **Agent Skill**, **Claude /
+OpenAI tool schemas** and a **CLI**.
 
 ## Why QOREgeo?
 
@@ -22,28 +29,33 @@ QOREgeo is the only Python GIS library that **works everywhere Python works** �
 $ pip install gdal
   ...
       Could not find gdal-config. Make sure you have installed the GDAL native library and development headers.
-      [end of output]
-
-  note: This error originates from a subprocess, and is likely not a problem with pip.
 ERROR: Failed to build 'gdal' when getting requirements to build wheel
 ```
 
-The classic Python GIS stack sits on GDAL, GEOS and PROJ — large C/C++ libraries. Whenever no pre-built wheel matches your platform or Python version, pip has to compile them, and the install falls over.  
-QOREgeo fixes the root cause — not the symptoms. It is 100 % pure Python.
+The classic Python GIS stack sits on GDAL, GEOS and PROJ — large C/C++ libraries. Pre-built
+wheels cover the common platforms (the GeoPandas core stack is about 74 MB of wheels), but
+whenever none matches your platform or Python version, pip has to compile them; newer releases
+also drop older Pythons (shapely 2.2 needs 3.11+, pyproj 3.8 needs 3.12+).
 
-```
-$ pip install qoregeo
-Successfully installed qoregeo-1.1.0
+QOREgeo covers the everyday 80 % — distance, nearest, radius / polygon / attribute filters,
+geofencing, maps — with a ~125 KB pure-Python wheel and no dependencies at all.
 
-Done in 2 seconds.
-```
+| You need | QOREgeo | Typical alternative |
+|---|---|---|
+| Distance, bearing, buffers, point-in-polygon, area | ✅ stdlib only | shapely + pyproj (compiled) |
+| Load CSV / GeoJSON, filter, nearest, export | ✅ | geopandas (+ numpy, pandas, pyogrio, GDAL) |
+| Interactive maps with no API key | ✅ OpenStreetMap, 10 open basemaps | folium (+ jinja2, requests, numpy …) |
+| Static map images without a browser | ✅ PNG / SVG, pure Python | matplotlib / contextily |
+| Geocoding | ✅ Nominatim / Photon / self-hosted | geopy |
+| Tools for AI assistants | ✅ MCP server, Agent Skill, Claude/OpenAI schemas | — |
 
 ---
 
 ## Installation
 
 ```bash
-pip install qoregeo
+pip install qoregeo          # library + `qoregeo` command
+uvx qoregeo --help           # or run the CLI / MCP server without installing (uv)
 ```
 
 **Requirements:** Python 3.10+ · Zero external dependencies
@@ -106,11 +118,11 @@ print(mh.count())  # 2
 big = geo.filter("population", 15_000_000, op=">")
 print(big.count()) # 2
 
-# ── Export map ────────────────────────────────────────
-geo.map("output.html", title="India Cities")
-
-# ── Heatmap ───────────────────────────────────────────
+# ── Maps ──────────────────────────────────────────────
+geo.map("output.html", title="India Cities")          # interactive (OpenStreetMap)
 geo.heatmap("heat.html", intensity_col="population")
+geo.image("cities.png", title="India Cities")          # static PNG/SVG, works offline
+geo.show()                                             # open in the browser
 
 # ── Save data ─────────────────────────────────────────
 geo.save("output.geojson")
@@ -133,7 +145,9 @@ Hyderabad,Telangana,10500000,17.3850,78.4867
 
 </details>
 
-> Maps use CARTO basemaps by default, which now need a free API key — see [Basemaps and the CARTO API key](#basemaps-and-the-carto-api-key).
+> **Viewing maps:** the default basemap is OpenStreetMap, whose tile servers only serve web pages —
+> open maps with `geo.show()` or `qoregeo serve output.html` rather than double-clicking the file.
+> See [Basemaps](#basemaps).
 
 ---
 
@@ -158,6 +172,165 @@ geo = GeoEngine().load("cities.csv")
 mh  = geo.filter("state", "Maharashtra")
 print(geo.count(), mh.count())   # 7 2  — the original is untouched
 ```
+
+---
+
+## Command Line
+
+Every common task works from the shell (`qoregeo --help`, `qoregeo <command> --help`):
+
+```bash
+qoregeo info stores.csv                                    # rows, columns, bbox, centre
+qoregeo distance 28.6139,77.2090 19.0760,72.8777 --unit miles
+qoregeo export stores.csv -o near.geojson --near 28.61,77.21,5 --sort revenue --desc --limit 20
+qoregeo export stores.csv -o big.csv --where "revenue>=100000" --where 'city in ["Delhi","Pune"]'
+qoregeo map stores.csv -o stores.html --tiles topo --serve # interactive map, opened in the browser
+qoregeo map stores.csv -o heat.html --heatmap --intensity revenue
+qoregeo image stores.csv -o stores.png --within zone.geojson
+qoregeo serve stores.html                                  # view any saved map
+qoregeo geocode "Gateway of India, Mumbai" --country in
+qoregeo reverse 18.9220,72.8347
+qoregeo tiles                                              # list basemaps
+```
+
+Filters for `map`, `image` and `export`: `--near LAT,LNG,RADIUS [--unit]`, `--bbox W,S,E,N`,
+`--within FILE.geojson`, `--where EXPR` (repeatable; `== != > >= < <= in "not in" contains`),
+`--sort COLUMN [--desc]`, `--limit N`. `export` escapes spreadsheet formulas in CSV cells
+(`--raw-csv` turns that off) and never overwrites its input.
+
+---
+
+## AI Assistants (MCP, Skills, Claude, Codex)
+
+QOREgeo gives AI assistants reliable, offline GIS: instead of guessing distances or writing
+throw-away GeoPandas code, the model calls tested tools and can **look at a rendered map** of
+its result.
+
+### MCP server
+
+`qoregeo mcp` is a zero-dependency [Model Context Protocol](https://modelcontextprotocol.io)
+server on stdio. It speaks every protocol revision from 2024-11-05 to 2026-07-28, so current
+and upcoming clients all work.
+
+| Tool | What it does |
+|---|---|
+| `distance`, `bearing`, `destination`, `midpoint` | point-to-point geodesy (haversine or Vincenty) |
+| `buffer`, `contains`, `intersects`, `measure`, `geohash` | zones, geofencing, overlap tests, area / length |
+| `list_files`, `describe_dataset` | find data files; columns, types, bbox, sample rows |
+| `query_features`, `nearest` | filter by radius / bbox / area / attributes, sort, page; k nearest |
+| `preview_map` | renders the data as a PNG **the model can see** |
+| `make_map`, `export_features` | write HTML maps, heatmaps, PNG/SVG, CSV or GeoJSON *(write access)* |
+| `geocode`, `reverse_geocode` | OpenStreetMap Nominatim or your own server *(opt-in)* |
+
+**Safety:** files are confined to one folder (`--root`, else `$QOREGEO_ROOT`,
+`$CLAUDE_PROJECT_DIR` or the working directory; `..` and symlinks can't escape); writers never
+overwrite without `"overwrite": true` and are hidden with `--read-only`; geocoding is off unless
+whoever starts the server opts in (`--geocoder-url` for a self-hosted server, or
+`--allow-network` for the public OpenStreetMap service and its
+[usage policy](https://operations.osmfoundation.org/policies/nominatim/)); results are paged and
+capped below clients' context limits.
+
+**Claude Code**
+
+```bash
+claude mcp add --scope user qoregeo -- uvx qoregeo mcp
+```
+
+or commit a project `.mcp.json` (this repository has one):
+
+```json
+{ "mcpServers": { "qoregeo": { "command": "uvx", "args": ["qoregeo", "mcp"] } } }
+```
+
+**Claude Code plugin** (MCP server + skill in one step):
+
+```
+/plugin marketplace add bosekarmegam/qoregeo
+/plugin install qoregeo@qoregeo
+```
+
+**Claude Desktop** — `claude_desktop_config.json` (Settings → Developer → Edit Config); use
+absolute paths:
+
+```json
+{
+  "mcpServers": {
+    "qoregeo": {
+      "command": "/absolute/path/to/uvx",
+      "args": ["qoregeo", "mcp", "--root", "/Users/you/gis-data"]
+    }
+  }
+}
+```
+
+**OpenAI Codex**
+
+```bash
+codex mcp add qoregeo -- uvx qoregeo mcp
+# or in ~/.codex/config.toml:
+#   [mcp_servers.qoregeo]
+#   command = "uvx"
+#   args = ["qoregeo", "mcp"]
+```
+
+Codex can also install the plugin: `codex plugin marketplace add bosekarmegam/qoregeo`, then
+`codex plugin add qoregeo@qoregeo`.
+
+**Gemini CLI**
+
+```bash
+gemini mcp add -s user qoregeo uvx qoregeo mcp
+# or as an extension (MCP server + skill):
+gemini extensions install https://github.com/bosekarmegam/qoregeo
+```
+
+**Cursor** — `.cursor/mcp.json` · **VS Code / GitHub Copilot** — `.vscode/mcp.json`:
+
+```json
+{ "mcpServers": { "qoregeo": { "command": "uvx", "args": ["qoregeo", "mcp"] } } }
+```
+
+```json
+{ "servers": { "qoregeo": { "type": "stdio", "command": "uvx", "args": ["qoregeo", "mcp", "--root", "${workspaceFolder}"] } } }
+```
+
+Without `uv`, use `"command": "qoregeo"` (after `pip install qoregeo`) or
+`"command": "python", "args": ["-m", "qoregeo", "mcp"]`. Options: `qoregeo mcp --help`.
+
+### Agent Skill
+
+The [`qoregeo` skill](skills/qoregeo/SKILL.md) teaches an agent when and how to use QOREgeo —
+CLI, MCP tools or Python — including the coordinate-order and tile/geocoding policy pitfalls.
+
+```bash
+qoregeo skill install                 # ~/.claude/skills (Claude Code) + ~/.agents/skills (Codex, Gemini CLI, Copilot)
+qoregeo skill install --scope project # ./.claude/skills + ./.agents/skills
+qoregeo skill zip                     # qoregeo-skill.zip for claude.ai (Settings → Capabilities → Skills)
+```
+
+The zip **includes the QOREgeo package itself**, so the skill also works in sandboxes with no
+internet and no pip — such as Claude's code-execution environment.
+
+### Claude API and OpenAI function calling
+
+```python
+from qoregeo.tools import ToolContext, call_tool, tool_definitions
+
+tools = tool_definitions("anthropic")       # or "openai", "openai-responses", "mcp"
+ctx = ToolContext(root="data", allow_write=False)
+
+# inside your tool-use loop, for each tool_use block:
+result = call_tool(block.name, block.input, ctx)
+tool_result = result.to_anthropic(block.id)  # text + the PNG from preview_map
+```
+
+Complete, runnable loops: [`examples/claude_tools.py`](examples/claude_tools.py) (Messages API)
+and [`examples/claude_mcp.py`](examples/claude_mcp.py) (MCP + the SDK's tool runner). Any agent
+with a shell can also run a tool directly: `qoregeo call nearest '{"path": "stores.csv", "point":
+{"lat": 28.6, "lng": 77.2}, "k": 3}'`.
+
+Also in the repository: [`AGENTS.md`](AGENTS.md) (for coding agents contributing here),
+[`llms.txt`](llms.txt), and the MCP Registry manifest [`server.json`](server.json).
 
 ---
 
@@ -342,6 +515,19 @@ geo.point_in_polygon((-18.0, 179.5), fiji)    # True — crosses the antimeridia
 geo.point_in_polygon((-18.0, -179.5), fiji)   # True
 ```
 
+#### `geo.intersects(geometry_a, geometry_b)` → `bool`
+
+True if two shapes share at least one point — touching counts. Accepts any GeoJSON geometry,
+`Feature`, `FeatureCollection` or `buffer()` zone (circles are tested exactly), with the same
+planar edges as `point_in_polygon()`.
+
+```python
+zone = geo.buffer((28.61, 77.20), radius=50)
+highway = {"type": "LineString", "coordinates": [[77.2090, 28.6139], [75.7873, 26.9124]]}
+geo.intersects(zone, highway)                                     # True
+geo.intersects(zone, geo.buffer((19.07, 72.87), radius=100))      # False
+```
+
 #### `geo.area(polygon, unit='km2')` → `float`
 
 Spherical area of a `Polygon`, `MultiPolygon` or `Feature`, holes subtracted (Chamberlain & Duquette's method, as used by Turf.js and OpenLayers). A `buffer()` result is measured as the exact circle it represents (a spherical cap), matching `point_in_polygon()`. Rounded to 4 decimals.
@@ -475,6 +661,16 @@ zone = geo.buffer((19.07, 72.87), radius=200)
 geo.filter_by_polygon(zone).count()   # 2   (Mumbai, Pune)
 ```
 
+#### `geo.filter_intersects(geometry)` → `GeoEngine`
+
+Features whose **whole geometry** intersects `geometry` — e.g. the districts a pipeline crosses,
+or parcels touching a flood zone. (`filter_by_polygon()` tests each feature's single location.)
+
+```python
+corridor = {"type": "LineString", "coordinates": [[72.88, 19.08], [73.86, 18.52], [78.49, 17.39]]}
+crossed = districts.filter_intersects(corridor)
+```
+
 #### `geo.filter_by_line(line, distance, unit='km')` → `GeoEngine`
 
 A **line buffer**: features within `distance` of a path (list of `(lat, lng)` points, `LineString`, `MultiLineString` or a `Feature`), sorted nearest-first with a `_distance` property.
@@ -531,58 +727,142 @@ fiji.centroid()   # (-17.471619, 179.247963)
 
 ### Visualisation
 
-#### `geo.map(output_path='map.html', title='QOREgeo Map', zoom=None, center=None, tiles='dark', overlays=None, tile_api_key=None, attribution=None)` → `self`
+#### `geo.map(output_path='map.html', title='QOREgeo Map', zoom=None, center=None, tiles='light', overlays=None, attribution=None)` → `self`
 
-Interactive Leaflet.js map saved as a standalone HTML file — open it in any browser, no server needed. Points, lines and polygons are all drawn, and clicking a feature shows its properties.
+Interactive Leaflet.js map saved as a standalone HTML file. Points, lines and polygons are all
+drawn, and clicking a feature shows its properties.
 
 ```python
 geo.map("output.html")
-geo.map("output.html", title="My Cities", zoom=6)
-geo.map("output.html", center=(19.07, 72.87), zoom=8, tiles="light", tile_api_key="YOUR_CARTO_KEY")
+geo.map("output.html", title="My Cities", zoom=6, tiles="osm")
+geo.map("output.html", center=(19.07, 72.87), zoom=8, tiles="topo")
 
 zone = geo.buffer((19.07, 72.87), radius=200)
 geo.filter_by_polygon(zone).map("zone.html", title="Within 200 km of Mumbai", overlays=[zone])
 ```
 
 - **`zoom` / `center`** — with `center`, `zoom` is the initial zoom (default 10). Without `center`, the map fits all features and `zoom` caps how far it zooms in (default 15). `zoom` must be an integer from 0 to 22.
-- **`tiles`** — `'dark'` (default), `'light'` or `'voyager'` (CARTO), `'osm'` (OpenStreetMap), or your own `https://…/{z}/{x}/{y}.png` URL template; pass `attribution=` (HTML) to credit a custom tile source.
+- **`tiles`** — a [basemap](#basemaps) name, or your own `https://…/{z}/{x}/{y}.png` URL template with `attribution=` (HTML) crediting it.
 - **`overlays`** — extra GeoJSON shapes (e.g. `buffer()` zones) drawn as dashed outlines and included in the auto-fit.
+- `map()` refuses to write over the data file the engine was loaded from.
 
-#### `geo.heatmap(output_path='heatmap.html', title='QOREgeo Heatmap', intensity_col=None, zoom=None, center=None, tiles='dark', radius=25, blur=18, tile_api_key=None, attribution=None)` → `self`
+#### `geo.heatmap(output_path='heatmap.html', title='QOREgeo Heatmap', intensity_col=None, zoom=None, center=None, tiles='light', radius=25, blur=18, attribution=None)` → `self`
 
-Density heatmap with optional intensity weighting. `intensity_col` must be a numeric property; weights are normalised to the largest value, and rows with a missing, negative or non-numeric value add no heat. An unknown column raises `ColumnNotFoundError`. `radius` and `blur` are in pixels; `zoom`, `center`, `tiles`, `tile_api_key` and `attribution` work as in `map()`.
+Density heatmap with optional intensity weighting. `intensity_col` must be a numeric property; weights are normalised to the largest value, and rows with a missing, negative or non-numeric value add no heat. An unknown column raises `ColumnNotFoundError`. `radius` and `blur` are in pixels; `zoom`, `center`, `tiles` and `attribution` work as in `map()`.
 
 ```python
 geo.heatmap("heat.html")
 geo.heatmap("heat.html", intensity_col="population", radius=30, blur=20)
 ```
 
-#### Basemaps and the CARTO API key
+#### Viewing maps: `geo.show()` · `qoregeo serve map.html`
 
-Since **August 2026, CARTO basemaps (`'dark'`, `'light'`, `'voyager'`) require a free per-user API key** — get one at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/). Without a key the tiles show an **"API key required"** watermark, and QOREgeo emits a `UserWarning` when it writes the map.
+OpenStreetMap's tile servers require an HTTP `Referer`, which browsers never send for pages
+opened straight from disk (`file://`). So QOREgeo serves maps from your own machine:
 
 ```python
-geo.map("output.html", tile_api_key="YOUR_CARTO_KEY")
+geo.show()                                   # serves map_html() on http://127.0.0.1 and opens it
+geo.show(heatmap=True, intensity_col="population", tiles="dark")
+url = geo.show(block=False)                  # keep working while it serves (default in notebooks)
 ```
 
 ```bash
-export QOREGEO_CARTO_API_KEY="YOUR_CARTO_KEY"     # used whenever tile_api_key isn't passed
+qoregeo serve output.html                    # any saved map; re-read on every reload
 ```
 
-Or use `tiles="osm"`, which needs no key — but OpenStreetMap's tile servers require a `Referer`, which browsers don't send for pages opened straight from disk, so OSM tiles only load when the map is served over http(s) (for a quick local preview: `python -m http.server`). Please respect the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/). You can also pass any tile server's URL template as `tiles=`, with `attribution=`. **The key is written into the HTML file**, so anyone you share the map with can read it.
+Only that one page is served, only to `127.0.0.1`. A map using an OpenStreetMap-hosted basemap
+that *is* opened from disk doesn't request tiles at all (that would break the tile policy);
+it shows the data on a plain background with a note explaining how to view it.
+
+**Jupyter / notebooks:** a `GeoEngine` displays itself as an interactive map (up to 20,000
+features). **Web apps / reports:** `geo.map_html()` and `geo.heatmap_html()` return the page as
+a string.
+
+#### Basemaps
+
+Every preset is open and needs no API key:
+
+| `tiles=` | Basemap | Notes |
+|---|---|---|
+| `"light"` *(default)* | OpenStreetMap, muted colours | data stands out; needs http (see above) |
+| `"osm"` | OpenStreetMap standard | needs http |
+| `"dark"` | OpenStreetMap, inverted | needs http |
+| `"humanitarian"` | Humanitarian OSM Team style (OSM France) | needs http |
+| `"cyclosm"` | CyclOSM cycling map (OSM France) | needs http |
+| `"osm-fr"` | OpenStreetMap France style | needs http |
+| `"osm-de"` | OpenStreetMap Germany style (FOSSGIS) | non-commercial / small sites only |
+| `"topo"` | OpenTopoMap topographic | up to zoom 17 |
+| `"satellite"` | NASA Blue Marble imagery (public domain) | overview only (zoom ≤ 10) |
+| `"none"` | no basemap | nothing is downloaded |
+
+`qoregeo tiles` or `qoregeo.tile_presets()` list them. Attribution required by each provider is
+always shown. Please respect the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+— for heavy use, run your own tile server or use a commercial provider via a custom `tiles=` URL
+(keys in a URL are written into the HTML file).
+
+> **Why not CARTO?** CARTO basemaps require an API key since 2026 (tiles without one carry an
+> "API key required" watermark), so QOREgeo 1.1 switched to open, keyless maps. Keyed providers
+> (CARTO, Stadia/Stamen, Thunderforest, MapTiler, Mapbox, Esri) still work as custom `tiles=` URLs.
+
+#### `geo.image(output_path='map.png', title=None, width=1200, height=800, overlays=None, background='#ffffff')` → `self`
+
+A static **PNG or SVG** map (by file extension) rendered in pure Python — no browser, no network,
+no matplotlib. Points, lines, polygons (with holes) and overlays use the same colours as the
+HTML maps; data across the antimeridian stays together.
+
+```python
+geo.image("cities.png", title="India Cities")
+geo.filter_by_polygon(zone).image("zone.svg", overlays=[zone])
+png_bytes = geo.to_png(width=800, height=600)    # bytes — for e-mail, Slack, PDFs, AI vision models
+svg_text = geo.to_svg()                          # str
+```
+
+---
+
+### Geocoding
+
+Addresses and place names ↔ coordinates with OpenStreetMap's
+[Nominatim](https://nominatim.org) or [Photon](https://photon.komoot.io), standard library only.
+
+```python
+from qoregeo import Geocoder
+
+g = Geocoder(email="you@example.com")            # identifies you to the public service
+hit = g.geocode("Gateway of India, Mumbai")      # best match or None
+hit["lat"], hit["lng"], hit["name"], hit["attribution"]
+
+g.search("Main Street", limit=5, country_codes="us")
+g.reverse(18.9220, 72.8347)
+
+Geocoder(provider="photon")                       # komoot Photon
+Geocoder(url="http://localhost:8080")             # your own Nominatim server — use this for bulk work
+```
+
+The public servers are run by volunteers: QOREgeo enforces **at most 1 request per second** per
+server, sends an identifying `User-Agent`, caches results and maps errors (403 blocked, 429 too
+many requests, …) to `GeocodingError` with a hint. Their policies forbid bulk jobs, autocomplete
+and systematic queries — for more than a handful of addresses, run
+[Nominatim](https://github.com/mediagis/nominatim-docker) or Photon yourself. Results carry the
+required "© OpenStreetMap contributors, ODbL" attribution; keep it with anything you publish.
 
 ---
 
 ### Saving
 
-#### `geo.save(path, encoding='utf-8')` → `self`
+#### `geo.save(path, encoding='utf-8', csv_safe=False)` → `self`
 
 Save to `.geojson` / `.json` or `.csv` / `.tsv`. Missing parent folders are created, an empty result still writes a valid file, and the write is atomic — a failed save never truncates an existing file. Symlinks are followed, and a read-only target raises `PermissionError` as with a plain `open()`.
 
 ```python
 geo.save("output.geojson")
 geo.save("output.csv")
+geo.save("for_excel.csv", csv_safe=True)   # '=SUM(…)' is written as "'=SUM(…)"
 ```
+
+With `csv_safe=True`, text cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a
+leading `'` so spreadsheet apps show them as text instead of running them as formulas
+([CSV injection](https://owasp.org/www-community/attacks/CSV_Injection)); numbers such as `-5`
+are left alone. Use it for files that will be opened in Excel or Google Sheets.
 
 CSV details:
 
@@ -613,6 +893,7 @@ All exceptions live in `qoregeo` (and `qoregeo.exceptions`), derive from `QOREge
 | `InvalidGeoJSONError` | `UnsupportedFormatError` | Invalid JSON, or JSON that isn't GeoJSON | `.source`, `.reason` |
 | `EmptyDatasetError` | `ValueError` | A file or object contains no usable features | `.path` |
 | `FileReadError` | `ValueError` | A file exists but can't be decoded or parsed (wrong `encoding`, broken CSV) | `.path`, `.reason` |
+| `GeocodingError` | `RuntimeError` | A geocoding request failed (blocked, rate-limited, unreachable, bad response) | `.reason`, `.status`, `.hint` |
 
 `GeoFileNotFoundError` was called `FileNotFoundError` in 1.0. `qoregeo.FileNotFoundError` still works but is deprecated (it emits a `DeprecationWarning`), and it is not exported by `from qoregeo import *`, so it never shadows the built-in. All QOREgeo exceptions can be pickled, so errors raised in `multiprocessing` / `ProcessPoolExecutor` workers arrive intact.
 
@@ -629,9 +910,12 @@ except ValueError as e:                          # also catches qoregeo.InvalidU
 
 ## Security
 
-- **Generated maps escape all data.** Titles are HTML-escaped, popups are built with the DOM's `textContent` (property keys and values are never interpreted as HTML), and the embedded JSON escapes `<`, `>`, `&`, U+2028 and U+2029 — a malicious value in your data can't inject script into the page.
+- **Generated maps escape all data.** Titles are HTML-escaped, popups are built with the DOM's `textContent` (property keys and values are never interpreted as HTML), and data is embedded with `JSON.parse("…")` with `<`, `>`, `&`, U+2028 and U+2029 escaped — a malicious value can't inject script, and a property named `__proto__` stays plain data.
 - **Leaflet is loaded with Subresource Integrity.** Leaflet 1.9.4 and leaflet.heat 0.2.0 are pinned and loaded with SHA-256 `integrity` hashes from unpkg, with a jsDelivr fallback, so a tampered CDN file won't run.
-- QOREgeo itself never makes network requests — only the browser fetches Leaflet and map tiles when you open the HTML file. Remember that a `tile_api_key` is embedded in that file.
+- **No surprise network traffic.** The library only goes online when you call the geocoder; the browser fetches Leaflet and tiles when a map is opened. `tiles="none"` maps fetch no tiles at all.
+- **The MCP server is sandboxed** to one folder, writes only when allowed, never overwrites without being asked, and geocodes only after an explicit opt-in (see [AI Assistants](#ai-assistants-mcp-skills-claude-codex)).
+- **Spreadsheet-safe exports** with `save(csv_safe=True)` / `qoregeo export`.
+- `show()` / `qoregeo serve` bind to `127.0.0.1` and serve a single page.
 
 ---
 
@@ -723,8 +1007,8 @@ geo.filter_by_radius(*patient, 5).map("nearby_hospitals.html")
 | Version | Status | Focus |
 |---------|--------|-------|
 | v1.0.x | ✅ Released | Core spatial engine — loading, distance, bearing, buffers, geofencing, nearest, filters, Leaflet maps, 120+ tests |
-| v1.1   | ✅ Released | Polygon / line / null GeoJSON support, line buffers via `filter_by_line`, geohash, ellipsoidal (Vincenty) distance, area / length, k-nearest, filter operators, map XSS fix + SRI, 1,000+ tests on Python 3.10 – 3.15 |
-| v1.2+  | 📋 Planned | Street-address geocoding (opt-in), PNG / SVG static map export, `intersects()` |
+| v1.1   | ✅ Released | Polygon / line / null GeoJSON, line buffers, geohash, Vincenty, area / length, k-nearest, filter operators, `intersects()`, open keyless basemaps (OpenStreetMap default), `show()` / `qoregeo serve`, PNG / SVG export, geocoding, CLI, MCP server, Agent Skill, Claude / OpenAI tool schemas, map XSS fix + SRI |
+| v1.2+  | 📋 Planned | Interactive maps inside AI chats (MCP Apps), offline reverse geocoding (country / region), choropleth maps, spatial index for large files |
 | v2.0   | 📋 Planned | QORE OS integration, quantum nearest-neighbour |
 | v3.0   | 🔮 Future | Quantum routing, GeoAI, WebAssembly |
 

@@ -107,3 +107,23 @@ jobs:
         run: |
           python -m pip install dist/*.whl
           cd /tmp && python -c "import qoregeo, pathlib; print(qoregeo.__version__); assert (pathlib.Path(qoregeo.__file__).parent / 'py.typed').exists()"
+          # Console script, bundled skill and the MCP server's handshake.
+          qoregeo --version
+          test -f "$(qoregeo skill path)/SKILL.md"
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | qoregeo mcp | grep -q '"protocolVersion":"2025-06-18"'
+
+      - name: Validate agent manifests
+        run: |
+          python -m pip install jsonschema
+          python - <<'PY'
+          import json, urllib.request, jsonschema
+          for path in (".claude-plugin/plugin.json", ".claude-plugin/marketplace.json", ".mcp.json",
+                       "gemini-extension.json", "server.json"):
+              json.load(open(path, encoding="utf-8"))
+          server = json.load(open("server.json", encoding="utf-8"))
+          assert len(server["description"]) <= 100, "server.json description must be <= 100 chars"
+          with urllib.request.urlopen(server["$schema"], timeout=30) as response:
+              jsonschema.validate(server, json.load(response))
+          print("manifests OK")
+          PY

@@ -32,6 +32,7 @@ from qoregeo import (
     ColumnNotFoundError,
     EmptyDatasetError,
     FileReadError,
+    GeocodingError,
     GeoEngine,
     GeoFileNotFoundError,
     InvalidArgumentError,
@@ -1031,6 +1032,7 @@ HIERARCHY = [
     (InvalidRadiusError, ValueError),
     (InvalidBufferError, ValueError),
     (FileReadError, ValueError),
+    (GeocodingError, RuntimeError),
 ]
 
 
