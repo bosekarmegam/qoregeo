@@ -1,0 +1,73 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Central",
+        "fee": 30,
+        "note": "excludes President's Estate"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.185, 28.598],
+            [77.25, 28.598],
+            [77.255, 28.63],
+            [77.225, 28.65],
+            [77.185, 28.64],
+            [77.185, 28.598]
+          ],
+          [
+            [77.192, 28.608],
+            [77.192, 28.62],
+            [77.205, 28.62],
+            [77.205, 28.608],
+            [77.192, 28.608]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "South",
+        "fee": 40,
+        "note": ""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.195, 28.54],
+            [77.26, 28.54],
+            [77.265, 28.585],
+            [77.2, 28.59],
+            [77.195, 28.54]
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "West",
+        "fee": 50,
+        "note": ""
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.14, 28.642],
+            [77.2, 28.648],
+            [77.198, 28.675],
+            [77.14, 28.672],
+            [77.14, 28.642]
+          ]
+        ]
+      }
+    }
+  ]
+}

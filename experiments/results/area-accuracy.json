@@ -47,10 +47,10 @@
    ],
    "timing_repeats": 3
   },
-  "utc_timestamp": "2026-10-19T12:49:16+00:00",
+  "utc_timestamp": "2026-10-19T12:50:29+00:00",
   "command": "python experiments/02_area_accuracy.py --quick",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
-  "runtime_seconds": 7.0,
+  "runtime_seconds": 9.0,
   "figures": [
    "docs/assets/experiments/area-accuracy-latitude.svg",
    "docs/assets/experiments/area-accuracy-length.svg",
@@ -175,7 +175,10 @@
    "squares_max_abs_unextrapolated_geographiclib_vs_closed_form": 0.000512438415302,
    "squares_max_abs_qoregeo_vs_sphere_closed_form": 4.22185840478e-11,
    "squares_max_abs_corners_only_vs_densified": 1.7151125274e-11,
-   "circles_max_abs_ratio_change_n_to_2n": 0.00154323260183,
+   "circles_max_abs_ratio_change_n_to_2n": 2.22960824023e-05,
+   "pole_circle_ratio_change_n_to_2n": [
+    -0.00154323260183
+   ],
    "max_abs_pyproj_vs_geographiclib": 1.13123000673e-11
   },
   "colorado": {
@@ -1506,8 +1509,8 @@
     "wgs84_closed_form_m2": 7499903330.83,
     "error_pct": 0.449014,
     "outer_only_error_pct": 0.449021,
-    "hole_orientation_changes_result": false,
-    "feature_wrapper_changes_result": false,
+    "hole_clockwise_vs_counterclockwise_rel_diff": 0.0,
+    "feature_wrapper_vs_polygon_rel_diff": 0.0,
     "check_reference_vs_closed_form": -2.54316428983e-15
    },
    {
@@ -1517,8 +1520,8 @@
     "wgs84_closed_form_m2": 7499903976.86,
     "error_pct": -0.222235,
     "outer_only_error_pct": -0.222242,
-    "hole_orientation_changes_result": true,
-    "feature_wrapper_changes_result": false,
+    "hole_clockwise_vs_counterclockwise_rel_diff": 2.67626988005e-14,
+    "feature_wrapper_vs_polygon_rel_diff": 0.0,
     "check_reference_vs_closed_form": 1.27158203538e-14
    },
    {
@@ -1528,8 +1531,8 @@
     "wgs84_closed_form_m2": 7499904534.6,
     "error_pct": -0.801737,
     "outer_only_error_pct": -0.801755,
-    "hole_orientation_changes_result": true,
-    "feature_wrapper_changes_result": false,
+    "hole_clockwise_vs_counterclockwise_rel_diff": -2.69190406269e-14,
+    "feature_wrapper_vs_polygon_rel_diff": 0.0,
     "check_reference_vs_closed_form": -2.10319653011e-13
    },
    {
@@ -1967,20 +1970,20 @@
    "polygon": "geodesic circle, r = 100 km at 45 N, 1,024 vertices",
    "per_call": {
     "qoregeo.area (pure Python, sphere)": {
-     "median_us": 460.01,
-     "min_us": 439.91,
+     "median_us": 795.23,
+     "min_us": 633.81,
      "calls_per_run": 500,
      "runs": 3
     },
     "geographiclib PolygonArea (pure Python, WGS84)": {
-     "median_us": 57592.44,
-     "min_us": 54945.65,
+     "median_us": 74332.54,
+     "min_us": 73709.78,
      "calls_per_run": 5,
      "runs": 3
     },
     "pyproj Geod.polygon_area_perimeter (C, WGS84)": {
-     "median_us": 743.43,
-     "min_us": 724.16,
+     "median_us": 984.53,
+     "min_us": 858.1,
      "calls_per_run": 500,
      "runs": 3
     }
