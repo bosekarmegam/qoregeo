@@ -8,6 +8,11 @@ permissions:
   contents: read
 
 jobs:
+  checks:
+    name: Lint, type-check and full test matrix
+    uses: ./.github/workflows/tests.yml
+    secrets: inherit
+
   build:
     name: Build and test distributions
     runs-on: ubuntu-latest
@@ -54,7 +59,7 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: [build]
+    needs: [checks, build]
     runs-on: ubuntu-latest
     environment:
       name: pypi

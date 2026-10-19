@@ -7,30 +7,40 @@ No server required — just open in a browser.
 Safety
 ------
 * The title is HTML-escaped and all data is embedded as JSON with ``<``,
-  ``>``, ``&`` and U+2028/U+2029 escaped, so property values can never
-  break out of the ``<script>`` block.
+  ``>``, ``&``, U+2028/U+2029 and lone surrogates escaped, so property
+  values can never break out of the ``<script>`` block.
 * Popups are built with DOM ``textContent`` — property keys and values are
   never interpreted as HTML.
 * Leaflet and leaflet.heat are loaded with Subresource Integrity hashes and
   fall back to a second CDN if the first one is unreachable.
+* Files are written atomically, so a failure never truncates an existing map.
 """
 
 from __future__ import annotations
 
-import datetime
-import decimal
 import html
 import json
 import math
 import os
 import re
+import sys
 import warnings
 from typing import Any
 from urllib.parse import quote
 
 from ._version import __version__
 from .exceptions import InvalidArgumentError
-from .utils import _representative_point
+from .utils import (
+    GEOMETRY_TYPES,
+    _atomic_write,
+    _copy_geometry,
+    _escape_surrogates,
+    _geometry_problem,
+    _iter_positions,
+    _json_safe,
+    _lng_span,
+    _representative_point,
+)
 
 Feature = dict[str, Any]
 Coord   = tuple[float, float]
@@ -89,10 +99,17 @@ _TILES: dict[str, dict[str, Any]] = {
     },
     "osm": {
         "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "options": {"attribution": _OSM_ATTR, "maxZoom": 19},
+        # OSM's tile policy requires a Referer; this sends the page's origin
+        # when the map is served over http(s).
+        "options": {"attribution": _OSM_ATTR, "maxZoom": 19,
+                    "referrerPolicy": "strict-origin-when-cross-origin"},
         "carto": False,
     },
 }
+
+# Placeholders Leaflet's TileLayer understands in a URL template.
+_TILE_PLACEHOLDERS = {"s", "z", "x", "y", "-y", "r"}
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 
 _STYLE = {
     "point": {
@@ -111,16 +128,6 @@ _DEFAULT_CENTER_ZOOM = 10
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _json_default(o: Any) -> Any:
-    if isinstance(o, (set, frozenset)):
-        return sorted(o, key=str)
-    if isinstance(o, (datetime.date, datetime.time)):
-        return o.isoformat()
-    if isinstance(o, decimal.Decimal):
-        return float(o)
-    return str(o)
-
-
 _JS_ESCAPES = {
     "<": "\\u003c",
     ">": "\\u003e",
@@ -130,20 +137,15 @@ _JS_ESCAPES = {
 }
 
 
-def _json_safe(obj: Any) -> Any:
-    """Recursively replace NaN / ±Infinity (not valid JSON) with None."""
-    if isinstance(obj, float):
-        return obj if math.isfinite(obj) else None
-    if isinstance(obj, dict):
-        return {k: _json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_json_safe(v) for v in obj]
-    return obj
-
-
 def _to_js(obj: Any) -> str:
-    """Serialise ``obj`` as a JS literal that is safe inside an inline <script>."""
-    text = json.dumps(_json_safe(obj), ensure_ascii=False, default=_json_default, allow_nan=False)
+    """
+    Serialise ``obj`` as a JS literal that is safe inside an inline <script>.
+
+    Values are made JSON-safe first (NaN → null, sets → lists, …, and
+    integers beyond 2**53 → strings so no digits are lost in the browser).
+    """
+    text = json.dumps(_json_safe(obj, js=True), ensure_ascii=False, allow_nan=False)
+    text = _escape_surrogates(text)
     return re.sub("[<>&  ]", lambda m: _JS_ESCAPES[m.group(0)], text)
 
 
@@ -152,8 +154,13 @@ def _render(template: str, values: dict[str, str]) -> str:
     return re.sub(r"__([A-Z_]+)__", lambda m: values.get(m.group(1), m.group(0)), template)
 
 
+def _html_text(text: Any) -> str:
+    """HTML-escape ``text``, replacing characters that cannot be encoded as UTF-8."""
+    return html.escape(str(text).encode("utf-8", "replace").decode("utf-8"))
+
+
 def _tiles_config(
-    tiles: str,
+    tiles: Any,
     api_key: str | None = None,
     attribution: str | None = None,
 ) -> dict[str, Any]:
@@ -164,42 +171,57 @@ def _tiles_config(
     CARTO basemaps require a free per-user API key since August 2026; it is
     taken from ``api_key`` or the QOREGEO_CARTO_API_KEY environment variable.
     Without one CARTO serves tiles with an "API key required" watermark.
+    ``attribution`` is trusted HTML; for presets it is appended to the
+    required OpenStreetMap / CARTO credit.
     """
-    if isinstance(tiles, str) and tiles.strip().lower().startswith(("https://", "http://")):
+    presets = " | ".join(repr(k) for k in _TILES)
+    if not isinstance(tiles, str):
+        raise InvalidArgumentError(
+            "tiles", tiles, f"{presets} or a custom https:// URL template",
+            "geo.map('out.html', tiles='light')",
+        )
+
+    if tiles.strip().lower().startswith(("https://", "http://")):
         url = tiles.strip()
-        if not all(token in url for token in ("{z}", "{x}", "{y}")):
+        names = set(_PLACEHOLDER_RE.findall(url))
+        unknown = sorted(names - _TILE_PLACEHOLDERS)
+        if not {"z", "x"} <= names or not names & {"y", "-y"} or unknown:
+            problem = (f"unknown placeholder(s) {', '.join('{' + n + '}' for n in unknown)} — "
+                       "substitute their values into the URL" if unknown
+                       else "a URL template containing {z}, {x} and {y} (or {-y})")
             raise InvalidArgumentError(
-                "tiles", tiles, "a URL template containing {z}, {x} and {y}",
+                "tiles", tiles, problem,
                 "geo.map('out.html', tiles='https://tile.example.com/{z}/{x}/{y}.png', "
                 "attribution='&copy; Example')",
             )
         options: dict[str, Any] = {"maxZoom": 19, "attribution": attribution or ""}
-        if "{s}" in url:
+        if "s" in names:
             options["subdomains"] = "abc"
         return {"url": url, "options": options}
 
-    name = tiles.strip().lower() if isinstance(tiles, str) else tiles
+    name = tiles.strip().lower()
     if name not in _TILES:
         raise InvalidArgumentError(
-            "tiles", tiles,
-            " | ".join(repr(k) for k in _TILES) + " or a custom https:// URL template",
+            "tiles", tiles, f"{presets} or a custom https:// URL template",
             "geo.map('out.html', tiles='light')",
         )
     preset = _TILES[name]
     config = {"url": preset["url"], "options": dict(preset["options"])}
     if attribution:
-        config["options"]["attribution"] = attribution
+        config["options"]["attribution"] += ", " + attribution
 
     if preset["carto"]:
-        key = api_key or os.environ.get(CARTO_KEY_ENV, "").strip()
+        key = (api_key or os.environ.get(CARTO_KEY_ENV, "")).strip()
         if key:
             config["url"] += "?key=" + quote(key, safe="")
         else:
             warnings.warn(
                 f"QOREgeo: CARTO basemaps ('{name}') need a free API key since August 2026 — "
                 f"without one the tiles show an 'API key required' watermark. Get a key at "
-                f"{_CARTO_KEY_URL} and pass tile_api_key='…' (or set {CARTO_KEY_ENV}), "
-                f"or use tiles='osm'.",
+                f"{_CARTO_KEY_URL} and pass tile_api_key='…' (or set {CARTO_KEY_ENV}), or pass "
+                f"your own tiles='https://…/{{z}}/{{x}}/{{y}}.png'. (tiles='osm' also works, but "
+                f"only when the page is served over http(s): OpenStreetMap rejects tile requests "
+                f"from local files.)",
                 stacklevel=4,
             )
     return config
@@ -213,12 +235,54 @@ def _view_config(zoom: int | None, center: Coord | None) -> dict[str, Any]:
     }
 
 
+def _crosses_antimeridian(lngs: list[float]) -> bool:
+    """True if the tightest longitude span of ``lngs`` crosses ±180°."""
+    if not lngs:
+        return False
+    west, east = _lng_span(lngs)
+    return west > east
+
+
+def _shift_geometry(geometry: Any) -> Any:
+    """Copy of ``geometry`` with western longitudes moved east by 360°."""
+    def shift(c: Any) -> Any:
+        if isinstance(c, list) and len(c) >= 2 and not isinstance(c[0], list):
+            return [c[0] + 360.0 if c[0] < 0 else c[0], *c[1:]]
+        return [shift(x) for x in c] if isinstance(c, list) else c
+
+    out = _copy_geometry(geometry)
+    if isinstance(out, dict):
+        if "coordinates" in out:
+            out["coordinates"] = shift(out["coordinates"])
+        if isinstance(out.get("geometries"), list):
+            out["geometries"] = [_shift_geometry(g) for g in out["geometries"]]
+    return out
+
+
+def _overlay_problem(shape: Any) -> str | None:
+    """Why ``shape`` cannot be drawn as an overlay (None if it can)."""
+    if not isinstance(shape, dict):
+        return f"a {type(shape).__name__}, not a GeoJSON dict"
+    stype = shape.get("type")
+    if stype == "FeatureCollection":
+        feats = shape.get("features")
+        if not isinstance(feats, list):
+            return "FeatureCollection 'features' must be a list"
+        for f in feats:
+            problem = _overlay_problem(f)
+            if problem:
+                return problem
+        return None
+    if stype == "Feature":
+        geom = shape.get("geometry")
+        return None if geom is None else _geometry_problem(geom)
+    if stype in GEOMETRY_TYPES:
+        return _geometry_problem(shape)
+    return f"unknown GeoJSON type {stype!r}"
+
+
 def _write(path: str, content: str) -> None:
-    parent = os.path.dirname(path)
-    if parent:
-        os.makedirs(parent, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write(content)
+    _atomic_write(path, content, encoding="utf-8")
 
 
 def _announce(message: str, verbose: bool) -> None:
@@ -228,7 +292,17 @@ def _announce(message: str, verbose: bool) -> None:
     try:
         print(message)
     except UnicodeEncodeError:
-        print(message.replace("✅", "[OK]").encode("ascii", "replace").decode("ascii"))
+        fallback = message.replace("✅", "[OK]").replace("→", "->")
+        encoding = getattr(sys.stdout, "encoding", None) or "ascii"
+        try:
+            fallback = fallback.encode(encoding, "replace").decode(encoding, "replace")
+        except LookupError:
+            fallback = fallback.encode("ascii", "replace").decode("ascii")
+        print(fallback)
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -299,7 +373,8 @@ __EXTRA_HTML__
       var i = 0;
       (function next() {
         if (i >= asset.urls.length) {
-          reject(new Error("Could not load " + asset.urls[0] + " (are you offline?)"));
+          reject(new Error("Could not load " + asset.urls.join(" or ") +
+                           " (offline, blocked, or failed its integrity check)."));
           return;
         }
         var s = document.createElement("script");
@@ -358,7 +433,7 @@ _MAP_INIT = """\
   function popupFor(props) {
     var wrap = document.createElement("div");
     wrap.className = "qg-popup";
-    var keys = Object.keys(props || {}).filter(function (k) { return k.charAt(0) !== "_"; });
+    var keys = Object.keys(props || {});
     if (!keys.length) {
       wrap.className += " qg-empty";
       wrap.textContent = "No properties";
@@ -376,10 +451,18 @@ _MAP_INIT = """\
     return wrap;
   }
 
+  function addEach(layer, items) {
+    var failed = 0;
+    items.forEach(function (item) {
+      try { layer.addData(item); } catch (e) { failed++; }
+    });
+    if (failed) console.warn("QOREgeo: " + failed + " shape(s) could not be drawn");
+  }
+
   function init(L) {
     var map = baseMap(L);
     var count = 0;
-    var layer = L.geoJSON(CONFIG.data, {
+    var layer = L.geoJSON(null, {
       pointToLayer: function (f, latlng) { return L.circleMarker(latlng, CONFIG.style.point); },
       style: function () { return CONFIG.style.shape; },
       onEachFeature: function (f, l) {
@@ -387,14 +470,16 @@ _MAP_INIT = """\
         l.bindPopup(function () { return popupFor(f.properties); }, { maxWidth: 320 });
       }
     }).addTo(map);
+    addEach(layer, CONFIG.data.features);
 
     var bounds = layer.getBounds();
     if (CONFIG.overlays.length) {
-      var overlay = L.geoJSON(CONFIG.overlays, {
+      var overlay = L.geoJSON(null, {
         style: function () { return CONFIG.style.overlay; },
         pointToLayer: function (f, latlng) { return L.circleMarker(latlng, CONFIG.style.point); },
         interactive: false
       }).addTo(map);
+      addEach(overlay, CONFIG.overlays);
       bounds.extend(overlay.getBounds());
     }
 
@@ -420,24 +505,36 @@ def build_map(
     """Write an interactive Leaflet map of ``features`` to ``output_path``."""
     overlay_list = []
     for i, shape in enumerate(overlays or []):
-        if not isinstance(shape, dict) or "type" not in shape:
+        problem = _overlay_problem(shape)
+        if problem:
             raise InvalidArgumentError(
-                f"overlays[{i}]", shape, "a GeoJSON geometry / Feature dict (e.g. a geo.buffer() result)",
+                f"overlays[{i}]", shape,
+                f"a GeoJSON geometry / Feature / FeatureCollection dict ({problem})",
                 "geo.map('out.html', overlays=[geo.buffer((28.61, 77.20), 10)])",
             )
         overlay_list.append(shape)
 
+    tiles_cfg = _tiles_config(tiles, tile_api_key, attribution)
+
+    # Data spanning the antimeridian is drawn on one continuous longitude
+    # range (e.g. 170°…190°) so it opens as one cluster, not a world view.
+    lngs = [float(p[0]) for f in features for p in _iter_positions(f.get("geometry"))]
+    lngs += [float(p[0]) for s in overlay_list for p in _iter_positions(s)]
+    if _crosses_antimeridian(lngs):
+        features = [{**f, "geometry": _shift_geometry(f.get("geometry"))} for f in features]
+        overlay_list = [_shift_overlay(s) for s in overlay_list]
+
     config = {
         "data": {"type": "FeatureCollection", "features": features},
         "overlays": overlay_list,
-        "tiles": _tiles_config(tiles, tile_api_key, attribution),
+        "tiles": tiles_cfg,
         "view": _view_config(zoom, center),
         "style": _STYLE,
         "scripts": [_LEAFLET_JS],
     }
     page = _render(_PAGE, {
         "VERSION": __version__,
-        "TITLE": html.escape(str(title)),
+        "TITLE": _html_text(title),
         "CSS_URL": _LEAFLET_CSS["urls"][0],
         "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
         "CSS_SRI": _LEAFLET_CSS["integrity"],
@@ -446,7 +543,18 @@ def build_map(
         "INIT": _MAP_INIT,
     })
     _write(output_path, page)
-    _announce(f"✅  Map saved → {output_path}  ({len(features)} features)", verbose)
+    located = sum(1 for f in features if _representative_point(f.get("geometry")) is not None)
+    _announce(f"✅  Map saved → {output_path}  ({_plural(located, 'feature')})", verbose)
+
+
+def _shift_overlay(shape: dict[str, Any]) -> dict[str, Any]:
+    stype = shape.get("type")
+    if stype == "FeatureCollection":
+        return {**shape, "features": [_shift_overlay(f) for f in shape.get("features", [])]}
+    if stype == "Feature":
+        return {**shape, "geometry": _shift_geometry(shape.get("geometry"))}
+    shifted: dict[str, Any] = _shift_geometry(shape)
+    return shifted
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -457,18 +565,29 @@ _HEAT_INIT = """\
   function init(L) {
     if (typeof L.heatLayer !== "function") throw new Error("leaflet.heat failed to load from CDNs");
     var map = baseMap(L);
-    L.heatLayer(CONFIG.points, CONFIG.heat).addTo(map);
+    var heat = L.heatLayer(CONFIG.points, CONFIG.heat).addTo(map);
     var bounds = CONFIG.bounds ? L.latLngBounds(CONFIG.bounds) : null;
     setView(map, bounds);
-    window.qoregeo = { map: map, count: CONFIG.points.length };
+    // leaflet.heat fades points below its maxZoom; make the opening view full strength.
+    heat.setOptions({ maxZoom: map.getZoom() });
+    window.qoregeo = { map: map, heat: heat, count: CONFIG.points.length };
   }
 """
 
 _HEAT_GRADIENT = {0.1: "#00416A", 0.3: "#007A64", 0.6: "#00D4AA", 0.85: "#FFFFFF", 1.0: "#FFD700"}
 
 
-def _heat_points(features: list[Feature], intensity_col: str | None) -> list[list[float]]:
-    """Return ``[lat, lng, weight]`` triples with weights normalised to (0, 1]."""
+def _heat_points(
+    features: list[Feature],
+    intensity_col: str | None,
+    dropped: list[Any] | None = None,
+) -> list[list[float]]:
+    """
+    Return ``[lat, lng, weight]`` triples with weights normalised to (0, 1].
+
+    Rows whose intensity is missing, non-numeric, non-finite or <= 0 are left
+    out; their raw values are appended to ``dropped`` when it is given.
+    """
     points: list[list[float]] = []
     for feat in features:
         loc = _representative_point(feat.get("geometry"))
@@ -482,6 +601,8 @@ def _heat_points(features: list[Feature], intensity_col: str | None) -> list[lis
             except (TypeError, ValueError):
                 weight = float("nan")
             if not math.isfinite(weight) or weight <= 0:
+                if dropped is not None:
+                    dropped.append(raw)
                 continue   # no (or negative) weight contributes no heat
         points.append([loc[0], loc[1], weight])
 
@@ -507,7 +628,24 @@ def build_heatmap(
     attribution: str | None = None,
 ) -> None:
     """Write a Leaflet heatmap of ``features`` to ``output_path``."""
-    points = _heat_points(features, intensity_col)
+    tiles_cfg = _tiles_config(tiles, tile_api_key, attribution)
+    dropped: list[Any] = []
+    points = _heat_points(features, intensity_col, dropped)
+    if dropped:
+        examples = ", ".join(repr(v) for v in dropped[:3]) + (", …" if len(dropped) > 3 else "")
+        warnings.warn(
+            f"QOREgeo: {_plural(len(dropped), 'row')} with a missing, non-numeric or "
+            f"non-positive '{intensity_col}' value ({examples}) "
+            f"{'adds' if len(dropped) == 1 else 'add'} no heat"
+            + (" — the heatmap is empty." if not points else "."),
+            stacklevel=3,
+        )
+
+    if _crosses_antimeridian([p[1] for p in points]):
+        for p in points:
+            if p[1] < 0:
+                p[1] += 360.0
+
     bounds = None
     if points:
         lats = [p[0] for p in points]
@@ -518,16 +656,16 @@ def build_heatmap(
         "points": points,
         "bounds": bounds,
         "heat": {
-            "radius": radius, "blur": blur, "maxZoom": 12, "max": 1.0,
+            "radius": radius, "blur": blur, "maxZoom": 12, "max": 1.0, "minOpacity": 0.3,
             "gradient": _HEAT_GRADIENT,
         },
-        "tiles": _tiles_config(tiles, tile_api_key, attribution),
+        "tiles": tiles_cfg,
         "view": _view_config(zoom, center),
         "scripts": [_LEAFLET_JS, _LEAFLET_HEAT_JS],
     }
     page = _render(_PAGE, {
         "VERSION": __version__,
-        "TITLE": html.escape(str(title)),
+        "TITLE": _html_text(title),
         "CSS_URL": _LEAFLET_CSS["urls"][0],
         "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
         "CSS_SRI": _LEAFLET_CSS["integrity"],
@@ -536,4 +674,4 @@ def build_heatmap(
         "INIT": _HEAT_INIT,
     })
     _write(output_path, page)
-    _announce(f"✅  Heatmap saved → {output_path}  ({len(points)} points)", verbose)
+    _announce(f"✅  Heatmap saved → {output_path}  ({_plural(len(points), 'point')})", verbose)

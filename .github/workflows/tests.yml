@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+  workflow_call:      # reused by publish.yml so a release can't skip the checks
 
 permissions:
   contents: read

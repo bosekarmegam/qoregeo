@@ -11,8 +11,14 @@ Conventions
 
 from __future__ import annotations
 
+import csv
+import datetime
+import decimal
 import math
+import os
 import re
+import secrets
+import shutil
 import warnings
 from collections.abc import Iterator, Sequence
 from typing import Any
@@ -247,6 +253,17 @@ def _vincenty_km(
 _DISTANCE_METHODS = ("haversine", "vincenty")
 
 
+def _resolve_method(method: Any) -> str:
+    """Validate a distance method name (case-insensitive)."""
+    key = method.strip().lower() if isinstance(method, str) else method
+    if key not in _DISTANCE_METHODS:
+        raise InvalidArgumentError(
+            "method", method, "'haversine' (sphere) or 'vincenty' (WGS-84 ellipsoid)",
+            "geo.distance(a, b, method='vincenty')",
+        )
+    return str(key)
+
+
 def _distance_km(
     point_a: tuple[float, float],
     point_b: tuple[float, float],
@@ -254,12 +271,9 @@ def _distance_km(
 ) -> float:
     if method == "haversine":
         return _haversine_km(point_a, point_b)
-    if method == "vincenty":
+    if _resolve_method(method) == "vincenty":
         return _vincenty_km(point_a, point_b)
-    raise InvalidArgumentError(
-        "method", method, "'haversine' (sphere) or 'vincenty' (WGS-84 ellipsoid)",
-        "geo.distance(a, b, method='vincenty')",
-    )
+    return _haversine_km(point_a, point_b)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -371,7 +385,17 @@ def _generate_circle_polygon(
     lng_r = _to_radians(lng)
     d = radius_km / EARTH_RADIUS_KM   # angular distance in radians
 
-    points = []
+    points: list[list[float]] = []
+    if abs(lat) >= 90.0 - 1e-9:
+        # At a pole every direction is south/north and the bearing formula
+        # degenerates: lay the vertices out along a circle of latitude instead.
+        ring_lat = math.degrees(math.copysign(math.pi / 2 - d, lat))
+        for i in range(num_points):
+            step = 360.0 * i / num_points
+            points.append([-180.0 + step if lat > 0 else 180.0 - step, ring_lat])
+        points.append(list(points[0]))
+        return points
+
     for i in range(num_points):
         brng = _to_radians((360 - i * 360 / num_points) % 360)   # N, then west: CCW
 
@@ -419,23 +443,18 @@ def _point_in_polygon_ray(
     return inside
 
 
-def _unwrap_rings(rings: list[list[list[float]]]) -> list[list[list[float]]]:
-    """If any ring jumps across the antimeridian, shift western longitudes by +360."""
-    for ring in rings:
-        for i in range(1, len(ring)):
-            if abs(ring[i][0] - ring[i - 1][0]) > 180.0:
-                return [[[p[0] + 360.0 if p[0] < 0 else p[0], p[1]] for p in r] for r in rings]
-    return rings
-
-
 def _point_in_polygon_rings(lat: float, lng: float, rings: list[list[list[float]]]) -> bool:
     """
     Test a point against one GeoJSON polygon: ``rings[0]`` is the outer ring,
-    any further rings are holes. Handles polygons crossing the antimeridian.
+    any further rings are holes.
+
+    Edges are straight lines in lng/lat (the planar reading used by RFC 7946
+    §3.1.1, Turf, Shapely and Leaflet's rendering). Rings drawn *continuously*
+    across the antimeridian (longitudes beyond ±180, as buffer() produces) are
+    supported by also trying the point at lng ± 360.
     """
     if not rings or not rings[0]:
         return False
-    rings = _unwrap_rings(rings)
     outer = rings[0]
 
     lo = min(p[0] for p in outer)
@@ -575,17 +594,20 @@ def _iter_positions(geometry: Any) -> Iterator[Sequence[float]]:
 
 def _ring_centroid(ring: list[list[float]]) -> tuple[tuple[float, float] | None, float]:
     """Planar area centroid ``((lat, lng), |area|)`` of a closed [lng, lat] ring."""
+    # Work relative to the first vertex: with raw coordinates (e.g. lng ≈ 73)
+    # the shoelace cross products cancel and leave float noise in the result.
+    ox, oy = ring[0][0], ring[0][1]
     area2 = cx = cy = 0.0
     for i in range(len(ring) - 1):
-        x0, y0 = ring[i][0], ring[i][1]
-        x1, y1 = ring[i + 1][0], ring[i + 1][1]
+        x0, y0 = ring[i][0] - ox, ring[i][1] - oy
+        x1, y1 = ring[i + 1][0] - ox, ring[i + 1][1] - oy
         cross = x0 * y1 - x1 * y0
         area2 += cross
         cx += (x0 + x1) * cross
         cy += (y0 + y1) * cross
     if abs(area2) < 1e-18:
         return None, 0.0
-    return (cy / (3 * area2), cx / (3 * area2)), abs(area2) / 2
+    return (oy + cy / (3 * area2), ox + cx / (3 * area2)), abs(area2) / 2
 
 
 def _representative_point(geometry: Any) -> tuple[float, float] | None:
@@ -593,7 +615,7 @@ def _representative_point(geometry: Any) -> tuple[float, float] | None:
     Return a ``(lat, lng)`` point standing in for ``geometry``.
 
     Points return themselves; polygons return the area centroid of their
-    outer rings; everything else returns the mean of its vertices.
+    outer rings; everything else returns the spherical mean of its vertices.
     Returns None for null / empty / malformed geometries.
     """
     if not isinstance(geometry, dict):
@@ -611,7 +633,7 @@ def _representative_point(geometry: Any) -> tuple[float, float] | None:
         polys = [coords] if gtype == "Polygon" else (coords or [])
         rings = [p[0] for p in polys if isinstance(p, list) and p and isinstance(p[0], list)]
         try:
-            rings = _unwrap_rings([[[float(q[0]), float(q[1])] for q in r] for r in rings])
+            rings = [[[float(q[0]), float(q[1])] for q in r] for r in rings]
         except (TypeError, ValueError, IndexError):
             return None
         total = lat_acc = lng_acc = 0.0
@@ -630,11 +652,7 @@ def _representative_point(geometry: Any) -> tuple[float, float] | None:
     positions = list(_iter_positions(geometry))
     if not positions:
         return None
-    lngs = [float(p[0]) for p in positions]
-    if max(lngs) - min(lngs) > 180.0:
-        lngs = [x + 360.0 if x < 0 else x for x in lngs]
-    lat = sum(float(p[1]) for p in positions) / len(positions)
-    return lat, _normalize_lng(sum(lngs) / len(lngs))
+    return _spherical_mean([(float(p[1]), float(p[0])) for p in positions])
 
 
 def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
@@ -650,7 +668,7 @@ def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
     if math.hypot(x, y, z) < 1e-12:
         # Points cancel out (e.g. two antipodes) — fall back to the plain mean.
         return sum(p[0] for p in points) / n, sum(p[1] for p in points) / n
-    return math.degrees(math.atan2(z, math.hypot(x, y))), math.degrees(math.atan2(y, x))
+    return math.degrees(math.atan2(z, math.hypot(x, y))), _normalize_lng(math.degrees(math.atan2(y, x)))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -678,10 +696,17 @@ def _ring_area_m2(ring: list[list[float]]) -> float:
 
 
 def _polygon_area_m2(polygon: Any) -> float:
-    """Area of a Polygon / MultiPolygon / Feature / buffer in m² (holes subtracted)."""
+    """
+    Area of a Polygon / MultiPolygon / Feature in m² (holes subtracted).
+
+    A buffer() result is measured exactly as the spherical cap it represents
+    (2πR²(1 − cos(r/R))), consistent with point_in_polygon's exact circle test.
+    """
+    circle = _buffer_circle(polygon)
+    if circle is not None:
+        return 2 * math.pi * EARTH_RADIUS_M ** 2 * (1 - math.cos(circle[2] / EARTH_RADIUS_KM))
     total = 0.0
     for rings in _polygon_parts(polygon):
-        rings = _unwrap_rings(rings)
         outer = _ring_area_m2(rings[0])
         holes = sum(_ring_area_m2(r) for r in rings[1:])
         total += max(0.0, outer - holes)
@@ -856,7 +881,8 @@ def _detect_lat_lng_columns(
     lat_col = _find_column(columns, _LAT_CANDIDATES)
     lng_col = _find_column(columns, _LNG_CANDIDATES)
 
-    hint = f"geo.load('{filepath}', lat_col='<your lat column>', lng_col='<your lng column>')"
+    hint = (f"geo.load({filepath!r}, lat_col={(lat_col or '<your lat column>')!r}, "
+            f"lng_col={(lng_col or '<your lng column>')!r})")
     if lat_col is None:
         raise ColumnNotFoundError("latitude", columns, filepath, hint=hint)
     if lng_col is None:
@@ -869,38 +895,16 @@ def _detect_lat_lng_columns(
 # Safe parsing
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _safe_float(
-    value: str | None,
-    col_name: str,
-    row_num: int,
-    filepath: str,
-) -> float | None:
-    """
-    Parse a string to float, return None if blank, warn on bad values.
-    """
-    if value is None or str(value).strip() == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        # Non-fatal — skip row rather than crash
-        warnings.warn(
-            f"QOREgeo: row {row_num} in '{filepath}' — "
-            f"could not parse '{col_name}' value '{value}' as a number. Row skipped.",
-            stacklevel=4,
-        )
-        return None
-
-
 _INT_RE = re.compile(r"^[+-]?(0|[1-9]\d*)$")
 _FLOAT_RE = re.compile(r"^[+-]?(\d+\.\d*|\.\d+|\d+)([eE][+-]?\d+)?$")
 
 
 def _infer_value(value: Any) -> Any:
     """
-    Convert a CSV string to int / float / bool / None where that is lossless.
+    Convert a CSV string to int / float / bool / None where unambiguous.
 
-    Values with leading zeros (ZIP codes, IDs) stay strings.
+    Values with leading zeros (ZIP/PIN codes, IDs) or a leading '+' (phone
+    numbers) stay strings, as do numbers too large to represent as a float.
     """
     if not isinstance(value, str):
         return value
@@ -912,8 +916,200 @@ def _infer_value(value: Any) -> Any:
         return True
     if low == "false":
         return False
+    if s.startswith("+"):
+        return value
     if _INT_RE.match(s):
         return int(s)
-    if _FLOAT_RE.match(s) and not re.match(r"^[+-]?0\d", s):
-        return float(s)
+    if _FLOAT_RE.match(s) and not re.match(r"^-?0\d", s):
+        f = float(s)
+        return f if math.isfinite(f) else value
     return value
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GeoJSON validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+_NESTING = {"Point": 0, "MultiPoint": 1, "LineString": 1,
+            "MultiLineString": 2, "Polygon": 2, "MultiPolygon": 3}
+
+
+def _position_problem(pos: Any, strict_lng: bool) -> str | None:
+    if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+        return f"position {pos!r} is not a [lng, lat] pair"
+    lng, lat = pos[0], pos[1]
+    if not (_is_number(lng) and _is_number(lat)):
+        return f"position {list(pos[:2])!r} must contain numbers"
+    if not (math.isfinite(lng) and math.isfinite(lat)):
+        return f"position {list(pos[:2])!r} is not finite"
+    if not -90.0 <= lat <= 90.0:
+        return f"latitude {lat} is outside -90..90 (are lng/lat swapped?)"
+    limit = 180.0 if strict_lng else 360.0
+    if not -limit <= lng <= limit:
+        return f"longitude {lng} is outside -{limit:g}..{limit:g}"
+    return None
+
+
+def _coords_problem(coords: Any, depth: int, gtype: str) -> str | None:
+    if depth == 0:
+        return _position_problem(coords, strict_lng=gtype == "Point")
+    if not isinstance(coords, (list, tuple)):
+        return f"{gtype} 'coordinates' must be nested {depth + 1} level(s) deep"
+    if gtype in ("Polygon", "MultiPolygon") and depth == 1 and 0 < len(coords) < 3:
+        return f"a {gtype} ring needs at least 3 positions"
+    for c in coords:
+        problem = _coords_problem(c, depth - 1, gtype)
+        if problem:
+            return problem
+    return None
+
+
+def _geometry_problem(geometry: Any, _depth: int = 0) -> str | None:
+    """
+    Return why ``geometry`` is not a usable GeoJSON geometry, or None if it
+    is. Checks the type, the nesting of 'coordinates' and every position
+    (numbers, finite, latitude within ±90; Points within ±180 longitude,
+    other geometries within ±360 so rings drawn across the antimeridian load).
+    """
+    if not isinstance(geometry, dict):
+        return "geometry must be a JSON object"
+    gtype = geometry.get("type")
+    if gtype == "GeometryCollection":
+        geoms = geometry.get("geometries")
+        if not isinstance(geoms, list):
+            return "GeometryCollection 'geometries' must be a list"
+        if _depth > 16:
+            return "GeometryCollection is nested too deeply"
+        for g in geoms:
+            problem = _geometry_problem(g, _depth + 1)
+            if problem:
+                return problem
+        return None
+    if gtype not in _NESTING:
+        return f"unsupported geometry type {gtype!r}"
+    if "coordinates" not in geometry:
+        return f"{gtype} has no 'coordinates'"
+    return _coords_problem(geometry["coordinates"], _NESTING[gtype], gtype)
+
+
+def _copy_geometry(geometry: Any) -> Any:
+    """Copy a geometry's nested coordinate lists (cheaper than deepcopy)."""
+    if not isinstance(geometry, dict):
+        return geometry
+
+    def nested(c: Any) -> Any:
+        return [nested(x) for x in c] if isinstance(c, (list, tuple)) else c
+
+    out = dict(geometry)
+    if "coordinates" in out:
+        out["coordinates"] = nested(out["coordinates"])
+    if isinstance(out.get("geometries"), list):
+        out["geometries"] = [_copy_geometry(g) for g in out["geometries"]]
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Serialisation & files
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MAX_SAFE_INT = 2 ** 53 - 1
+
+
+def _json_key(k: Any) -> str:
+    if isinstance(k, str):
+        return k
+    if isinstance(k, bool):
+        return "true" if k else "false"
+    if k is None:
+        return "null"
+    if isinstance(k, float) and not math.isfinite(k):
+        return "NaN" if k != k else ("Infinity" if k > 0 else "-Infinity")
+    return str(k)
+
+
+def _json_safe(obj: Any, js: bool = False) -> Any:
+    """
+    Return a JSON-compatible copy of ``obj``: NaN / ±Infinity (float or
+    Decimal) become None, sets and tuples become lists, dates become ISO
+    strings, Decimals become floats, dict keys become strings and any other
+    object becomes ``str(obj)``. With ``js=True``, integers too large for a
+    JavaScript number (> 2**53 − 1) become strings so no digits are lost.
+    """
+    if obj is None or isinstance(obj, (str, bool)):
+        return obj
+    if isinstance(obj, int):
+        return str(obj) if js and abs(obj) > _MAX_SAFE_INT else obj
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, decimal.Decimal):
+        return float(obj) if obj.is_finite() else None
+    if isinstance(obj, dict):
+        return {_json_key(k): _json_safe(v, js) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v, js) for v in obj]
+    if isinstance(obj, (set, frozenset)):
+        return [_json_safe(v, js) for v in sorted(obj, key=str)]
+    if isinstance(obj, (datetime.date, datetime.time)):
+        return obj.isoformat()
+    return str(obj)
+
+
+_SURROGATE_RE = re.compile("[\ud800-\udfff]")
+
+
+def _escape_surrogates(text: str) -> str:
+    """Replace lone UTF-16 surrogates (unencodable in UTF-8) with JSON \\uXXXX escapes."""
+    return _SURROGATE_RE.sub(lambda m: f"\\u{ord(m.group(0)):04x}", text)
+
+
+def _atomic_write(path: str, text: str, encoding: str = "utf-8", errors: str = "strict") -> None:
+    """
+    Write ``text`` to ``path`` via a temporary file in the same directory and
+    an atomic rename, so a failure never leaves a truncated file behind.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    os.makedirs(parent, exist_ok=True)
+    tmp = os.path.join(parent, f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp")
+    try:
+        with open(tmp, "x", encoding=encoding, errors=errors, newline="") as f:
+            f.write(text)
+        if os.path.exists(path):
+            try:
+                shutil.copymode(path, tmp)
+            except OSError:
+                pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Delimiter detection
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DELIMITERS = (",", ";", "\t", "|")
+
+
+def _detect_delimiter(lines: list[str], prefer_tab: bool = False) -> str:
+    """
+    Pick the delimiter that splits the header into the most fields while
+    keeping the data rows consistent with it. Quoting is honoured, so
+    delimiters inside quoted header names are not counted.
+    """
+    order = ("\t", ",", ";", "|") if prefer_tab else _DELIMITERS
+    best = order[0] if prefer_tab else ","
+    best_score: tuple[int, int, int] | None = None
+    for rank, delim in enumerate(order):
+        rows = [r for r in csv.reader(lines, delimiter=delim) if r]
+        if not rows or len(rows[0]) < 2:
+            continue
+        width = len(rows[0])
+        consistent = sum(1 for r in rows[1:] if len(r) == width)
+        score = (consistent, width, -rank)
+        if best_score is None or score > best_score:
+            best, best_score = delim, score
+    return best

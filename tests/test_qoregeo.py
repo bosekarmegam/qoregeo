@@ -33,7 +33,7 @@ from qoregeo.exceptions import (
     NoDataError,
     UnsupportedFormatError,
 )
-from qoregeo.exceptions import FileNotFoundError as QFileNotFoundError
+from qoregeo.exceptions import GeoFileNotFoundError as QFileNotFoundError
 from qoregeo.utils import (
     _bearing_to_compass,
     _detect_lat_lng_columns,

@@ -15,13 +15,32 @@ exposes the offending values as attributes for programmatic handling.
 from __future__ import annotations
 
 import builtins
+import errno
+import os
+import warnings
 from typing import Any
 
 _LINE = "─" * 44
 
 
+def _rebuild(
+    cls: type[BaseException], args: tuple[Any, ...], state: dict[str, Any]
+) -> BaseException:
+    """Unpickle a QOREgeo exception without re-running its __init__."""
+    obj = cls.__new__(cls)
+    BaseException.__init__(obj, *args)
+    obj.__dict__.update(state)
+    return obj
+
+
 class QOREgeoError(Exception):
     """Base class for all QOREgeo exceptions."""
+
+    # The subclasses build their message in __init__ from several arguments,
+    # so the default pickling (cls(*args)) would fail; restore state directly.
+    # This keeps errors raised in multiprocessing / ProcessPoolExecutor workers intact.
+    def __reduce__(self) -> tuple[Any, ...]:
+        return (_rebuild, (type(self), self.args, self.__dict__))
 
 
 class NoDataError(QOREgeoError, RuntimeError):
@@ -142,42 +161,74 @@ class GeoFileNotFoundError(QOREgeoError, builtins.FileNotFoundError):
     catches it too.
     """
 
-    def __init__(self, path: Any) -> None:
+    def __init__(self, path: Any, is_dir: bool = False) -> None:
         self.path = str(path)
-        msg = (
-            f"\n\n❌  QOREgeo — File Not Found\n{_LINE}\n"
-            f"Could not find the file: '{path}'\n\n"
-            f"Fix it:\n"
-            f"    • Check the spelling of the filename\n"
-            f"    • Check that the file is in the right folder\n"
-            f"    • Use an absolute path if needed:\n"
-            f"      geo.load('/full/path/to/your_file.csv')"
-        )
+        if is_dir:
+            problem = f"'{path}' is a folder, not a file."
+            tips = (
+                f"    • Pass the path of a file inside it, e.g.\n"
+                f"      geo.load('{os.path.join(self.path, 'your_file.csv')}')"
+            )
+        else:
+            problem = f"Could not find the file: '{path}'"
+            tips = (
+                "    • Check the spelling of the filename\n"
+                "    • Check that the file is in the right folder\n"
+                "    • Use an absolute path if needed:\n"
+                "      geo.load('/full/path/to/your_file.csv')"
+            )
+        msg = f"\n\n❌  QOREgeo — File Not Found\n{_LINE}\n{problem}\n\nFix it:\n{tips}"
         super().__init__(msg)
+        # Behave like the built-in FileNotFoundError for code that inspects it.
+        self.errno = errno.ENOENT
+        self.strerror = os.strerror(errno.ENOENT)
         self.filename = self.path
 
     def __str__(self) -> str:   # OSError would otherwise format "[Errno …]" style
         return str(self.args[0]) if self.args else ""
 
+    def __reduce__(self) -> tuple[Any, ...]:   # OSError defines its own
+        return (_rebuild, (type(self), self.args, self.__dict__))
 
-# Backward-compatible name. Not exported via ``from qoregeo import *`` so it
-# never shadows the built-in in user code.
-FileNotFoundError = GeoFileNotFoundError
+
+class FileReadError(QOREgeoError, ValueError):
+    """Raised when a data file exists but cannot be decoded or parsed."""
+
+    def __init__(self, path: str, reason: str, hint: str | None = None) -> None:
+        self.path = str(path)
+        self.reason = reason
+        fix = hint or "Check that the file is a valid, uncorrupted CSV or GeoJSON file."
+        msg = (
+            f"\n\n❌  QOREgeo — Could Not Read File\n{_LINE}\n"
+            f"File: '{path}'\n"
+            f"Problem: {reason}\n\n"
+            f"Fix it:\n"
+            f"    {fix}"
+        )
+        super().__init__(msg)
 
 
 class UnsupportedFormatError(QOREgeoError, ValueError):
     """Raised for unsupported file formats."""
 
-    def __init__(self, ext: str) -> None:
+    def __init__(self, ext: str, supported: list[str] | None = None) -> None:
         self.ext = ext
+        if supported is None:
+            listing = (
+                "    • .csv / .tsv / .txt (delimited text)\n"
+                "    • .geojson\n"
+                "    • .json (GeoJSON format)\n\n"
+            )
+            fix = ("Fix it — convert your file first, or use geo.load_data([...]) "
+                   "with raw Feature dicts.")
+        else:
+            listing = "".join(f"    • {s}\n" for s in supported) + "\n"
+            fix = f"Fix it — use one of those extensions, e.g. geo.save('output{supported[0]}')."
         msg = (
             f"\n\n❌  QOREgeo — Unsupported File Format '{ext}'\n{_LINE}\n"
             f"QOREgeo currently supports:\n"
-            f"    • .csv / .tsv / .txt (delimited text)\n"
-            f"    • .geojson\n"
-            f"    • .json (GeoJSON format)\n\n"
-            f"Fix it — convert your file first, or use geo.load_data([...]) "
-            f"with raw Feature dicts."
+            f"{listing}"
+            f"{fix}"
         )
         super().__init__(msg)
 
@@ -206,13 +257,23 @@ class EmptyDatasetError(QOREgeoError, ValueError):
 
     def __init__(self, path: str) -> None:
         self.path = str(path)
+        if self.path.lower().endswith((".csv", ".tsv", ".txt")):
+            tips = (
+                "    • Make sure the file has data rows (not just a header)\n"
+                "    • Make sure latitude and longitude values are not all blank\n"
+                "    • Check that the lat/lng columns contain numbers in range"
+            )
+        else:
+            tips = (
+                "    • Make sure there is at least one Feature (or Geometry)\n"
+                "    • Check the warnings above for features that were skipped as invalid\n"
+                "    • Positions must be [longitude, latitude] numbers"
+            )
         msg = (
             f"\n\n❌  QOREgeo — Empty Dataset\n{_LINE}\n"
             f"No valid spatial features were found in: '{path}'\n\n"
             f"Fix it:\n"
-            f"    • Make sure the file has data rows (not just a header)\n"
-            f"    • Make sure latitude and longitude values are not all blank\n"
-            f"    • If using a CSV, check that lat/lng columns contain numbers"
+            f"{tips}"
         )
         super().__init__(msg)
 
@@ -268,9 +329,29 @@ class InvalidArgumentError(QOREgeoError, ValueError):
         super().__init__(msg)
 
 
+def _deprecated_file_not_found() -> type[GeoFileNotFoundError]:
+    # ``FileNotFoundError`` is the 1.0 name of GeoFileNotFoundError. It still
+    # works, but importing it by name shadows the built-in in the caller's
+    # module, so it is deprecated (and not part of ``__all__``).
+    warnings.warn(
+        "qoregeo's FileNotFoundError is deprecated; use GeoFileNotFoundError "
+        "(or the built-in FileNotFoundError, which also catches it).",
+        DeprecationWarning,
+        stacklevel=3,   # helper -> module __getattr__ -> caller
+    )
+    return GeoFileNotFoundError
+
+
+def __getattr__(name: str) -> Any:
+    if name == "FileNotFoundError":
+        return _deprecated_file_not_found()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     "QOREgeoError",
     "InvalidArgumentError",
+    "FileReadError",
     "NoDataError",
     "InvalidCoordinateError",
     "InvalidUnitError",

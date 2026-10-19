@@ -34,11 +34,15 @@ Links
 - Issues   : https://github.com/bosekarmegam/qoregeo/issues
 """
 
+from typing import Any
+
+from . import exceptions as _exceptions
 from ._version import __version__
-from .engine import GeoEngine
+from .engine import GeoEngine, PointLike
 from .exceptions import (
     ColumnNotFoundError,
     EmptyDatasetError,
+    FileReadError,
     GeoFileNotFoundError,
     InvalidArgumentError,
     InvalidBufferError,
@@ -50,25 +54,32 @@ from .exceptions import (
     QOREgeoError,
     UnsupportedFormatError,
 )
-from .exceptions import (
-    FileNotFoundError as FileNotFoundError,  # backward-compatible alias (re-export)
-)
 
 __author__   = "Suneel Bose"
 __email__    = "suneelbosekarmegam@gmail.com"
 __license__  = "MIT"
 
-# ``FileNotFoundError`` is importable by name but deliberately left out of
-# ``__all__`` so ``from qoregeo import *`` never shadows the built-in.
+
+def __getattr__(name: str) -> Any:
+    # ``qoregeo.FileNotFoundError`` (the 1.0 name of GeoFileNotFoundError) keeps
+    # working with a DeprecationWarning; it is deliberately not in ``__all__`` so
+    # ``from qoregeo import *`` never shadows the built-in.
+    if name == "FileNotFoundError":
+        return _exceptions._deprecated_file_not_found()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 __all__ = [
     # Main class
     "GeoEngine",
+    "PointLike",
     # Exceptions
     "QOREgeoError",
     "NoDataError",
     "InvalidCoordinateError",
     "InvalidUnitError",
     "InvalidArgumentError",
+    "FileReadError",
     "ColumnNotFoundError",
     "GeoFileNotFoundError",
     "UnsupportedFormatError",
