@@ -206,7 +206,7 @@ geo.load("data.csv", infer_types=True)
   **Longitude:** `longitude`, `lng`, `lon`, `long`, `x`, `xlong`, `lng_deg`, `longitude_deg`, `geo_lng`, `geo_long`, `point_lng`
 
 - **Delimiter** — comma, semicolon, tab or pipe, sniffed from the header line (`.tsv` files are always tab-separated). Pass `delimiter=` to force one.
-- **Values** stay strings by default. `infer_types=True` converts them to `int` / `float` / `bool` / `None` only where that is lossless — values with leading zeros such as ZIP codes and IDs (`"00123"`) stay strings.
+- **Values** stay strings by default. `infer_types=True` converts them to `int` / `float` / `bool` / `None` where that is unambiguous — values with leading zeros such as ZIP codes and IDs (`"00123"`), a leading `+` (phone numbers), and decimals with more significant digits than a float keeps (> 15) stay strings. Floats are normalised (`"19.90"` → `19.9`).
 - **Bad rows** — rows with blank coordinates are skipped silently; rows with non-numeric or out-of-range coordinates are skipped with **one** summary warning (often a sign the lat/lng columns are swapped); extra values beyond the header are dropped with a warning.
 - The default `utf-8-sig` encoding transparently handles the BOM that Excel writes.
 
@@ -221,7 +221,7 @@ Every RFC 7946 geometry type loads, filters, saves and renders: `Point`, `MultiP
 
 #### `geo.load_data(features)` → `self`
 
-Load GeoJSON directly from Python objects (no file needed). Accepts a list of Feature or Geometry dicts, a `FeatureCollection` dict, a single `Feature`, a bare Geometry, or any iterable (e.g. a generator) of Features. Property dicts are copied, so later changes to your objects don't leak into the engine.
+Load GeoJSON directly from Python objects (no file needed). Accepts a list of Feature or Geometry dicts, a `FeatureCollection` dict, a single `Feature`, a bare Geometry, or any iterable (e.g. a generator) of Features. Geometries and the top-level property dicts are copied, so adding or replacing properties on your objects afterwards doesn't affect the engine (nested values such as lists inside properties are shared).
 
 ```python
 geo.load_data([
@@ -424,9 +424,10 @@ Every filter returns a **new** `GeoEngine`; the original is never modified. A fi
 Filter by a property value. `op` is one of `'=='`, `'!='`, `'>'`, `'>='`, `'<'`, `'<='`, `'in'`, `'not in'`, `'contains'`.
 
 - String comparisons are case-insensitive; `'contains'` is a case-insensitive substring match; `'in'` / `'not in'` take a list.
-- When `value` is a number, comparisons are numeric — so CSV strings like `"7400000"` match `7400000`.
+- When `value` is a number, comparisons are numeric — so CSV strings like `"7400000"` match `7400000` — and integers are compared exactly, so large IDs never collide.
 - Ordering operators skip features whose property is missing or not comparable.
-- A column that no feature has raises `ColumnNotFoundError`.
+- A column that no feature has (nor the dataset a result was filtered from) raises `ColumnNotFoundError`.
+- Like every filter, it returns a new engine with copied feature and property dicts, so setting properties on the result never changes the original (geometries and nested values are shared, as in a pandas shallow copy).
 
 ```python
 geo.filter("state", "maharashtra").count()                    # 2
@@ -576,7 +577,7 @@ Or use `tiles="osm"`, which needs no key — but OpenStreetMap's tile servers re
 
 #### `geo.save(path, encoding='utf-8')` → `self`
 
-Save to `.geojson` / `.json` or `.csv` / `.tsv`. Missing parent folders are created, an empty result still writes a valid file, and the write is atomic — a failed save never truncates an existing file.
+Save to `.geojson` / `.json` or `.csv` / `.tsv`. Missing parent folders are created, an empty result still writes a valid file, and the write is atomic — a failed save never truncates an existing file. Symlinks are followed, and a read-only target raises `PermissionError` as with a plain `open()`.
 
 ```python
 geo.save("output.geojson")
@@ -603,9 +604,9 @@ All exceptions live in `qoregeo` (and `qoregeo.exceptions`), derive from `QOREge
 | `NoDataError` | `RuntimeError` | Nothing is loaded, or the dataset is empty (e.g. `nearest()` after a filter matched nothing) | `.method_name`, `.empty` |
 | `InvalidCoordinateError` | `ValueError` | A lat/lng is missing, non-numeric, NaN or out of range | `.lat`, `.lng`, `.context` |
 | `InvalidUnitError` | `ValueError` | Unknown distance or area unit | `.unit`, `.valid` |
-| `InvalidRadiusError` | `ValueError` | A `radius` (or the `filter_by_line` distance) is zero, negative, non-finite or not a number | `.radius` |
+| `InvalidRadiusError` | `ValueError` | A `buffer()` / `filter_by_radius()` radius or `filter_by_line()` distance is zero, negative, non-finite or not a number | `.radius` |
 | `InvalidBufferError` | `ValueError` | A polygon argument is missing, malformed or not a polygon | `.reason` |
-| `InvalidArgumentError` | `ValueError` | Any other bad argument (`op`, `k`, `zoom`, `tiles`, `precision`, `method`, …) | `.name`, `.value`, `.expected` |
+| `InvalidArgumentError` | `ValueError` | Any other bad argument (`op`, `k`, `zoom`, `tiles`, `precision`, `method`, `encoding`, a buffer radius beyond half the Earth's circumference, heatmap `radius`/`blur`, …) | `.name`, `.value`, `.expected` |
 | `ColumnNotFoundError` | `LookupError` | Lat/lng columns can't be found, or a filter / heatmap column doesn't exist | `.column`, `.available`, `.filepath` |
 | `GeoFileNotFoundError` | `FileNotFoundError` | The data file doesn't exist | `.path` |
 | `UnsupportedFormatError` | `ValueError` | Unsupported file extension | `.ext` |

@@ -29,7 +29,8 @@ def _rebuild(
     """Unpickle a QOREgeo exception without re-running its __init__."""
     obj = cls.__new__(cls)
     BaseException.__init__(obj, *args)
-    obj.__dict__.update(state)
+    for key, value in state.items():
+        setattr(obj, key, value)
     return obj
 
 
@@ -188,7 +189,10 @@ class GeoFileNotFoundError(QOREgeoError, builtins.FileNotFoundError):
         return str(self.args[0]) if self.args else ""
 
     def __reduce__(self) -> tuple[Any, ...]:   # OSError defines its own
-        return (_rebuild, (type(self), self.args, self.__dict__))
+        # errno / strerror / filename live in OSError's C slots, not __dict__.
+        state = {**self.__dict__, "errno": self.errno, "strerror": self.strerror,
+                 "filename": self.filename}
+        return (_rebuild, (type(self), self.args, state))
 
 
 class FileReadError(QOREgeoError, ValueError):

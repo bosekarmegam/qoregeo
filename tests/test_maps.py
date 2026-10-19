@@ -707,12 +707,24 @@ class TestCustomTiles:
         with pytest.raises(InvalidArgumentError):
             geo.map(tmp_path / "t.html", tiles=url)
 
-    def test_custom_tiles_ignore_api_key_and_never_warn(self, geo, tmp_path):
-        with warnings.catch_warnings():
-            warnings.simplefilter("error")
+    def test_custom_tiles_warn_that_api_key_is_unused(self, geo, tmp_path):
+        with pytest.warns(UserWarning, match="only added to CARTO tile URLs"):
             page = render(geo, tmp_path, tiles=CUSTOM_TILES, tile_api_key="secret")
         assert parse_config(page)["tiles"]["url"] == CUSTOM_TILES
         assert "secret" not in page
+
+    def test_custom_tiles_without_key_never_warn(self, geo, tmp_path, monkeypatch):
+        monkeypatch.delenv("QOREGEO_CARTO_API_KEY", raising=False)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            page = render(geo, tmp_path, tiles=CUSTOM_TILES)
+        assert parse_config(page)["tiles"]["url"] == CUSTOM_TILES
+
+    def test_custom_carto_style_gets_the_key(self, geo, tmp_path):
+        url = "https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png"
+        cfg = parse_config(render(geo, tmp_path, tiles=url, tile_api_key="k&1"))
+        assert cfg["tiles"]["url"] == url + "?key=k%261"
+        assert cfg["tiles"]["options"]["subdomains"] == "abcd"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

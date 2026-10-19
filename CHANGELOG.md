@@ -40,7 +40,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   around by dropping SRI) and fall back to a second CDN.
 - The error overlay no longer uses `innerHTML`.
 - `save()` and map output are written atomically: a failure never truncates an
-  existing file.
+  existing file (symlinks are followed and read-only files are still refused).
 
 ### Fixed
 - `map()` / `heatmap()` ignored `center`; heatmap ignored `zoom`; single-point maps
@@ -78,9 +78,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `save()` to CSV wrote duplicate / overwritten `latitude`/`longitude` columns when
   properties used those names, wrote nested values as Python reprs, and lost
   polygons and lines on a CSV round trip.
-- Filtered engines shared (and leaked changes to) the original's features and dropped
-  FeatureCollection members; `load_data()` kept a stale source path and aliased the
-  caller's objects; the GeoJSON skip warning pointed at QOREgeo instead of your code.
+- Filtered engines shared feature and property dicts with the original (setting a
+  property on a result changed the source) and dropped FeatureCollection members;
+  `load_data()` kept a stale source path and aliased the caller's geometries and
+  property dicts; the GeoJSON skip warning pointed at QOREgeo instead of your code.
 - `load()` on a directory raised `IsADirectoryError`; invalid JSON was reported as an
   "unsupported format"; "No data loaded" was reported after a filter that simply
   matched nothing; `ColumnNotFoundError` from `load()` suggested a `geo.filter(...)` fix.
@@ -98,17 +99,20 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   FeatureCollection of polygons), `filter_by_bbox()` (antimeridian aware),
   `k_nearest()`, `where()`, `sort_by()`, `head()`.
 - `filter(column, value, op=...)` with `==`, `!=`, `>`, `>=`, `<`, `<=`, `in`,
-  `not in`, `contains`.
+  `not in`, `contains`; numeric comparisons when `value` is a number (integers
+  compared exactly, so large IDs never collide).
 - `bbox()` (RFC 7946 order, antimeridian aware) and `centroid()`.
 - `geohash()` / `geohash_decode()`.
 - `add_point()`, iteration over features, `GeoEngine(verbose=False)`.
 - `load(delimiter=..., infer_types=...)`: quote-aware comma / semicolon / tab / pipe
   detection, `.tsv` and `.txt` files, opt-in type inference that keeps IDs, ZIP codes
   and phone numbers as strings.
-- `load_data()` accepts FeatureCollections, Features, Geometries and any iterable.
+- `load_data()` accepts FeatureCollections, Features, Geometries and any iterable
+  (Feature dicts with a missing or mis-cased `"type"` are still accepted, as in 1.0).
 - Maps: all geometry types, `tiles=` (`dark`, `light`, `voyager`, `osm`, or a custom
   URL with `attribution=`), `tile_api_key=` / `QOREGEO_CARTO_API_KEY` (CARTO basemaps
-  require a free key since August 2026 — QOREgeo warns when it is missing),
+  require a free key since August 2026 — QOREgeo warns when it is missing; the key is
+  also added to custom CARTO style URLs),
   `overlays=` (e.g. draw a buffer), canvas-rendered markers, OSM/CARTO attribution
   as their terms require; heatmap `radius` / `blur`.
 - `buffer()` rings follow the RFC 7946 right-hand rule (counter-clockwise).

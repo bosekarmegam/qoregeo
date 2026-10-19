@@ -11,14 +11,17 @@ Conventions
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import datetime
 import decimal
+import errno
 import math
 import os
 import re
 import secrets
 import shutil
+import threading
 import warnings
 from collections.abc import Iterator, Sequence
 from typing import Any
@@ -118,7 +121,7 @@ def _validate_coord(lat: Any, lng: Any, context: str | None = None) -> tuple[flo
     try:
         lat_f = float(lat)
         lng_f = float(lng)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         raise InvalidCoordinateError(lat, lng, context) from None
 
     # NaN fails every comparison, so it is rejected here too.
@@ -638,7 +641,9 @@ def _representative_point(geometry: Any) -> tuple[float, float] | None:
             return None
         total = lat_acc = lng_acc = 0.0
         for ring in rings:
-            if len(ring) >= 3 and ring[0] != ring[-1]:
+            if len(ring) < 3:
+                continue   # empty or degenerate ring
+            if ring[0] != ring[-1]:
                 ring = ring + [ring[0]]
             c, area = _ring_centroid(ring)
             if c is not None:
@@ -919,8 +924,14 @@ def _infer_value(value: Any) -> Any:
     if s.startswith("+"):
         return value
     if _INT_RE.match(s):
-        return int(s)
+        try:
+            return int(s)
+        except ValueError:   # beyond Python's int-string conversion limit
+            return value
     if _FLOAT_RE.match(s) and not re.match(r"^-?0\d", s):
+        digits = re.sub(r"[eE].*$", "", s).lstrip("+-").replace(".", "").lstrip("0")
+        if len(digits) > 15:
+            return value      # more significant digits than a float keeps
         f = float(s)
         return f if math.isfinite(f) else value
     return value
@@ -940,12 +951,16 @@ def _position_problem(pos: Any, strict_lng: bool) -> str | None:
     lng, lat = pos[0], pos[1]
     if not (_is_number(lng) and _is_number(lat)):
         return f"position {list(pos[:2])!r} must contain numbers"
-    if not (math.isfinite(lng) and math.isfinite(lat)):
+    try:
+        lng_f, lat_f = float(lng), float(lat)
+    except OverflowError:
+        return "position contains a number too large for a coordinate"
+    if not (math.isfinite(lng_f) and math.isfinite(lat_f)):
         return f"position {list(pos[:2])!r} is not finite"
-    if not -90.0 <= lat <= 90.0:
+    if not -90.0 <= lat_f <= 90.0:
         return f"latitude {lat} is outside -90..90 (are lng/lat swapped?)"
     limit = 180.0 if strict_lng else 360.0
-    if not -limit <= lng <= limit:
+    if not -limit <= lng_f <= limit:
         return f"longitude {lng} is outside -{limit:g}..{limit:g}"
     return None
 
@@ -1042,7 +1057,10 @@ def _json_safe(obj: Any, js: bool = False) -> Any:
     if isinstance(obj, float):
         return obj if math.isfinite(obj) else None
     if isinstance(obj, decimal.Decimal):
-        return float(obj) if obj.is_finite() else None
+        if not obj.is_finite():
+            return None
+        f = float(obj)
+        return f if math.isfinite(f) else None
     if isinstance(obj, dict):
         return {_json_key(k): _json_safe(v, js) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -1066,25 +1084,66 @@ def _atomic_write(path: str, text: str, encoding: str = "utf-8", errors: str = "
     """
     Write ``text`` to ``path`` via a temporary file in the same directory and
     an atomic rename, so a failure never leaves a truncated file behind.
+
+    Symlinks are followed (the file they point to is updated), a read-only
+    target raises PermissionError like a plain ``open(path, "w")`` would, and
+    hard-linked targets or folders where a temporary file can't be created
+    are written in place instead.
     """
-    parent = os.path.dirname(os.path.abspath(path))
+    real = os.path.realpath(path)
+    parent = os.path.dirname(real)
     os.makedirs(parent, exist_ok=True)
-    tmp = os.path.join(parent, f".{os.path.basename(path)}.{secrets.token_hex(6)}.tmp")
-    try:
-        with open(tmp, "x", encoding=encoding, errors=errors, newline="") as f:
+
+    def write_in_place() -> None:
+        with open(real, "w", encoding=encoding, errors=errors, newline="") as f:
             f.write(text)
-        if os.path.exists(path):
-            try:
-                shutil.copymode(path, tmp)
-            except OSError:
-                pass
-        os.replace(tmp, path)
+
+    if os.path.exists(real):
+        if not os.access(real, os.W_OK):
+            raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), path)
+        if os.stat(real).st_nlink > 1:
+            write_in_place()   # keep every hard-linked name pointing at the new content
+            return
+
+    tmp = os.path.join(parent, f".qg-{secrets.token_hex(6)}.tmp")
+    try:
+        f = open(tmp, "x", encoding=encoding, errors=errors, newline="")
+    except OSError:
+        write_in_place()       # e.g. a writable file in a read-only folder
+        return
+    try:
+        with f:
+            f.write(text)
+        if os.path.exists(real):
+            with contextlib.suppress(OSError):
+                shutil.copymode(real, tmp)
+        os.replace(tmp, real)
     except BaseException:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(tmp)
-        except OSError:
-            pass
         raise
+
+
+# csv.field_size_limit is process-wide; raise it only while QOREgeo is reading
+# and restore it once the last concurrent reader is done.
+_FIELD_LIMIT_LOCK = threading.Lock()
+_field_limit_state = {"users": 0, "saved": 0}
+
+
+@contextlib.contextmanager
+def _large_csv_fields(limit: int) -> Any:
+    with _FIELD_LIMIT_LOCK:
+        if _field_limit_state["users"] == 0:
+            _field_limit_state["saved"] = csv.field_size_limit()
+            csv.field_size_limit(limit)
+        _field_limit_state["users"] += 1
+    try:
+        yield
+    finally:
+        with _FIELD_LIMIT_LOCK:
+            _field_limit_state["users"] -= 1
+            if _field_limit_state["users"] == 0:
+                csv.field_size_limit(_field_limit_state["saved"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

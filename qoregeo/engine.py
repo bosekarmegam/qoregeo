@@ -66,9 +66,11 @@ from .utils import (
     _iter_positions,
     _json_safe,
     _km_per_unit,
+    _large_csv_fields,
     _lng_span,
     _m2_per_unit,
     _midpoint,
+    _normalize_lng,
     _path_length_km,
     _point_in_geometry,
     _point_line_km,
@@ -130,16 +132,28 @@ def _positive_int(name: str, value: Any, minimum: int, example: str) -> int:
     return value
 
 
-def _as_number(value: Any) -> float | None:
-    """Best-effort numeric view of a property value (None if not numeric)."""
+_INT_TEXT_RE = re.compile(r"^[+-]?\d+$")
+
+
+def _as_number(value: Any) -> int | float | None:
+    """
+    Numeric view of a property value (None if not numeric). Integers — and
+    integer strings — stay ``int`` so large IDs compare exactly (Python
+    compares ``int`` with ``float`` exactly too).
+    """
     if isinstance(value, bool) or value is None:
         return None
-    if isinstance(value, (int, float)):
-        return float(value) if math.isfinite(value) else None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, str):
+        text = value.strip()
         try:
-            f = float(value.strip())
-        except ValueError:
+            if _INT_TEXT_RE.match(text):
+                return int(text)
+            f = float(text)
+        except (ValueError, OverflowError):
             return None
         return f if math.isfinite(f) else None
     return None
@@ -153,7 +167,7 @@ def _values_equal(prop: Any, value: Any) -> bool:
     """Equality used by filter(): numeric when ``value`` is a number, else case-insensitive."""
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         p = _as_number(prop)
-        return p is not None and p == float(value)
+        return p is not None and p == value
     return _norm_str(prop) == _norm_str(value)
 
 
@@ -178,7 +192,8 @@ def _fspath(path: Any, example: str) -> str:
 
 def _check_encoding(encoding: Any) -> str:
     try:
-        codecs.lookup(encoding)
+        if not codecs.lookup(encoding)._is_text_encoding:
+            raise LookupError(encoding)
     except (LookupError, TypeError):
         raise InvalidArgumentError(
             "encoding", encoding, "a Python codec name such as 'utf-8', 'utf-8-sig' or 'cp1252'",
@@ -225,6 +240,21 @@ def _line_parts(line: Any, name: str = "line") -> list[list[Coord]]:
     return [[_coerce_point(pt) for pt in line]]
 
 
+_NUMBER_TYPES = (int, float)
+
+
+def _is_plain_point(geom: Any) -> bool:
+    """Cheap check for a valid ``Point`` (the vast majority of features)."""
+    if type(geom) is not dict or geom.get("type") != "Point":
+        return False
+    c = geom.get("coordinates")
+    return (
+        isinstance(c, (list, tuple)) and len(c) >= 2
+        and type(c[0]) in _NUMBER_TYPES and type(c[1]) in _NUMBER_TYPES
+        and -180.0 <= c[0] <= 180.0 and -90.0 <= c[1] <= 90.0   # NaN fails these too
+    )
+
+
 def _skip_summary(items: list[str]) -> str:
     return ", ".join(items[:5]) + (f", … (+{len(items) - 5} more)" if len(items) > 5 else "")
 
@@ -249,7 +279,7 @@ class GeoEngine:
     def __init__(self, verbose: bool = True) -> None:
         self._data: dict[str, Any] | None = None   # GeoJSON FeatureCollection
         self._source_path: str | None = None
-        self._columns: list[str] | None = None     # property names, inherited by filters
+        self._columns: list[str] | None = None     # columns inherited from the parent engine
         self.verbose = verbose
 
     # ──────────────────────────────────────────────────────────────────────
@@ -277,20 +307,40 @@ class GeoEngine:
             if point is not None:
                 yield i, feat, point
 
-    def _known_columns(self) -> list[str]:
-        """Property names of this dataset (inherited from the engine it was filtered from)."""
-        if self._columns is None:
-            seen: dict[str, None] = {}
-            for feat in self._features():
-                seen.update(dict.fromkeys(feat.get("properties", {})))
-            self._columns = list(seen)
-        return self._columns
+    def _all_positions(self) -> tuple[list[float], list[float]]:
+        """Latitudes and longitudes of every position of every geometry."""
+        lats: list[float] = []
+        lngs: list[float] = []
+        for feat in self._features():
+            geom = feat.get("geometry")
+            if isinstance(geom, dict) and geom.get("type") == "Point":   # fast path
+                coords = geom.get("coordinates")
+                if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                    lngs.append(float(coords[0]))
+                    lats.append(float(coords[1]))
+                continue
+            for pos in _iter_positions(geom):
+                lngs.append(float(pos[0]))
+                lats.append(float(pos[1]))
+        return lats, lngs
 
-    def _clone_with(self, features: list[Feature]) -> GeoEngine:
+    def _known_columns(self) -> list[str]:
         """
-        Return a new GeoEngine with the given features. Each feature and its
-        properties dict are copied, so changing a filtered result never
-        changes the engine it came from.
+        Property names of this dataset: those of its features plus any it
+        inherited from the engine it was filtered from (so a filter that
+        matched nothing still knows the columns).
+        """
+        seen: dict[str, None] = dict.fromkeys(self._columns or [])
+        for feat in self._features():
+            seen.update(dict.fromkeys(feat.get("properties") or {}))
+        return list(seen)
+
+    def _clone_with(self, features: list[Feature], columns: list[str] | None = None) -> GeoEngine:
+        """
+        Return a new GeoEngine with the given features. Each feature dict and
+        its properties dict are copied (a shallow copy, like pandas), so
+        setting a property on a filtered result never changes the engine it
+        came from; geometries and nested property values are shared.
         """
         new = GeoEngine(verbose=self.verbose)
         extra = {k: v for k, v in (self._data or {}).items() if k not in ("type", "features", "bbox")}
@@ -300,7 +350,7 @@ class GeoEngine:
             "features": [{**f, "properties": dict(f.get("properties") or {})} for f in features],
         }
         new._source_path = self._source_path
-        new._columns = self._known_columns()
+        new._columns = columns if columns is not None else self._known_columns()
         return new
 
     @staticmethod
@@ -327,23 +377,34 @@ class GeoEngine:
         for i, item in enumerate(raw):
             if not isinstance(item, dict):
                 raise InvalidGeoJSONError(source, f"item #{i} is a {type(item).__name__}, not a dict")
-            if item.get("type") in GEOMETRY_TYPES:
+            itype = item.get("type")
+            if itype in GEOMETRY_TYPES:
                 item = {"type": "Feature", "geometry": item, "properties": {}}
-            if item.get("type") != "Feature":
-                raise InvalidGeoJSONError(source, f"item #{i} has type {item.get('type')!r}, expected 'Feature'")
+            elif itype != "Feature":
+                # Accept Feature-shaped dicts with a missing or mis-cased type
+                # ("feature"), which v1.0 loaded too.
+                lenient = itype is None or (isinstance(itype, str) and itype.lower() == "feature")
+                if not (lenient and ("geometry" in item or "properties" in item)):
+                    raise InvalidGeoJSONError(
+                        source, f"item #{i} has type {itype!r}, expected 'Feature'"
+                    )
+                item = {**item, "type": "Feature"}
 
             geom = item.get("geometry")
             if geom is not None:
-                problem = _geometry_problem(geom)
-                if problem:
-                    skipped.append(f"#{i} ({problem})")
-                    continue
+                if not _is_plain_point(geom):   # fast path for the common case
+                    problem = _geometry_problem(geom)
+                    if problem:
+                        skipped.append(f"#{i} ({problem})")
+                        continue
                 if copy:
                     geom = _copy_geometry(geom)
 
-            feat = dict(item)
+            # Objects parsed from a file are ours to keep; caller objects are copied.
+            feat = dict(item) if copy else item
             props = item.get("properties")
-            feat["properties"] = dict(props) if isinstance(props, dict) else {}
+            if copy or not isinstance(props, dict):
+                feat["properties"] = dict(props) if isinstance(props, dict) else {}
             feat["geometry"] = geom
             features.append(feat)
 
@@ -432,7 +493,8 @@ class GeoEngine:
         if not os.path.isfile(path_str):
             raise GeoFileNotFoundError(path_str)
         encoding = _check_encoding(encoding)
-        if delimiter is not None and (not isinstance(delimiter, str) or len(delimiter) != 1):
+        if delimiter is not None and (not isinstance(delimiter, str) or len(delimiter) != 1
+                                      or delimiter in '\r\n"'):
             raise InvalidArgumentError("delimiter", delimiter, "a single character such as ',' or ';'",
                                        "geo.load('data.csv', delimiter=';')")
 
@@ -510,10 +572,9 @@ class GeoEngine:
         bad_geometry: list[str] = []
         ragged_rows = 0
 
-        old_limit = csv.field_size_limit()
         try:
-            csv.field_size_limit(_CSV_FIELD_LIMIT)
-            with open(path, newline="", encoding=encoding) as f:
+            with _large_csv_fields(_CSV_FIELD_LIMIT), \
+                    open(path, newline="", encoding=encoding) as f:
                 # Skip leading blank lines and Excel's "sep=;" preamble.
                 skipped_lines = 0
                 header_pos = f.tell()
@@ -529,6 +590,10 @@ class GeoEngine:
                     skipped_lines += 1
                     header_pos = f.tell()
                     first = f.readline()
+                    while first and not first.strip():
+                        skipped_lines += 1
+                        header_pos = f.tell()
+                        first = f.readline()
 
                 if delimiter is None:
                     if path.lower().endswith(".tsv"):
@@ -606,8 +671,6 @@ class GeoEngine:
             ) from e
         except csv.Error as e:
             raise FileReadError(path, f"CSV parse error: {e}") from e
-        finally:
-            csv.field_size_limit(old_limit)
 
         if problems:
             warnings.warn(
@@ -643,7 +706,7 @@ class GeoEngine:
                 path, f"the file is not valid {encoding} text ({e.reason} at byte {e.start})",
                 f"geo.load({path!r}, encoding='utf-8')   # GeoJSON should be UTF-8",
             ) from e
-        except json.JSONDecodeError as e:
+        except ValueError as e:   # JSONDecodeError, or an integer with too many digits
             raise InvalidGeoJSONError(path, f"not valid JSON ({e})") from e
         except RecursionError:
             raise InvalidGeoJSONError(path, "the JSON is nested too deeply") from None
@@ -896,7 +959,7 @@ class GeoEngine:
         lat, lng = _destination_point(origin, dist * _km_per_unit(unit), brng)
         return round(lat, 6), round(lng, 6)
 
-    def midpoint(self, point_a: PointLike, point_b: Coord) -> Coord:
+    def midpoint(self, point_a: PointLike, point_b: PointLike) -> Coord:
         """
         Great-circle midpoint between two coordinates.
 
@@ -1003,7 +1066,7 @@ class GeoEngine:
         Examples
         --------
         >>> geo.area(geo.buffer((28.61, 77.20), radius=1))   # ≈ π km²
-        3.1365
+        3.1416
         """
         per_unit = _m2_per_unit(unit)
         return round(_polygon_area_m2(polygon) / per_unit, 4)
@@ -1207,7 +1270,7 @@ class GeoEngine:
                 hint=f"geo.filter('{keys[0] if keys else 'column_name'}', value)",
             )
         if not features:
-            return self._clone_with([])
+            return self._clone_with([], keys)
 
         if op in ("in", "not in"):
             if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
@@ -1232,7 +1295,7 @@ class GeoEngine:
                 return _norm_str(value) in _norm_str(prop)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 left: Any = _as_number(prop)
-                right: Any = float(value)
+                right: Any = value
                 if left is None:
                     return False
             else:
@@ -1245,7 +1308,7 @@ class GeoEngine:
                 return bool(left < right)
             return bool(left <= right)
 
-        return self._clone_with([f for f in features if match(f.get("properties", {}))])
+        return self._clone_with([f for f in features if match(f.get("properties", {}))], keys)
 
     def where(self, predicate: Callable[[dict[str, Any]], Any]) -> GeoEngine:
         """
@@ -1331,16 +1394,27 @@ class GeoEngine:
         2
         """
         self._require_data("filter_by_bbox")
-        s, w = _validate_coord(min_lat, min_lng)
-        n, e = _validate_coord(max_lat, max_lng)
+        # Longitudes up to ±360 are accepted so the bounds() of shapes drawn
+        # continuously across the antimeridian (e.g. buffers) can be passed in.
+        s, _ = _validate_coord(min_lat, 0)
+        n, _ = _validate_coord(max_lat, 0)
+        w = _finite_number("min_lng", min_lng, "geo.filter_by_bbox(18, 72, 20, 74)")
+        e = _finite_number("max_lng", max_lng, "geo.filter_by_bbox(18, 72, 20, 74)")
+        for name, value in (("min_lng", w), ("max_lng", e)):
+            if not -360.0 <= value <= 360.0:
+                raise InvalidCoordinateError(min_lat if name == "min_lng" else max_lat, value)
         if s > n:
             raise InvalidArgumentError("min_lat", min_lat, f"a value <= max_lat ({max_lat})",
                                        "geo.filter_by_bbox(min_lat=18, min_lng=72, max_lat=20, max_lng=74)")
+        whole_world = w <= e and e - w >= 360.0
+        w, e = _normalize_lng(w), _normalize_lng(e)
         crosses = w > e
 
         def inside(lat: float, lng: float) -> bool:
             if not s <= lat <= n:
                 return False
+            if whole_world:
+                return True
             return (lng >= w or lng <= e) if crosses else (w <= lng <= e)
 
         return self._clone_with([feat for _, feat, (la, lo) in self._located() if inside(la, lo)])
@@ -1454,12 +1528,7 @@ class GeoEngine:
         Dict with keys ``min_lat``, ``max_lat``, ``min_lng``, ``max_lng``.
         """
         self._require_features("bounds")
-        lats: list[float] = []
-        lngs: list[float] = []
-        for feat in self._features():
-            for pos in _iter_positions(feat.get("geometry")):
-                lngs.append(float(pos[0]))
-                lats.append(float(pos[1]))
+        lats, lngs = self._all_positions()
         if not lats:
             raise NoDataError("bounds", empty=True)
         return {
@@ -1477,12 +1546,7 @@ class GeoEngine:
         with ``west > east`` (e.g. Fiji: ``[177.0, -20.0, -178.0, -16.0]``).
         """
         self._require_features("bbox")
-        lats: list[float] = []
-        lngs: list[float] = []
-        for feat in self._features():
-            for pos in _iter_positions(feat.get("geometry")):
-                lngs.append(float(pos[0]))
-                lats.append(float(pos[1]))
+        lats, lngs = self._all_positions()
         if not lats:
             raise NoDataError("bbox", empty=True)
         west, east = _lng_span(lngs)
@@ -1578,7 +1642,7 @@ class GeoEngine:
             overlay_list = list(overlays)
         build_map(
             features=self._features(),
-            output_path=os.fspath(output_path),
+            output_path=_fspath(output_path, "geo.map('out.html')"),
             title=title,
             zoom=zoom,
             center=view_center,
@@ -1644,7 +1708,7 @@ class GeoEngine:
                 )
         build_heatmap(
             features=self._features(),
-            output_path=os.fspath(output_path),
+            output_path=_fspath(output_path, "geo.map('out.html')"),
             title=title,
             intensity_col=intensity_col,
             zoom=zoom,

@@ -496,10 +496,25 @@ class TestFilterByBBox:
         with pytest.raises(InvalidArgumentError):   # validated even with nothing to filter
             empty_result.filter_by_bbox(20.0, 72.0, 18.0, 74.0)
 
-    @pytest.mark.parametrize("box", [(-91, 0, 0, 10), (0, 0, 10, 200)])
+    @pytest.mark.parametrize("box", [(-91, 0, 0, 10), (0, 0, 10, 400), (0, -361, 10, 0)])
     def test_out_of_range_box_raises(self, cities, box):
         with pytest.raises(InvalidCoordinateError):
             cities.filter_by_bbox(*box)
+
+    def test_accepts_bounds_of_continuous_antimeridian_shapes(self):
+        # A buffer near 180° has ring longitudes just beyond ±180; its bounds()
+        # must still work as a box (and wrap across the antimeridian).
+        geo = GeoEngine(verbose=False)
+        zone = geo.buffer((-17.5, 179.9), 100)
+        area = GeoEngine(verbose=False).load_data([zone])
+        assert area.bounds()["max_lng"] > 180
+        pts = GeoEngine(verbose=False).add_point(-17.5, 179.95, name="west of 180") \
+            .add_point(-17.5, -179.8, name="east of 180").add_point(-17.5, 170.0, name="far")
+        assert _names(pts.filter_by_bbox(**area.bounds())) == ["west of 180", "east of 180"]
+
+    def test_full_circle_box_keeps_everything(self, cities):
+        assert cities.filter_by_bbox(-90, -180, 90, 180).count() == cities.count()
+        assert cities.filter_by_bbox(-90, -200, 90, 200).count() == cities.count()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

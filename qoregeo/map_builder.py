@@ -39,6 +39,7 @@ from .utils import (
     _iter_positions,
     _json_safe,
     _lng_span,
+    _normalize_lng,
     _representative_point,
 )
 
@@ -175,6 +176,10 @@ def _tiles_config(
     required OpenStreetMap / CARTO credit.
     """
     presets = " | ".join(repr(k) for k in _TILES)
+    for name, value in (("tile_api_key", api_key), ("attribution", attribution)):
+        if value is not None and not isinstance(value, str):
+            raise InvalidArgumentError(name, value, "a string or None",
+                                       f"geo.map('out.html', {name}='…')")
     if not isinstance(tiles, str):
         raise InvalidArgumentError(
             "tiles", tiles, f"{presets} or a custom https:// URL template",
@@ -196,7 +201,18 @@ def _tiles_config(
             )
         options: dict[str, Any] = {"maxZoom": 19, "attribution": attribution or ""}
         if "s" in names:
-            options["subdomains"] = "abc"
+            options["subdomains"] = "abcd" if ".basemaps.cartocdn.com/" in url else "abc"
+        if ".basemaps.cartocdn.com/" in url and "key=" not in url:
+            # Other CARTO styles (e.g. light_nolabels) need the same key.
+            key = (api_key or os.environ.get(CARTO_KEY_ENV, "")).strip()
+            if key:
+                url += ("&" if "?" in url else "?") + "key=" + quote(key, safe="")
+        elif api_key:
+            warnings.warn(
+                "QOREgeo: tile_api_key is only added to CARTO tile URLs; put your provider's "
+                "key in the tiles= URL template instead.",
+                stacklevel=4,
+            )
         return {"url": url, "options": options}
 
     name = tiles.strip().lower()
@@ -235,19 +251,28 @@ def _view_config(zoom: int | None, center: Coord | None) -> dict[str, Any]:
     }
 
 
-def _crosses_antimeridian(lngs: list[float]) -> bool:
-    """True if the tightest longitude span of ``lngs`` crosses ±180°."""
+def _antimeridian_west(lngs: list[float]) -> float | None:
+    """
+    If the tightest longitude span of ``lngs`` crosses ±180°, return its
+    western edge (longitudes below it belong east of 180°); else None.
+    """
     if not lngs:
-        return False
+        return None
     west, east = _lng_span(lngs)
-    return west > east
+    return west if west > east else None
 
 
-def _shift_geometry(geometry: Any) -> Any:
-    """Copy of ``geometry`` with western longitudes moved east by 360°."""
+def _unwrap_lng(lng: float, west: float) -> float:
+    """Place ``lng`` on the continuous range that starts at ``west``."""
+    n = _normalize_lng(lng)
+    return n + 360.0 if n < west else n
+
+
+def _shift_geometry(geometry: Any, west: float) -> Any:
+    """Copy of ``geometry`` with every longitude placed on the range starting at ``west``."""
     def shift(c: Any) -> Any:
         if isinstance(c, list) and len(c) >= 2 and not isinstance(c[0], list):
-            return [c[0] + 360.0 if c[0] < 0 else c[0], *c[1:]]
+            return [_unwrap_lng(c[0], west), *c[1:]]
         return [shift(x) for x in c] if isinstance(c, list) else c
 
     out = _copy_geometry(geometry)
@@ -255,8 +280,18 @@ def _shift_geometry(geometry: Any) -> Any:
         if "coordinates" in out:
             out["coordinates"] = shift(out["coordinates"])
         if isinstance(out.get("geometries"), list):
-            out["geometries"] = [_shift_geometry(g) for g in out["geometries"]]
+            out["geometries"] = [_shift_geometry(g, west) for g in out["geometries"]]
     return out
+
+
+def _overlay_geometries(shape: dict[str, Any]) -> list[Any]:
+    """The geometries inside an overlay (geometry, Feature or FeatureCollection)."""
+    stype = shape.get("type")
+    if stype == "FeatureCollection":
+        return [g for f in shape.get("features") or [] for g in _overlay_geometries(f)]
+    if stype == "Feature":
+        return [shape.get("geometry")]
+    return [shape]
 
 
 def _overlay_problem(shape: Any) -> str | None:
@@ -399,7 +434,8 @@ __EXTRA_HTML__
   });
 
   function baseMap(L) {
-    var map = L.map("map", { zoomControl: true, preferCanvas: true, worldCopyJump: true });
+    var map = L.map("map", { zoomControl: true, preferCanvas: true,
+                             worldCopyJump: CONFIG.worldCopyJump });
     L.tileLayer(CONFIG.tiles.url, CONFIG.tiles.options).addTo(map);
     return map;
   }
@@ -519,16 +555,19 @@ def build_map(
     # Data spanning the antimeridian is drawn on one continuous longitude
     # range (e.g. 170°…190°) so it opens as one cluster, not a world view.
     lngs = [float(p[0]) for f in features for p in _iter_positions(f.get("geometry"))]
-    lngs += [float(p[0]) for s in overlay_list for p in _iter_positions(s)]
-    if _crosses_antimeridian(lngs):
-        features = [{**f, "geometry": _shift_geometry(f.get("geometry"))} for f in features]
-        overlay_list = [_shift_overlay(s) for s in overlay_list]
+    lngs += [float(p[0]) for s in overlay_list for g in _overlay_geometries(s)
+             for p in _iter_positions(g)]
+    west = _antimeridian_west(lngs)
+    if west is not None:
+        features = [{**f, "geometry": _shift_geometry(f.get("geometry"), west)} for f in features]
+        overlay_list = [_shift_overlay(s, west) for s in overlay_list]
 
     config = {
         "data": {"type": "FeatureCollection", "features": features},
         "overlays": overlay_list,
         "tiles": tiles_cfg,
-        "view": _view_config(zoom, center),
+        "view": _view_config(zoom, _view_center(center, west)),
+        "worldCopyJump": west is None,
         "style": _STYLE,
         "scripts": [_LEAFLET_JS],
     }
@@ -547,14 +586,21 @@ def build_map(
     _announce(f"✅  Map saved → {output_path}  ({_plural(located, 'feature')})", verbose)
 
 
-def _shift_overlay(shape: dict[str, Any]) -> dict[str, Any]:
+def _shift_overlay(shape: dict[str, Any], west: float) -> dict[str, Any]:
     stype = shape.get("type")
     if stype == "FeatureCollection":
-        return {**shape, "features": [_shift_overlay(f) for f in shape.get("features", [])]}
+        return {**shape, "features": [_shift_overlay(f, west) for f in shape.get("features", [])]}
     if stype == "Feature":
-        return {**shape, "geometry": _shift_geometry(shape.get("geometry"))}
-    shifted: dict[str, Any] = _shift_geometry(shape)
+        return {**shape, "geometry": _shift_geometry(shape.get("geometry"), west)}
+    shifted: dict[str, Any] = _shift_geometry(shape, west)
     return shifted
+
+
+def _view_center(center: Coord | None, west: float | None) -> Coord | None:
+    """Move a user-supplied centre onto the same longitude range as shifted data."""
+    if center is None or west is None:
+        return center
+    return center[0], _unwrap_lng(center[1], west)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -598,7 +644,7 @@ def _heat_points(
             raw: Any = (feat.get("properties") or {}).get(intensity_col)
             try:
                 weight = float(raw) if not isinstance(raw, bool) else float("nan")
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 weight = float("nan")
             if not math.isfinite(weight) or weight <= 0:
                 if dropped is not None:
@@ -641,10 +687,10 @@ def build_heatmap(
             stacklevel=3,
         )
 
-    if _crosses_antimeridian([p[1] for p in points]):
+    west = _antimeridian_west([p[1] for p in points])
+    if west is not None:
         for p in points:
-            if p[1] < 0:
-                p[1] += 360.0
+            p[1] = _unwrap_lng(p[1], west)
 
     bounds = None
     if points:
@@ -660,7 +706,8 @@ def build_heatmap(
             "gradient": _HEAT_GRADIENT,
         },
         "tiles": tiles_cfg,
-        "view": _view_config(zoom, center),
+        "view": _view_config(zoom, _view_center(center, west)),
+        "worldCopyJump": west is None,
         "scripts": [_LEAFLET_JS, _LEAFLET_HEAT_JS],
     }
     page = _render(_PAGE, {
