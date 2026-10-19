@@ -3,293 +3,537 @@ qoregeo.map_builder
 ===================
 Generates standalone HTML files containing Leaflet.js interactive maps.
 No server required — just open in a browser.
+
+Safety
+------
+* The title is HTML-escaped and all data is embedded as JSON with ``<``,
+  ``>``, ``&`` and U+2028/U+2029 escaped, so property values can never
+  break out of the ``<script>`` block.
+* Popups are built with DOM ``textContent`` — property keys and values are
+  never interpreted as HTML.
+* Leaflet and leaflet.heat are loaded with Subresource Integrity hashes and
+  fall back to a second CDN if the first one is unreachable.
 """
 
 from __future__ import annotations
 
+import datetime
+import decimal
+import html
 import json
+import math
 import os
-from typing import Any, Dict, List, Optional, Tuple
+import re
+import warnings
+from typing import Any
+from urllib.parse import quote
 
-Feature = Dict[str, Any]
-Coord   = Tuple[float, float]
+from ._version import __version__
+from .exceptions import InvalidArgumentError
+from .utils import _representative_point
+
+Feature = dict[str, Any]
+Coord   = tuple[float, float]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Assets (versions pinned, SRI hashes computed from the npm-published files)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_LEAFLET_CSS: dict[str, Any] = {
+    "urls": [
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css",
+    ],
+    "integrity": "sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=",
+}
+_LEAFLET_JS: dict[str, Any] = {
+    "urls": [
+        "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
+        "https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js",
+    ],
+    "integrity": "sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=",
+}
+_LEAFLET_HEAT_JS: dict[str, Any] = {
+    "urls": [
+        "https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js",
+        "https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js",
+    ],
+    "integrity": "sha256-65UqrlgGoRAnKfKRuriH3eeDrOhZgZo1SCenduc+SGo=",
+}
+
+_OSM_ATTR = (
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+)
+_CARTO_ATTR = _OSM_ATTR + ', &copy; <a href="https://carto.com/attribution/">CARTO</a>'
+
+# Environment variable consulted when no tile_api_key is passed.
+CARTO_KEY_ENV = "QOREGEO_CARTO_API_KEY"
+_CARTO_KEY_URL = "https://carto.com/basemaps/apikey/"
+
+_TILES: dict[str, dict[str, Any]] = {
+    "dark": {
+        "url": "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
+        "carto": True,
+    },
+    "light": {
+        "url": "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
+        "carto": True,
+    },
+    "voyager": {
+        "url": "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+        "options": {"attribution": _CARTO_ATTR, "subdomains": "abcd", "maxZoom": 20},
+        "carto": True,
+    },
+    "osm": {
+        "url": "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "options": {"attribution": _OSM_ATTR, "maxZoom": 19},
+        "carto": False,
+    },
+}
+
+_STYLE = {
+    "point": {
+        "radius": 6, "color": "#FFFFFF", "weight": 1.5, "opacity": 0.8,
+        "fillColor": "#00D4AA", "fillOpacity": 0.9,
+    },
+    "shape": {"color": "#00D4AA", "weight": 2, "opacity": 0.9, "fillColor": "#00D4AA", "fillOpacity": 0.15},
+    "overlay": {"color": "#FFD700", "weight": 2, "dashArray": "6 4", "fillColor": "#FFD700", "fillOpacity": 0.06},
+}
+
+_DEFAULT_FIT_MAX_ZOOM = 15
+_DEFAULT_CENTER_ZOOM = 10
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _auto_center(features: List[Feature]) -> Coord:
-    """Return the centroid of all features."""
-    lats = [f["geometry"]["coordinates"][1] for f in features]
-    lngs = [f["geometry"]["coordinates"][0] for f in features]
-    return (sum(lats) / len(lats), sum(lngs) / len(lngs))
+def _json_default(o: Any) -> Any:
+    if isinstance(o, (set, frozenset)):
+        return sorted(o, key=str)
+    if isinstance(o, (datetime.date, datetime.time)):
+        return o.isoformat()
+    if isinstance(o, decimal.Decimal):
+        return float(o)
+    return str(o)
 
 
-def _props_to_popup(props: Dict[str, Any]) -> str:
-    """Format a properties dict into an HTML popup string."""
-    rows = "".join(
-        f"<tr><td><b>{k}</b></td><td>{v}</td></tr>"
-        for k, v in props.items()
-        if not k.startswith("_")
-    )
-    if not rows:
-        return "No properties"
-    return f"<table style='font-size:12px;border-collapse:collapse'>{rows}</table>"
+_JS_ESCAPES = {
+    "<": "\\u003c",
+    ">": "\\u003e",
+    "&": "\\u0026",
+    " ": "\\u2028",
+    " ": "\\u2029",
+}
+
+
+def _json_safe(obj: Any) -> Any:
+    """Recursively replace NaN / ±Infinity (not valid JSON) with None."""
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+def _to_js(obj: Any) -> str:
+    """Serialise ``obj`` as a JS literal that is safe inside an inline <script>."""
+    text = json.dumps(_json_safe(obj), ensure_ascii=False, default=_json_default, allow_nan=False)
+    return re.sub("[<>&  ]", lambda m: _JS_ESCAPES[m.group(0)], text)
+
+
+def _render(template: str, values: dict[str, str]) -> str:
+    """Single-pass ``__NAME__`` substitution (inserted text is never re-scanned)."""
+    return re.sub(r"__([A-Z_]+)__", lambda m: values.get(m.group(1), m.group(0)), template)
+
+
+def _tiles_config(
+    tiles: str,
+    api_key: str | None = None,
+    attribution: str | None = None,
+) -> dict[str, Any]:
+    """
+    Resolve a basemap name (or a custom ``https://…/{z}/{x}/{y}…`` URL
+    template) to a Leaflet tileLayer config.
+
+    CARTO basemaps require a free per-user API key since August 2026; it is
+    taken from ``api_key`` or the QOREGEO_CARTO_API_KEY environment variable.
+    Without one CARTO serves tiles with an "API key required" watermark.
+    """
+    if isinstance(tiles, str) and tiles.strip().lower().startswith(("https://", "http://")):
+        url = tiles.strip()
+        if not all(token in url for token in ("{z}", "{x}", "{y}")):
+            raise InvalidArgumentError(
+                "tiles", tiles, "a URL template containing {z}, {x} and {y}",
+                "geo.map('out.html', tiles='https://tile.example.com/{z}/{x}/{y}.png', "
+                "attribution='&copy; Example')",
+            )
+        options: dict[str, Any] = {"maxZoom": 19, "attribution": attribution or ""}
+        if "{s}" in url:
+            options["subdomains"] = "abc"
+        return {"url": url, "options": options}
+
+    name = tiles.strip().lower() if isinstance(tiles, str) else tiles
+    if name not in _TILES:
+        raise InvalidArgumentError(
+            "tiles", tiles,
+            " | ".join(repr(k) for k in _TILES) + " or a custom https:// URL template",
+            "geo.map('out.html', tiles='light')",
+        )
+    preset = _TILES[name]
+    config = {"url": preset["url"], "options": dict(preset["options"])}
+    if attribution:
+        config["options"]["attribution"] = attribution
+
+    if preset["carto"]:
+        key = api_key or os.environ.get(CARTO_KEY_ENV, "").strip()
+        if key:
+            config["url"] += "?key=" + quote(key, safe="")
+        else:
+            warnings.warn(
+                f"QOREgeo: CARTO basemaps ('{name}') need a free API key since August 2026 — "
+                f"without one the tiles show an 'API key required' watermark. Get a key at "
+                f"{_CARTO_KEY_URL} and pass tile_api_key='…' (or set {CARTO_KEY_ENV}), "
+                f"or use tiles='osm'.",
+                stacklevel=4,
+            )
+    return config
+
+
+def _view_config(zoom: int | None, center: Coord | None) -> dict[str, Any]:
+    return {
+        "center": list(center) if center is not None else None,
+        "zoom": zoom if zoom is not None else _DEFAULT_CENTER_ZOOM,
+        "fitMaxZoom": zoom if zoom is not None else _DEFAULT_FIT_MAX_ZOOM,
+    }
 
 
 def _write(path: str, content: str) -> None:
-    os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
+def _announce(message: str, verbose: bool) -> None:
+    """Print a status line without crashing on consoles that can't show emoji."""
+    if not verbose:
+        return
+    try:
+        print(message)
+    except UnicodeEncodeError:
+        print(message.replace("✅", "[OK]").encode("ascii", "replace").decode("ascii"))
+
+
 # ─────────────────────────────────────────────────────────────────────────────
-# Interactive marker map
+# Page shell
 # ─────────────────────────────────────────────────────────────────────────────
 
-_MAP_TEMPLATE = """\
+_PAGE = """\
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title}</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<meta name="generator" content="QOREgeo __VERSION__">
+<title>__TITLE__</title>
+<link rel="stylesheet" href="__CSS_URL__" integrity="__CSS_SRI__" crossorigin="anonymous"
+      onerror="this.onerror=null;this.href='__CSS_FALLBACK__';">
 <style>
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0f111a; color:#fff; }}
-  #map {{ width:100vw; height:100vh; }}
-  #brand {{
-    position:fixed; bottom:16px; left:16px; z-index:9999;
-    background:rgba(0,0,0,.7); backdrop-filter:blur(12px);
-    border:1px solid rgba(0,212,170,.25);
-    border-radius:10px; padding:10px 16px;
-    font-size:13px; color:rgba(255,255,255,.7);
-  }}
-  #brand strong {{ color:#00D4AA; font-size:14px; }}
-  #count {{
-    position:fixed; top:16px; right:16px; z-index:9999;
-    background:rgba(0,0,0,.7); backdrop-filter:blur(12px);
-    border:1px solid rgba(0,212,170,.2);
-    border-radius:8px; padding:8px 16px;
-    font-size:13px; color:rgba(255,255,255,.6);
-  }}
-  #count span {{ color:#00D4AA; font-weight:600; }}
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0f111a; color:#fff; }
+  #map { width:100vw; height:100vh; }
+  .qg-panel {
+    position:fixed; z-index:1000;
+    background:rgba(0,0,0,.7); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+    border:1px solid rgba(0,212,170,.25); border-radius:10px;
+    font-size:13px; color:rgba(255,255,255,.75);
+  }
+  #brand { bottom:24px; left:16px; padding:10px 16px; max-width:calc(100vw - 32px);
+           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #brand strong { color:#00D4AA; font-size:14px; }
+  #count { top:16px; right:16px; padding:8px 16px; }
+  #count span { color:#00D4AA; font-weight:600; }
+  #qg-error {
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:2000;
+    max-width:min(90vw, 480px); background:#e74c3c; color:#fff; padding:20px; border-radius:8px;
+    box-shadow:0 4px 12px rgba(0,0,0,.5); font-size:14px; line-height:1.4;
+  }
+  #qg-error b { display:block; font-size:16px; margin-bottom:8px; }
+  .qg-popup { font-family:ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12px; min-width:140px; color:#222; }
+  .qg-popup td { padding:2px 0; vertical-align:top; word-break:break-word; }
+  .qg-popup td.qg-k { padding-right:8px; color:#6b6b7b; font-weight:600; white-space:nowrap; }
+  .qg-empty { color:#6b6b7b; }
 </style>
 </head>
 <body>
-<div id="map"></div>
-<div id="brand"><strong>QOREgeo</strong> · {title}</div>
-<div id="count"><span id="n">0</span> features</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="map" role="region" aria-label="__TITLE__"></div>
+<div id="brand" class="qg-panel"><strong>QOREgeo</strong> · __TITLE__</div>
+__EXTRA_HTML__
 <script>
-  if (typeof L === 'undefined') {{
-    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\\/script>');
-  }}
-</script>
-<script>
-document.addEventListener('DOMContentLoaded', () => {{
-  try {{
-    if (typeof L === 'undefined') throw new Error('Leaflet failed to load from CDNs');
+(function () {
+  "use strict";
+  var CONFIG = __CONFIG__;
 
-    const DATA = {geojson};
-    const TITLE = {title_json};
+  function showError(message) {
+    var box = document.createElement("div");
+    box.id = "qg-error";
+    var head = document.createElement("b");
+    head.textContent = "Map Loading Error";
+    var body = document.createElement("div");
+    body.textContent = message;
+    box.appendChild(head);
+    box.appendChild(body);
+    document.body.appendChild(box);
+  }
 
-    const map = L.map('map', {{ zoomControl:true, preferCanvas:true }});
+  function loadScript(asset) {
+    return new Promise(function (resolve, reject) {
+      var i = 0;
+      (function next() {
+        if (i >= asset.urls.length) {
+          reject(new Error("Could not load " + asset.urls[0] + " (are you offline?)"));
+          return;
+        }
+        var s = document.createElement("script");
+        s.src = asset.urls[i++];
+        s.integrity = asset.integrity;
+        s.crossOrigin = "anonymous";
+        s.onload = resolve;
+        s.onerror = function () { s.remove(); next(); };
+        document.head.appendChild(s);
+      })();
+    });
+  }
 
-// Dark tile layer
-L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
-  attribution: '&copy; <a href="https://www.openstreetmap.org">OSM</a> · <a href="https://carto.com">CARTO</a>',
-  subdomains: 'abcd', maxZoom: 19
-}}).addTo(map);
+  CONFIG.scripts.reduce(function (chain, asset) {
+    return chain.then(function () { return loadScript(asset); });
+  }, Promise.resolve()).then(function () {
+    if (typeof L === "undefined") throw new Error("Leaflet failed to load from CDNs");
+    init(L);
+  }).catch(function (err) {
+    console.error("QOREgeo Error:", err);
+    showError(err && err.message ? err.message : String(err));
+  });
 
-// Custom teal icon
-const qIcon = L.divIcon({{
-  className: '',
-  html: `<div style="
-    width:12px;height:12px;border-radius:50%;
-    background:#00D4AA;border:2px solid rgba(255,255,255,.5);
-    box-shadow:0 0 8px rgba(0,212,170,.7);
-  "></div>`,
-  iconSize: [12, 12], iconAnchor: [6, 6],
-}});
+  function baseMap(L) {
+    var map = L.map("map", { zoomControl: true, preferCanvas: true, worldCopyJump: true });
+    L.tileLayer(CONFIG.tiles.url, CONFIG.tiles.options).addTo(map);
+    return map;
+  }
 
-const markers = L.featureGroup().addTo(map);
-let count = 0;
+  function setView(map, bounds) {
+    var v = CONFIG.view;
+    if (v.center) map.setView(v.center, v.zoom);
+    else if (bounds && bounds.isValid()) map.fitBounds(bounds.pad(0.1), { maxZoom: v.fitMaxZoom });
+    else map.setView([20, 0], 2);
+  }
 
-DATA.features.forEach(feat => {{
-  if (feat.geometry.type !== 'Point') return;
-  const [lng, lat] = feat.geometry.coordinates;
-  const props = feat.properties || {{}};
-  const rows = Object.entries(props)
-    .filter(([k]) => !k.startsWith('_'))
-    .map(([k,v]) => `<tr><td style="padding:2px 8px 2px 0;color:#9898A8;font-weight:600">${{k}}</td><td style="padding:2px 0">${{v}}</td></tr>`)
-    .join('');
-  const popup = rows
-    ? `<div style="font-family:monospace;font-size:12px;min-width:140px"><table>${{rows}}</table></div>`
-    : '<div style="font-size:12px;color:#9898A8">No properties</div>';
-
-  L.marker([lat, lng], {{ icon: qIcon }})
-    .bindPopup(popup, {{ maxWidth: 300 }})
-    .addTo(markers);
-  count++;
-}});
-
-document.getElementById('n').textContent = count;
-
-if (count > 0) {{
-  map.fitBounds(markers.getBounds().pad(0.1));
-  const zoom = {zoom};
-  if (map.getZoom() < zoom - 2) map.setZoom(zoom);
-}}
-  }} catch (err) {{
-    console.error('QOREgeo Error:', err);
-    document.body.innerHTML += `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#e74c3c;color:white;padding:20px;border-radius:8px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-      <b style="font-size:16px;">Map Loading Error</b><br/><br/>${{err.message}}
-    </div>`;
-  }}
-}});
+__INIT__
+})();
 </script>
 </body>
 </html>
 """
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Interactive feature map
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MAP_INIT = """\
+  function cellText(v) {
+    if (v === null || v === undefined) return "";
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+  }
+
+  function popupFor(props) {
+    var wrap = document.createElement("div");
+    wrap.className = "qg-popup";
+    var keys = Object.keys(props || {}).filter(function (k) { return k.charAt(0) !== "_"; });
+    if (!keys.length) {
+      wrap.className += " qg-empty";
+      wrap.textContent = "No properties";
+      return wrap;
+    }
+    var table = document.createElement("table");
+    keys.forEach(function (k) {
+      var row = table.insertRow();
+      var kc = row.insertCell();
+      kc.className = "qg-k";
+      kc.textContent = k;
+      row.insertCell().textContent = cellText(props[k]);
+    });
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function init(L) {
+    var map = baseMap(L);
+    var count = 0;
+    var layer = L.geoJSON(CONFIG.data, {
+      pointToLayer: function (f, latlng) { return L.circleMarker(latlng, CONFIG.style.point); },
+      style: function () { return CONFIG.style.shape; },
+      onEachFeature: function (f, l) {
+        count++;
+        l.bindPopup(function () { return popupFor(f.properties); }, { maxWidth: 320 });
+      }
+    }).addTo(map);
+
+    var bounds = layer.getBounds();
+    if (CONFIG.overlays.length) {
+      var overlay = L.geoJSON(CONFIG.overlays, {
+        style: function () { return CONFIG.style.overlay; },
+        pointToLayer: function (f, latlng) { return L.circleMarker(latlng, CONFIG.style.point); },
+        interactive: false
+      }).addTo(map);
+      bounds.extend(overlay.getBounds());
+    }
+
+    document.getElementById("n").textContent = count;
+    setView(map, bounds);
+    window.qoregeo = { map: map, layer: layer, count: count };
+  }
+"""
+
+
 def build_map(
-    features: List[Feature],
+    features: list[Feature],
     output_path: str,
     title: str = "QOREgeo Map",
-    zoom: int = 5,
-    center: Optional[Coord] = None,
+    zoom: int | None = None,
+    center: Coord | None = None,
+    tiles: str = "dark",
+    overlays: list[dict[str, Any]] | None = None,
+    verbose: bool = True,
+    tile_api_key: str | None = None,
+    attribution: str | None = None,
 ) -> None:
-    geojson = {"type": "FeatureCollection", "features": features}
-    html = _MAP_TEMPLATE.format(
-        title=title,
-        title_json=json.dumps(title),
-        geojson=json.dumps(geojson),
-        zoom=zoom,
-    )
-    _write(output_path, html)
-    print(f"✅  Map saved → {output_path}  ({len(features)} features)")
+    """Write an interactive Leaflet map of ``features`` to ``output_path``."""
+    overlay_list = []
+    for i, shape in enumerate(overlays or []):
+        if not isinstance(shape, dict) or "type" not in shape:
+            raise InvalidArgumentError(
+                f"overlays[{i}]", shape, "a GeoJSON geometry / Feature dict (e.g. a geo.buffer() result)",
+                "geo.map('out.html', overlays=[geo.buffer((28.61, 77.20), 10)])",
+            )
+        overlay_list.append(shape)
+
+    config = {
+        "data": {"type": "FeatureCollection", "features": features},
+        "overlays": overlay_list,
+        "tiles": _tiles_config(tiles, tile_api_key, attribution),
+        "view": _view_config(zoom, center),
+        "style": _STYLE,
+        "scripts": [_LEAFLET_JS],
+    }
+    page = _render(_PAGE, {
+        "VERSION": __version__,
+        "TITLE": html.escape(str(title)),
+        "CSS_URL": _LEAFLET_CSS["urls"][0],
+        "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
+        "CSS_SRI": _LEAFLET_CSS["integrity"],
+        "EXTRA_HTML": '<div id="count" class="qg-panel"><span id="n">0</span> features</div>',
+        "CONFIG": _to_js(config),
+        "INIT": _MAP_INIT,
+    })
+    _write(output_path, page)
+    _announce(f"✅  Map saved → {output_path}  ({len(features)} features)", verbose)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Heatmap
 # ─────────────────────────────────────────────────────────────────────────────
 
-_HEAT_TEMPLATE = """\
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title}</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-  *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background:#0f111a; }}
-  #map {{ width:100vw; height:100vh; }}
-  #brand {{
-    position:fixed; bottom:16px; left:16px; z-index:9999;
-    background:rgba(0,0,0,.7); backdrop-filter:blur(12px);
-    border:1px solid rgba(0,212,170,.25);
-    border-radius:10px; padding:10px 16px;
-    font-size:13px; color:rgba(255,255,255,.7);
-  }}
-  #brand strong {{ color:#00D4AA; font-size:14px; }}
-</style>
-</head>
-<body>
-<div id="map"></div>
-<div id="brand"><strong>QOREgeo</strong> · {title}</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script>
-  if (typeof L === 'undefined') {{
-    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\\/script>');
-  }}
-</script>
-<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
-<script>
-  if (typeof L !== 'undefined' && typeof L.heatLayer === 'undefined') {{
-    document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet.heat@0.2.0/dist/leaflet-heat.js"><\\/script>');
-  }}
-</script>
-<script>
-document.addEventListener('DOMContentLoaded', () => {{
-  try {{
-    if (typeof L === 'undefined') throw new Error('Leaflet failed to load from CDNs');
-
-    const POINTS = {points};
-    const TITLE  = {title_json};
-
-    const map = L.map('map', {{ preferCanvas:true }});
-
-L.tileLayer('https://{{s}}.basemaps.cartocdn.com/dark_all/{{z}}/{{x}}/{{y}}{{r}}.png', {{
-  attribution: '&copy; OSM · CARTO', subdomains:'abcd', maxZoom:19
-}}).addTo(map);
-
-L.heatLayer(POINTS, {{
-  radius: 25, blur: 18, maxZoom: 12,
-  gradient: {{ 0.1:'#00416A', 0.3:'#007A64', 0.6:'#00D4AA', 0.85:'#FFFFFF', 1:'#FFD700' }}
-}}).addTo(map);
-
-if (POINTS.length > 0) {{
-  const lats = POINTS.map(p => p[0]);
-  const lngs = POINTS.map(p => p[1]);
-  map.fitBounds([[Math.min(...lats), Math.min(...lngs)], [Math.max(...lats), Math.max(...lngs)]]);
-}}
-  }} catch (err) {{
-    console.error('QOREgeo Error:', err);
-    document.body.innerHTML += `<div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#e74c3c;color:white;padding:20px;border-radius:8px;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-      <b style="font-size:16px;">Map Loading Error</b><br/><br/>${{err.message}}
-    </div>`;
-  }}
-}});
-</script>
-</body>
-</html>
+_HEAT_INIT = """\
+  function init(L) {
+    if (typeof L.heatLayer !== "function") throw new Error("leaflet.heat failed to load from CDNs");
+    var map = baseMap(L);
+    L.heatLayer(CONFIG.points, CONFIG.heat).addTo(map);
+    var bounds = CONFIG.bounds ? L.latLngBounds(CONFIG.bounds) : null;
+    setView(map, bounds);
+    window.qoregeo = { map: map, count: CONFIG.points.length };
+  }
 """
+
+_HEAT_GRADIENT = {0.1: "#00416A", 0.3: "#007A64", 0.6: "#00D4AA", 0.85: "#FFFFFF", 1.0: "#FFD700"}
+
+
+def _heat_points(features: list[Feature], intensity_col: str | None) -> list[list[float]]:
+    """Return ``[lat, lng, weight]`` triples with weights normalised to (0, 1]."""
+    points: list[list[float]] = []
+    for feat in features:
+        loc = _representative_point(feat.get("geometry"))
+        if loc is None:
+            continue
+        weight = 1.0
+        if intensity_col:
+            raw: Any = (feat.get("properties") or {}).get(intensity_col)
+            try:
+                weight = float(raw) if not isinstance(raw, bool) else float("nan")
+            except (TypeError, ValueError):
+                weight = float("nan")
+            if not math.isfinite(weight) or weight <= 0:
+                continue   # no (or negative) weight contributes no heat
+        points.append([loc[0], loc[1], weight])
+
+    max_w = max((p[2] for p in points), default=0.0)
+    if max_w > 0:
+        for p in points:
+            p[2] = p[2] / max_w
+    return points
 
 
 def build_heatmap(
-    features: List[Feature],
+    features: list[Feature],
     output_path: str,
     title: str = "QOREgeo Heatmap",
-    intensity_col: Optional[str] = None,
-    zoom: int = 5,
-    center: Optional[Coord] = None,
+    intensity_col: str | None = None,
+    zoom: int | None = None,
+    center: Coord | None = None,
+    tiles: str = "dark",
+    radius: int = 25,
+    blur: int = 18,
+    verbose: bool = True,
+    tile_api_key: str | None = None,
+    attribution: str | None = None,
 ) -> None:
-    points = []
-    max_intensity = 1.0
+    """Write a Leaflet heatmap of ``features`` to ``output_path``."""
+    points = _heat_points(features, intensity_col)
+    bounds = None
+    if points:
+        lats = [p[0] for p in points]
+        lngs = [p[1] for p in points]
+        bounds = [[min(lats), min(lngs)], [max(lats), max(lngs)]]
 
-    for feat in features:
-        coords = feat["geometry"]["coordinates"]
-        lat, lng = coords[1], coords[0]
-        intensity = 1.0
-
-        if intensity_col:
-            raw = feat.get("properties", {}).get(intensity_col)
-            if raw is not None:
-                try:
-                    intensity = float(raw)
-                    max_intensity = max(max_intensity, intensity)
-                except (TypeError, ValueError):
-                    pass
-
-        points.append([lat, lng, intensity])
-
-    # Normalise intensities
-    if max_intensity > 1:
-        points = [[p[0], p[1], p[2] / max_intensity] for p in points]
-
-    html = _HEAT_TEMPLATE.format(
-        title=title,
-        title_json=json.dumps(title),
-        points=json.dumps(points),
-        zoom=zoom,
-    )
-    _write(output_path, html)
-    print(f"✅  Heatmap saved → {output_path}  ({len(features)} points)")
+    config = {
+        "points": points,
+        "bounds": bounds,
+        "heat": {
+            "radius": radius, "blur": blur, "maxZoom": 12, "max": 1.0,
+            "gradient": _HEAT_GRADIENT,
+        },
+        "tiles": _tiles_config(tiles, tile_api_key, attribution),
+        "view": _view_config(zoom, center),
+        "scripts": [_LEAFLET_JS, _LEAFLET_HEAT_JS],
+    }
+    page = _render(_PAGE, {
+        "VERSION": __version__,
+        "TITLE": html.escape(str(title)),
+        "CSS_URL": _LEAFLET_CSS["urls"][0],
+        "CSS_FALLBACK": _LEAFLET_CSS["urls"][1],
+        "CSS_SRI": _LEAFLET_CSS["integrity"],
+        "EXTRA_HTML": "",
+        "CONFIG": _to_js(config),
+        "INIT": _HEAT_INIT,
+    })
+    _write(output_path, page)
+    _announce(f"✅  Heatmap saved → {output_path}  ({len(points)} points)", verbose)

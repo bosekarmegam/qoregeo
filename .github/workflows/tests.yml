@@ -4,9 +4,41 @@ on:
   push:
     branches: [main, develop]
   pull_request:
-    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint · type-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . --group lint
+
+      - name: Ruff
+        run: ruff check --output-format=github .
+
+      - name: Mypy (strict)
+        run: mypy
+
   test:
     name: Python ${{ matrix.python-version }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -15,33 +47,62 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov
-          pip install .
+          python -m pip install -e . --group test
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        if: matrix.os != 'ubuntu-latest' || matrix.python-version != '3.14'
+        run: python -m pytest
 
-      - name: Run with coverage (Ubuntu + Python 3.12 only)
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        run: pytest tests/ --cov=qoregeo --cov-report=xml --cov-report=term-missing
+      - name: Run tests with coverage (Ubuntu + Python 3.14 only)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python -m pytest --cov=qoregeo --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage to Codecov
-        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.12'
-        uses: codecov/codecov-action@v4
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        uses: codecov/codecov-action@v7
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
+          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
+
+  build:
+    name: Build · check distributions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+          python -m twine check --strict dist/*
+
+      - name: Smoke-test the wheel
+        run: |
+          python -m pip install dist/*.whl
+          cd /tmp && python -c "import qoregeo, pathlib; print(qoregeo.__version__); assert (pathlib.Path(qoregeo.__file__).parent / 'py.typed').exists()"

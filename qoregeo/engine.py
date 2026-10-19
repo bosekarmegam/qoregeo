@@ -14,78 +14,300 @@ Usage:
 from __future__ import annotations
 
 import csv
+import heapq
 import json
 import math
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
+import warnings
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from typing import Any
 
+from ._version import __version__
 from .exceptions import (
-    NoDataError,
-    InvalidCoordinateError,
-    InvalidUnitError,
     ColumnNotFoundError,
-    FileNotFoundError as QFileNotFoundError,
-    UnsupportedFormatError,
     EmptyDatasetError,
+    GeoFileNotFoundError,
+    InvalidArgumentError,
+    InvalidCoordinateError,
+    InvalidGeoJSONError,
     InvalidRadiusError,
-    InvalidBufferError,
+    NoDataError,
+    UnsupportedFormatError,
 )
+from .map_builder import _json_safe, build_heatmap, build_map
 from .utils import (
-    _validate_coord,
-    _to_radians,
+    _LAT_CANDIDATES,
+    _LNG_CANDIDATES,
+    EARTH_RADIUS_KM,
+    GEOMETRY_TYPES,
     _bearing_to_compass,
-    _haversine_km,
+    _buffer_circle,
+    _coerce_point,
+    _destination_point,
+    _distance_km,
+    _find_column,
     _generate_circle_polygon,
-    _point_in_polygon_ray,
-    _detect_lat_lng_columns,
-    _safe_float,
+    _geohash_bounds,
+    _geohash_encode,
+    _infer_value,
+    _initial_bearing_deg,
+    _iter_positions,
+    _km_per_unit,
+    _lng_span,
+    _m2_per_unit,
+    _midpoint,
+    _path_length_km,
+    _point_in_geometry,
+    _point_line_km,
+    _polygon_area_m2,
+    _polygon_parts,
+    _representative_point,
+    _spherical_mean,
+    _validate_coord,
 )
-from .map_builder import build_map, build_heatmap
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Type aliases
 # ─────────────────────────────────────────────────────────────────────────────
-Coord  = Tuple[float, float]   # (lat, lng)
-Feature = Dict[str, Any]       # GeoJSON Feature dict
+Coord = tuple[float, float]   # (lat, lng)
+Feature = dict[str, Any]      # GeoJSON Feature dict
+PathLike = str | os.PathLike[str]
+
+_CSV_EXTS = (".csv", ".tsv", ".txt")
+_JSON_EXTS = (".geojson", ".json")
+_FILTER_OPS = ("==", "!=", ">", ">=", "<", "<=", "in", "not in", "contains")
+
+
+def _positive_radius(radius: Any) -> float:
+    """Return radius as a float, or raise InvalidRadiusError."""
+    if isinstance(radius, bool):
+        raise InvalidRadiusError(radius)
+    try:
+        r = float(radius)
+    except (TypeError, ValueError):
+        raise InvalidRadiusError(radius) from None
+    if not math.isfinite(r) or r <= 0:
+        raise InvalidRadiusError(radius)
+    return r
+
+
+def _finite_number(name: str, value: Any, example: str) -> float:
+    if isinstance(value, bool):
+        raise InvalidArgumentError(name, value, "a finite number", example)
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise InvalidArgumentError(name, value, "a finite number", example) from None
+    if not math.isfinite(v):
+        raise InvalidArgumentError(name, value, "a finite number", example)
+    return v
+
+
+def _positive_int(name: str, value: Any, minimum: int, example: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise InvalidArgumentError(name, value, f"an integer >= {minimum}", example)
+    return value
+
+
+def _as_number(value: Any) -> float | None:
+    """Best-effort numeric view of a property value (None if not numeric)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value) if math.isfinite(value) else None
+    if isinstance(value, str):
+        try:
+            f = float(value.strip())
+        except ValueError:
+            return None
+        return f if math.isfinite(f) else None
+    return None
+
+
+def _norm_str(value: Any) -> str:
+    return str(value).strip().casefold()
+
+
+def _values_equal(prop: Any, value: Any) -> bool:
+    """Equality used by filter(): numeric when ``value`` is a number, else case-insensitive."""
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        p = _as_number(prop)
+        return p is not None and p == float(value)
+    return _norm_str(prop) == _norm_str(value)
+
+
+def _json_cell(value: Any) -> Any:
+    """Make a property value CSV-friendly (nested structures become JSON)."""
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, default=str)
+    return value
+
+
+def _line_parts(line: Any, name: str = "line") -> list[list[Coord]]:
+    """
+    Normalise a path argument to a list of parts, each a list of (lat, lng).
+
+    Accepts a list of (lat, lng) points, or a GeoJSON LineString /
+    MultiLineString (or a Feature wrapping one, positions in [lng, lat]).
+    """
+    expected = "a list of (lat, lng) points or a LineString / MultiLineString"
+    example = "geo.length([(28.61, 77.20), (19.07, 72.87)])"
+    if isinstance(line, dict):
+        geom: Any = line.get("geometry") if line.get("type") == "Feature" else line
+        gtype = geom.get("type") if isinstance(geom, dict) else None
+        coords = geom.get("coordinates") if isinstance(geom, dict) else None
+        if gtype == "LineString":
+            raw_parts = [coords]
+        elif gtype == "MultiLineString":
+            raw_parts = coords if isinstance(coords, list) else []
+        else:
+            raise InvalidArgumentError(name, gtype, expected, example)
+        parts: list[list[Coord]] = []
+        for part in raw_parts:
+            if not isinstance(part, list):
+                raise InvalidArgumentError(name, part, "a list of [lng, lat] positions", example)
+            try:
+                parts.append([_coerce_point((pos[1], pos[0]), "LineString position") for pos in part])
+            except (TypeError, IndexError, KeyError):
+                raise InvalidArgumentError(name, part, "a list of [lng, lat] positions", example) from None
+        return parts
+    if isinstance(line, (str, bytes)) or not isinstance(line, Iterable):
+        raise InvalidArgumentError(name, line, expected, example)
+    return [[_coerce_point(pt) for pt in line]]
+
+
+def _sniff_delimiter(header_line: str) -> str:
+    counts = {d: header_line.count(d) for d in (",", ";", "\t", "|")}
+    best = max(counts, key=lambda d: counts[d])
+    return best if counts[best] > 0 else ","
 
 
 class GeoEngine:
     """
     Quantum-ready spatial data engine for Python.
 
-    Every method returns ``self`` to allow method chaining::
+    Loading methods (``load``, ``load_data``, ``add_point``) and output
+    methods (``save``, ``map``, ``heatmap``) return ``self``; filters return a
+    *new* GeoEngine. Both allow Pandas-style chaining::
 
         GeoEngine().load("data.csv").filter("city", "Mumbai").map("out.html")
 
     Parameters
     ----------
-    None — all configuration is done via method calls.
+    verbose : print a confirmation line after writing maps (default True)
     """
 
-    VERSION = "1.0.3"
+    VERSION = __version__
 
-    def __init__(self) -> None:
-        self._data: Optional[Dict[str, Any]] = None   # GeoJSON FeatureCollection
-        self._source_path: Optional[str] = None
+    def __init__(self, verbose: bool = True) -> None:
+        self._data: dict[str, Any] | None = None   # GeoJSON FeatureCollection
+        self._source_path: str | None = None
+        self.verbose = verbose
 
     # ──────────────────────────────────────────────────────────────────────
     # Internal helpers
     # ──────────────────────────────────────────────────────────────────────
 
     def _require_data(self, method_name: str) -> None:
-        """Raise NoDataError with a helpful message if no data is loaded."""
-        if self._data is None or not self._data.get("features"):
+        """Raise NoDataError if nothing has been loaded."""
+        if self._data is None:
             raise NoDataError(method_name)
 
-    def _features(self) -> List[Feature]:
+    def _require_features(self, method_name: str) -> None:
+        """Raise NoDataError if nothing is loaded or the dataset is empty."""
+        self._require_data(method_name)
+        if not self._features():
+            raise NoDataError(method_name, empty=True)
+
+    def _features(self) -> list[Feature]:
         return self._data["features"] if self._data else []
 
-    def _clone_with(self, features: List[Feature]) -> "GeoEngine":
+    def _located(self) -> Iterator[tuple[int, Feature, Coord]]:
+        """Yield ``(index, feature, (lat, lng))`` for features that have a location."""
+        for i, feat in enumerate(self._features()):
+            point = _representative_point(feat.get("geometry"))
+            if point is not None:
+                yield i, feat, point
+
+    def _clone_with(self, features: list[Feature]) -> GeoEngine:
         """Return a new GeoEngine containing only the given features."""
-        new = GeoEngine()
+        new = GeoEngine(verbose=self.verbose)
         new._data = {"type": "FeatureCollection", "features": features}
         new._source_path = self._source_path
         return new
+
+    @staticmethod
+    def _normalise_features(raw: Iterable[Any], source: str) -> list[Feature]:
+        """
+        Validate and normalise a sequence of GeoJSON objects into Features.
+
+        * bare geometries are wrapped in Features
+        * ``"properties": null`` becomes ``{}`` (RFC 7946 allows null)
+        * ``"geometry": null`` features are kept but have no location
+        * features with unknown geometry types or out-of-range Points are
+          skipped with a single summary warning
+        """
+        features: list[Feature] = []
+        skipped: list[str] = []
+        for i, item in enumerate(raw):
+            if not isinstance(item, dict):
+                raise InvalidGeoJSONError(source, f"item #{i} is a {type(item).__name__}, not a dict")
+            if item.get("type") in GEOMETRY_TYPES:
+                item = {"type": "Feature", "geometry": item, "properties": {}}
+            if item.get("type") != "Feature":
+                raise InvalidGeoJSONError(source, f"item #{i} has type {item.get('type')!r}, expected 'Feature'")
+
+            geom = item.get("geometry")
+            if geom is not None:
+                if not isinstance(geom, dict) or geom.get("type") not in GEOMETRY_TYPES:
+                    skipped.append(f"#{i} (unsupported geometry)")
+                    continue
+                if geom["type"] == "Point":
+                    coords: Any = geom.get("coordinates")
+                    try:
+                        _validate_coord(coords[1], coords[0])
+                    except (InvalidCoordinateError, TypeError, IndexError, KeyError):
+                        skipped.append(f"#{i} (invalid Point {coords!r})")
+                        continue
+
+            feat = dict(item)
+            props = item.get("properties")
+            feat["properties"] = dict(props) if isinstance(props, dict) else {}
+            feat["geometry"] = geom
+            features.append(feat)
+
+        if skipped:
+            shown = ", ".join(skipped[:5]) + (f", … (+{len(skipped) - 5} more)" if len(skipped) > 5 else "")
+            warnings.warn(
+                f"QOREgeo: skipped {len(skipped)} feature(s) in '{source}': {shown}",
+                stacklevel=4,
+            )
+        return features
+
+    @classmethod
+    def _to_feature_list(cls, data: Any, source: str) -> tuple[list[Feature], dict[str, Any]]:
+        """Accept any GeoJSON-ish object; return (features, extra top-level members)."""
+        extra: dict[str, Any] = {}
+        if isinstance(data, dict):
+            dtype = data.get("type")
+            if dtype == "FeatureCollection":
+                raw = data.get("features")
+                if not isinstance(raw, list):
+                    raise InvalidGeoJSONError(source, "'features' is missing or not a list")
+                extra = {k: v for k, v in data.items() if k not in ("type", "features", "bbox")}
+            elif dtype == "Feature" or dtype in GEOMETRY_TYPES:
+                raw = [data]
+            else:
+                raise InvalidGeoJSONError(
+                    source, f"top-level type is {dtype!r}; expected a FeatureCollection, Feature or Geometry"
+                )
+        elif isinstance(data, (list, tuple)):
+            raw = list(data)
+        else:
+            raise InvalidGeoJSONError(source, f"expected a JSON object or list, got {type(data).__name__}")
+        return cls._normalise_features(raw, source), extra
 
     # ──────────────────────────────────────────────────────────────────────
     # I/O
@@ -93,80 +315,126 @@ class GeoEngine:
 
     def load(
         self,
-        path: str,
-        lat_col: Optional[str] = None,
-        lng_col: Optional[str] = None,
+        path: PathLike,
+        lat_col: str | None = None,
+        lng_col: str | None = None,
         encoding: str = "utf-8-sig",
-    ) -> "GeoEngine":
+        delimiter: str | None = None,
+        infer_types: bool = False,
+    ) -> GeoEngine:
         """
-        Load spatial data from a CSV or GeoJSON file.
+        Load spatial data from a CSV/TSV or GeoJSON file.
 
-        Auto-detects latitude/longitude column names (latitude, lat, y, LAT …).
+        Auto-detects latitude/longitude column names (latitude, lat, y, LAT …)
+        and the delimiter (comma, semicolon, tab or pipe).
         Raises helpful errors for common mistakes.
 
         Parameters
         ----------
-        path       : path to .csv or .geojson file
-        lat_col    : override latitude column name
-        lng_col    : override longitude column name
-        encoding   : file encoding (default utf-8-sig handles BOM)
+        path        : path to a .csv / .tsv / .txt or .geojson / .json file
+        lat_col     : override latitude column name
+        lng_col     : override longitude column name
+        encoding    : file encoding (default utf-8-sig handles BOM)
+        delimiter   : CSV delimiter; auto-detected from the header if None
+        infer_types : convert CSV values to int / float / bool / None where
+                      lossless (values with leading zeros stay strings)
+
+        Rows with blank coordinates are skipped silently; rows with
+        unparseable or out-of-range coordinates are skipped with one
+        summary warning.
 
         Returns
         -------
         self — for method chaining
         """
-        if not os.path.exists(path):
-            raise QFileNotFoundError(path)
+        try:
+            path_str = os.fspath(path)
+        except TypeError:
+            raise InvalidArgumentError(
+                "path", path, "a file path (str or pathlib.Path)", "geo.load('cities.csv')"
+            ) from None
+        if not os.path.isfile(path_str):
+            raise GeoFileNotFoundError(path_str)
 
-        ext = os.path.splitext(path)[1].lower()
+        ext = os.path.splitext(path_str)[1].lower()
 
-        if ext == ".csv":
-            self._data = self._load_csv(path, lat_col, lng_col, encoding)
-        elif ext in (".geojson", ".json"):
-            self._data = self._load_geojson(path, encoding)
+        if ext in _CSV_EXTS:
+            self._data = self._load_csv(path_str, lat_col, lng_col, encoding, delimiter, infer_types)
+        elif ext in _JSON_EXTS:
+            self._data = self._load_geojson(path_str, encoding)
         else:
-            raise UnsupportedFormatError(ext)
+            raise UnsupportedFormatError(ext or "(no extension)")
 
-        self._source_path = path
+        self._source_path = path_str
         return self
 
     def _load_csv(
         self,
         path: str,
-        lat_col: Optional[str],
-        lng_col: Optional[str],
+        lat_col: str | None,
+        lng_col: str | None,
         encoding: str,
-    ) -> Dict[str, Any]:
-        features: List[Feature] = []
+        delimiter: str | None = None,
+        infer_types: bool = False,
+    ) -> dict[str, Any]:
+        features: list[Feature] = []
+        problems: list[str] = []
+        ragged_rows = 0
 
         with open(path, newline="", encoding=encoding) as f:
-            reader = csv.DictReader(f)
-            if reader.fieldnames is None:
+            if delimiter is None:
+                if path.lower().endswith(".tsv"):
+                    delimiter = "\t"
+                else:
+                    delimiter = _sniff_delimiter(f.readline())
+                    f.seek(0)
+
+            reader = csv.DictReader(f, delimiter=delimiter)
+            if not reader.fieldnames:
                 raise EmptyDatasetError(path)
+            reader.fieldnames = [h.strip() if isinstance(h, str) else h for h in reader.fieldnames]
+            columns = list(reader.fieldnames)
 
-            # Auto-detect columns
-            if lat_col and lng_col:
-                detected_lat, detected_lng = lat_col, lng_col
-            else:
-                detected_lat, detected_lng = _detect_lat_lng_columns(
-                    list(reader.fieldnames), path
-                )
-            lat_c = lat_col or detected_lat
-            lng_c = lng_col or detected_lng
+            hint = f"geo.load('{path}', lat_col='<your lat column>', lng_col='<your lng column>')"
 
-            for i, row in enumerate(reader, start=2):
+            def resolve(user_col: str | None, candidates: list[str], label: str) -> str:
+                if user_col is not None:
+                    if user_col in columns:
+                        return user_col
+                    found = _find_column(columns, [str(user_col).strip().lower()])
+                    if found is None:
+                        raise ColumnNotFoundError(str(user_col), columns, path, hint=hint)
+                    return found
+                found = _find_column(columns, candidates)
+                if found is None:
+                    raise ColumnNotFoundError(label, columns, path, hint=hint)
+                return found
+
+            lat_c = resolve(lat_col, _LAT_CANDIDATES, "latitude")
+            lng_c = resolve(lng_col, _LNG_CANDIDATES, "longitude")
+
+            for row in reader:
+                line = reader.line_num
                 raw_lat = row.get(lat_c)
                 raw_lng = row.get(lng_c)
 
-                lat = _safe_float(raw_lat, lat_c, i, path)
-                lng = _safe_float(raw_lng, lng_c, i, path)
-
-                if lat is None or lng is None:
+                if raw_lat is None or raw_lng is None or not str(raw_lat).strip() \
+                        or not str(raw_lng).strip():
                     continue  # skip rows with missing coords
 
-                _validate_coord(lat, lng)
+                try:
+                    lat, lng = _validate_coord(raw_lat, raw_lng)
+                except InvalidCoordinateError:
+                    problems.append(f"line {line} (lat={raw_lat!r}, lng={raw_lng!r})")
+                    continue
 
-                props = {k: v for k, v in row.items() if k not in (lat_c, lng_c)}
+                if None in row:
+                    ragged_rows += 1
+                props = {
+                    k: (_infer_value(v) if infer_types else v)
+                    for k, v in row.items()
+                    if k is not None and k not in (lat_c, lng_c)
+                }
 
                 features.append(
                     {
@@ -179,53 +447,100 @@ class GeoEngine:
                     }
                 )
 
+        if problems:
+            shown = ", ".join(problems[:5]) + (f", … (+{len(problems) - 5} more)" if len(problems) > 5 else "")
+            warnings.warn(
+                f"QOREgeo: skipped {len(problems)} row(s) in '{path}' with non-numeric or "
+                f"out-of-range coordinates (lat must be -90..90, lng -180..180 — are the "
+                f"columns swapped?): {shown}",
+                stacklevel=3,
+            )
+        if ragged_rows:
+            warnings.warn(
+                f"QOREgeo: {ragged_rows} row(s) in '{path}' had more values than header "
+                f"columns; the extra values were dropped.",
+                stacklevel=3,
+            )
         if not features:
             raise EmptyDatasetError(path)
 
         return {"type": "FeatureCollection", "features": features}
 
-    def _load_geojson(self, path: str, encoding: str) -> Dict[str, Any]:
+    def _load_geojson(self, path: str, encoding: str) -> dict[str, Any]:
         with open(path, encoding=encoding) as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError as e:
-                raise UnsupportedFormatError(
-                    f".geojson — invalid JSON: {e}"
-                ) from e
+                raise InvalidGeoJSONError(path, f"not valid JSON ({e})") from e
 
-        if data.get("type") == "FeatureCollection":
-            return data
-        if data.get("type") == "Feature":
-            return {"type": "FeatureCollection", "features": [data]}
+        features, extra = self._to_feature_list(data, path)
+        if not features:
+            raise EmptyDatasetError(path)
+        return {"type": "FeatureCollection", **extra, "features": features}
 
-        raise UnsupportedFormatError(
-            ".geojson — expected a FeatureCollection or Feature"
-        )
-
-    def load_data(self, features: List[Feature]) -> "GeoEngine":
+    def load_data(self, features: Any) -> GeoEngine:
         """
-        Load raw GeoJSON Feature dicts directly (no file needed).
+        Load GeoJSON directly from Python objects (no file needed).
 
         Parameters
         ----------
-        features : list of GeoJSON Feature dicts
+        features : a list of GeoJSON Feature (or Geometry) dicts, a
+                   FeatureCollection dict, a single Feature, or a Geometry
 
         Returns
         -------
         self
         """
-        if not features:
+        if features is None:
             raise EmptyDatasetError("<in-memory data>")
-        self._data = {"type": "FeatureCollection", "features": list(features)}
+        if not isinstance(features, (dict, list, tuple)):
+            try:
+                features = list(features)
+            except TypeError:
+                raise InvalidGeoJSONError(
+                    "<in-memory data>", f"expected a list or dict, got {type(features).__name__}"
+                ) from None
+        feats, extra = self._to_feature_list(features, "<in-memory data>")
+        if not feats:
+            raise EmptyDatasetError("<in-memory data>")
+        self._data = {"type": "FeatureCollection", **extra, "features": feats}
+        self._source_path = None
         return self
 
-    def save(self, path: str, encoding: str = "utf-8") -> "GeoEngine":
+    def add_point(self, lat: float, lng: float, **properties: Any) -> GeoEngine:
+        """
+        Append a single Point feature (creates the dataset if needed).
+
+        Examples
+        --------
+        >>> geo = GeoEngine().add_point(28.6139, 77.2090, name="Delhi")
+        >>> geo.add_point(19.0760, 72.8777, name="Mumbai").count()
+        2
+        """
+        lat_f, lng_f = _validate_coord(lat, lng)
+        if self._data is None:
+            self._data = {"type": "FeatureCollection", "features": []}
+        self._data["features"].append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lng_f, lat_f]},
+                "properties": dict(properties),
+            }
+        )
+        return self
+
+    def save(self, path: PathLike, encoding: str = "utf-8") -> GeoEngine:
         """
         Save current features to a GeoJSON or CSV file.
 
+        CSV output has ``latitude`` / ``longitude`` columns (for non-Point
+        features: their representative point, plus a ``geometry`` column
+        holding the full GeoJSON geometry). Nested property values are
+        written as JSON.
+
         Parameters
         ----------
-        path     : output path (.geojson, .json, or .csv)
+        path     : output path (.geojson, .json, .csv or .tsv)
         encoding : file encoding
 
         Returns
@@ -233,43 +548,66 @@ class GeoEngine:
         self
         """
         self._require_data("save")
-        ext = os.path.splitext(path)[1].lower()
+        path_str = os.fspath(path)
+        ext = os.path.splitext(path_str)[1].lower()
+        if ext not in _JSON_EXTS + (".csv", ".tsv"):
+            raise UnsupportedFormatError(ext or "(no extension)")
 
-        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
+        parent = os.path.dirname(path_str)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
 
-        if ext in (".geojson", ".json"):
-            with open(path, "w", encoding=encoding) as f:
-                json.dump(self._data, f, indent=2, ensure_ascii=False)
+        if ext in _JSON_EXTS:
+            with open(path_str, "w", encoding=encoding) as f:
+                json.dump(_json_safe(self._data), f, indent=2, ensure_ascii=False, default=str)
+            return self
 
-        elif ext == ".csv":
-            features = self._features()
-            if not features:
-                raise EmptyDatasetError(path)
+        features = self._features()
+        non_point = any(
+            isinstance(feat.get("geometry"), dict) and feat["geometry"].get("type") != "Point"
+            for feat in features
+        )
+        reserved = {"latitude", "longitude"} | ({"geometry"} if non_point else set())
 
-            # Gather all property keys
-            all_keys = []
-            seen = set()
+        # Gather all property keys (first-seen order)
+        all_keys: list[str] = []
+        seen = set()
+        dropped = set()
+        for feat in features:
+            for k in feat.get("properties", {}).keys():
+                if k in reserved:
+                    dropped.add(k)
+                elif k not in seen:
+                    all_keys.append(k)
+                    seen.add(k)
+        if dropped:
+            warnings.warn(
+                f"QOREgeo: properties {sorted(dropped)} clash with CSV coordinate columns "
+                f"and were not written; the geometry is used instead.",
+                stacklevel=2,
+            )
+
+        fieldnames = ["latitude", "longitude"] + (["geometry"] if non_point else []) + all_keys
+
+        with open(path_str, "w", newline="", encoding=encoding) as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, delimiter="\t" if ext == ".tsv" else ",")
+            writer.writeheader()
             for feat in features:
-                for k in feat.get("properties", {}).keys():
-                    if k not in seen:
-                        all_keys.append(k)
-                        seen.add(k)
-
-            fieldnames = ["latitude", "longitude"] + all_keys
-
-            with open(path, "w", newline="", encoding=encoding) as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
-                writer.writeheader()
-                for feat in features:
-                    coords = feat["geometry"]["coordinates"]
-                    row = {
-                        "longitude": coords[0],
-                        "latitude": coords[1],
-                    }
-                    row.update(feat.get("properties", {}))
-                    writer.writerow(row)
-        else:
-            raise UnsupportedFormatError(ext)
+                geom = feat.get("geometry")
+                point = _representative_point(geom)
+                row: dict[str, Any] = {
+                    "latitude": point[0] if point else "",
+                    "longitude": point[1] if point else "",
+                }
+                if non_point:
+                    row["geometry"] = (
+                        json.dumps(geom, ensure_ascii=False, default=str)
+                        if isinstance(geom, dict) and geom.get("type") != "Point" else ""
+                    )
+                for k, v in feat.get("properties", {}).items():
+                    if k not in reserved:
+                        row[k] = _json_cell(v)
+                writer.writerow(row)
 
         return self
 
@@ -282,79 +620,106 @@ class GeoEngine:
         point_a: Coord,
         point_b: Coord,
         unit: str = "km",
+        method: str = "haversine",
     ) -> float:
         """
-        Calculate the great-circle (Haversine) distance between two coordinates.
+        Calculate the distance between two coordinates.
 
         Parameters
         ----------
-        point_a : (lat, lng) tuple
+        point_a : (lat, lng) tuple (or a GeoJSON Point / Point Feature)
         point_b : (lat, lng) tuple
-        unit    : 'km' | 'miles' | 'm' | 'ft'
+        unit    : 'km' | 'm' | 'miles' | 'mi' | 'ft' | 'yd' | 'nmi'
+        method  : 'haversine' (sphere, default) or 'vincenty' (WGS-84
+                  ellipsoid, ~0.5 mm accuracy)
 
         Returns
         -------
-        Distance as a float in the requested unit.
+        Distance as a float in the requested unit, rounded to 4 decimals.
 
         Examples
         --------
-        >>> geo.distance((28.61, 77.20), (19.07, 72.87))
-        1153.54
-        >>> geo.distance((28.61, 77.20), (19.07, 72.87), unit='miles')
-        716.84
+        >>> geo.distance((28.6139, 77.2090), (19.0760, 72.8777))
+        1148.0965
+        >>> geo.distance((28.6139, 77.2090), (19.0760, 72.8777), unit='miles')
+        713.3941
         """
-        _validate_coord(*point_a)
-        _validate_coord(*point_b)
-
-        unit = unit.lower()
-        _UNITS = {"km": 1.0, "miles": 0.621371, "mi": 0.621371, "m": 1000.0, "ft": 3280.84}
-
-        if unit not in _UNITS:
-            raise InvalidUnitError(unit, list(_UNITS.keys()))
-
-        km = _haversine_km(point_a, point_b)
-        return round(km * _UNITS[unit], 4)
+        a = _coerce_point(point_a)
+        b = _coerce_point(point_b)
+        per_unit = _km_per_unit(unit)
+        km = _distance_km(a, b, method)
+        return round(km / per_unit, 4)
 
     def bearing(
         self,
         point_a: Coord,
         point_b: Coord,
         as_degrees: bool = False,
-    ) -> Union[str, float]:
+    ) -> str | float:
         """
-        Calculate the compass bearing from point_a to point_b.
+        Calculate the initial compass bearing from point_a to point_b.
 
         Parameters
         ----------
         point_a    : (lat, lng) origin
         point_b    : (lat, lng) destination
-        as_degrees : if True, return numeric degrees instead of compass string
+        as_degrees : if True, return numeric degrees (0–360) instead of a
+                     16-point compass string
 
         Returns
         -------
         Compass direction string e.g. 'South-Southwest' or float degrees.
+        Identical points return 0.0 / 'North'.
 
         Examples
         --------
-        >>> geo.bearing((28.61, 77.20), (19.07, 72.87))
+        >>> geo.bearing((28.6139, 77.2090), (19.0760, 72.8777))
         'South-Southwest'
-        >>> geo.bearing((28.61, 77.20), (19.07, 72.87), as_degrees=True)
-        202.4
+        >>> geo.bearing((28.6139, 77.2090), (19.0760, 72.8777), as_degrees=True)
+        203.47
         """
-        _validate_coord(*point_a)
-        _validate_coord(*point_b)
+        a = _coerce_point(point_a)
+        b = _coerce_point(point_b)
+        deg = _initial_bearing_deg(a, b)
+        return round(deg, 2) % 360.0 if as_degrees else _bearing_to_compass(deg)
 
-        lat1 = _to_radians(point_a[0])
-        lat2 = _to_radians(point_b[0])
-        d_lng = _to_radians(point_b[1] - point_a[1])
+    def destination(
+        self,
+        point: Coord,
+        distance: float,
+        bearing: float,
+        unit: str = "km",
+    ) -> Coord:
+        """
+        Find the point reached by travelling ``distance`` from ``point`` on
+        an initial compass ``bearing`` (degrees, 0 = north, 90 = east).
 
-        x = math.sin(d_lng) * math.cos(lat2)
-        y = math.cos(lat1) * math.sin(lat2) - math.sin(lat1) * math.cos(lat2) * math.cos(d_lng)
+        Returns
+        -------
+        (lat, lng) tuple, rounded to 6 decimals (~0.1 m).
 
-        deg = (math.degrees(math.atan2(x, y)) + 360) % 360
-        deg = round(deg, 2)
+        Examples
+        --------
+        >>> geo.destination((28.6139, 77.2090), 10, 90)
+        (28.613861, 77.311444)
+        """
+        origin = _coerce_point(point)
+        dist = _finite_number("distance", distance, "geo.destination(point, 10, 90)")
+        brng = _finite_number("bearing", bearing, "geo.destination(point, 10, 90)")
+        lat, lng = _destination_point(origin, dist * _km_per_unit(unit), brng)
+        return round(lat, 6), round(lng, 6)
 
-        return deg if as_degrees else _bearing_to_compass(deg)
+    def midpoint(self, point_a: Coord, point_b: Coord) -> Coord:
+        """
+        Great-circle midpoint between two coordinates.
+
+        Examples
+        --------
+        >>> geo.midpoint((28.6139, 77.2090), (19.0760, 72.8777))
+        (23.86007, 74.963456)
+        """
+        lat, lng = _midpoint(_coerce_point(point_a), _coerce_point(point_b))
+        return round(lat, 6), round(lng, 6)
 
     def buffer(
         self,
@@ -362,20 +727,22 @@ class GeoEngine:
         radius: float,
         unit: str = "km",
         num_points: int = 64,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Create a circular buffer polygon around a center point.
 
         Parameters
         ----------
         center     : (lat, lng) center of the circle
-        radius     : radius of the circle
-        unit       : 'km' | 'miles' | 'm'
-        num_points : polygon resolution (higher = smoother)
+        radius     : radius of the circle (> 0)
+        unit       : 'km' | 'm' | 'miles' | 'mi' | 'ft' | 'yd' | 'nmi'
+        num_points : polygon resolution, >= 3 (higher = smoother)
 
         Returns
         -------
-        A GeoJSON Polygon dict representing the buffer zone.
+        A GeoJSON Polygon dict representing the buffer zone. It also carries
+        ``_center`` and ``_radius_km`` so ``point_in_polygon`` can test it
+        exactly, even across the poles or the antimeridian.
 
         Examples
         --------
@@ -383,38 +750,44 @@ class GeoEngine:
         >>> geo.point_in_polygon((28.65, 77.22), zone)
         True
         """
-        _validate_coord(*center)
+        lat, lng = _coerce_point(center)
+        radius_f = _positive_radius(radius)
+        per_unit = _km_per_unit(unit)
+        _positive_int("num_points", num_points, 3, "geo.buffer(center, radius=10, num_points=64)")
 
-        if radius <= 0:
-            raise InvalidRadiusError(radius)
-
-        unit = unit.lower()
-        to_km = {"km": 1.0, "miles": 1.60934, "mi": 1.60934, "m": 0.001}
-        if unit not in to_km:
-            raise InvalidUnitError(unit, list(to_km.keys()))
-
-        radius_km = radius * to_km[unit]
-        coords = _generate_circle_polygon(center, radius_km, num_points)
+        radius_km = radius_f * per_unit
+        half_circumference = math.pi * EARTH_RADIUS_KM
+        if radius_km > half_circumference:
+            raise InvalidArgumentError(
+                "radius", radius, f"at most {half_circumference:.0f} km (half the Earth's "
+                "circumference) — a larger circle covers the whole globe",
+                "geo.buffer(center, radius=500)",
+            )
+        coords = _generate_circle_polygon((lat, lng), radius_km, num_points)
 
         return {
             "type": "Polygon",
             "coordinates": [coords],
-            "_center": center,
+            "_center": (lat, lng),
             "_radius_km": radius_km,
         }
 
     def point_in_polygon(
         self,
         point: Coord,
-        polygon: Dict[str, Any],
+        polygon: dict[str, Any],
     ) -> bool:
         """
-        Test whether a point falls inside a polygon (ray-casting algorithm).
+        Test whether a point falls inside a polygon.
+
+        Supports ``buffer()`` results (exact circle test), GeoJSON Polygons
+        (holes respected), MultiPolygons, and Features wrapping either.
+        Polygons that cross the antimeridian are handled.
 
         Parameters
         ----------
         point   : (lat, lng)
-        polygon : GeoJSON Polygon dict or buffer() result
+        polygon : GeoJSON Polygon / MultiPolygon / Feature or buffer() result
 
         Returns
         -------
@@ -428,39 +801,119 @@ class GeoEngine:
         >>> geo.point_in_polygon((19.07, 72.87), zone)
         False
         """
-        _validate_coord(*point)
+        lat, lng = _coerce_point(point)
+        return _point_in_geometry(lat, lng, polygon)
 
-        if not isinstance(polygon, dict):
-            raise InvalidBufferError()
+    def area(self, polygon: dict[str, Any], unit: str = "km2") -> float:
+        """
+        Spherical area of a Polygon / MultiPolygon / Feature / buffer.
 
-        poly_type = polygon.get("type")
+        Parameters
+        ----------
+        polygon : GeoJSON polygon-like dict (holes are subtracted)
+        unit    : 'km2' | 'm2' | 'ha' | 'acres' | 'mi2' | 'ft2'
 
-        if poly_type == "Polygon":
-            ring = polygon["coordinates"][0]
-        elif poly_type == "Feature":
-            geom = polygon.get("geometry", {})
-            if geom.get("type") != "Polygon":
-                raise InvalidBufferError()
-            ring = geom["coordinates"][0]
-        else:
-            raise InvalidBufferError()
+        Examples
+        --------
+        >>> geo.area(geo.buffer((28.61, 77.20), radius=1))   # ≈ π km²
+        3.1365
+        """
+        per_unit = _m2_per_unit(unit)
+        return round(_polygon_area_m2(polygon) / per_unit, 4)
 
-        # ring is [[lng, lat], ...]
-        lat, lng = point
-        return _point_in_polygon_ray(lat, lng, ring)
+    def length(self, line: Any, unit: str = "km", method: str = "haversine") -> float:
+        """
+        Length of a path.
+
+        Parameters
+        ----------
+        line   : a list of (lat, lng) points, or a GeoJSON LineString /
+                 MultiLineString (or a Feature wrapping one)
+        unit   : distance unit (see distance())
+        method : 'haversine' or 'vincenty'
+
+        Examples
+        --------
+        >>> geo.length([(28.6139, 77.2090), (26.9124, 75.7873), (19.0760, 72.8777)])
+        1156.0342
+        """
+        per_unit = _km_per_unit(unit)
+        total = sum(_path_length_km(part, method) for part in _line_parts(line))
+        return round(total / per_unit, 4)
+
+    def distance_to_line(self, point: Coord, line: Any, unit: str = "km") -> float:
+        """
+        Shortest great-circle distance from ``point`` to a path (e.g. a road,
+        river or pipeline).
+
+        Parameters
+        ----------
+        point : (lat, lng)
+        line  : a list of (lat, lng) points, or a GeoJSON LineString /
+                MultiLineString (or a Feature wrapping one)
+        unit  : distance unit (see distance())
+
+        Examples
+        --------
+        >>> geo.distance_to_line((53.2611, -0.7972), [(53.3206, -1.7297), (53.1887, 0.1334)])
+        0.3075
+        """
+        p = _coerce_point(point)
+        per_unit = _km_per_unit(unit)
+        parts = [part for part in _line_parts(line) if part]
+        if not parts:
+            raise InvalidArgumentError("line", line, "at least one point",
+                                       "geo.distance_to_line(p, [(28.61, 77.20), (19.07, 72.87)])")
+        return round(_point_line_km(p, parts) / per_unit, 4)
+
+    def geohash(self, point: Coord, precision: int = 9) -> str:
+        """
+        Encode a point as a geohash string (precision 1–12 characters).
+
+        Examples
+        --------
+        >>> geo.geohash((57.64911, 10.40744), precision=11)
+        'u4pruydqqvj'
+        """
+        lat, lng = _coerce_point(point)
+        if isinstance(precision, bool) or not isinstance(precision, int) or not 1 <= precision <= 12:
+            raise InvalidArgumentError("precision", precision, "an integer from 1 to 12",
+                                       "geo.geohash((28.61, 77.20), precision=7)")
+        return _geohash_encode(lat, lng, precision)
+
+    def geohash_decode(self, geohash: str) -> Coord:
+        """
+        Decode a geohash to the (lat, lng) centre of its cell.
+
+        Examples
+        --------
+        >>> geo.geohash_decode('u4pruydqqvj')
+        (57.649111, 10.40744)
+        """
+        if not isinstance(geohash, str) or not geohash.strip():
+            raise InvalidArgumentError("geohash", geohash, "a non-empty geohash string",
+                                       "geo.geohash_decode('ttnfv2u')")
+        min_lat, min_lng, max_lat, max_lng = _geohash_bounds(geohash.strip())
+        return round((min_lat + max_lat) / 2, 6), round((min_lng + max_lng) / 2, 6)
 
     def nearest(
         self,
         point: Coord,
         unit: str = "km",
-    ) -> Dict[str, Any]:
+        method: str = "haversine",
+    ) -> dict[str, Any]:
         """
         Find the nearest feature to a given point.
 
+        Non-Point features are measured from their representative point
+        (polygon centroid / vertex mean); features without geometry are
+        ignored.
+
         Parameters
         ----------
-        point : (lat, lng)
-        unit  : distance unit for the result
+        point  : (lat, lng)
+        unit   : distance unit for the result
+        method : 'haversine' or 'vincenty'
 
         Returns
         -------
@@ -469,41 +922,73 @@ class GeoEngine:
         Examples
         --------
         >>> result = geo.nearest((28.61, 77.20))
-        >>> result['distance']
-        1.2
         >>> result['feature']['properties']['name']
-        'AIIMS New Delhi'
+        'Delhi'
         """
-        self._require_data("nearest")
-        _validate_coord(*point)
+        self._require_features("nearest")
+        origin = _coerce_point(point)
+        per_unit = _km_per_unit(unit)
 
-        best_dist = float("inf")
-        best_feat = None
-        best_idx  = -1
+        best: tuple[float, int, Feature] | None = None
+        for i, feat, loc in self._located():
+            d = _distance_km(origin, loc, method)
+            if best is None or d < best[0]:
+                best = (d, i, feat)
 
-        for i, feat in enumerate(self._features()):
-            coords = feat["geometry"]["coordinates"]
-            feat_point = (coords[1], coords[0])
-            d = self.distance(point, feat_point, unit=unit)
-            if d < best_dist:
-                best_dist = d
-                best_feat = feat
-                best_idx  = i
+        if best is None:
+            raise NoDataError("nearest", empty=True)
+        return {"feature": best[2], "distance": round(best[0] / per_unit, 4), "index": best[1]}
 
-        return {"feature": best_feat, "distance": best_dist, "index": best_idx}
+    def k_nearest(
+        self,
+        point: Coord,
+        k: int = 5,
+        unit: str = "km",
+        method: str = "haversine",
+    ) -> GeoEngine:
+        """
+        Return the ``k`` features closest to ``point``, nearest first, with a
+        ``_distance`` property injected (in ``unit``).
+
+        Examples
+        --------
+        >>> geo.k_nearest((28.61, 77.20), k=3).count()
+        3
+        """
+        self._require_data("k_nearest")
+        origin = _coerce_point(point)
+        per_unit = _km_per_unit(unit)
+        _positive_int("k", k, 1, "geo.k_nearest(point, k=5)")
+
+        scored = (
+            (_distance_km(origin, loc, method), i, feat) for i, feat, loc in self._located()
+        )
+        best = heapq.nsmallest(k, scored, key=lambda t: (t[0], t[1]))
+        return self._clone_with([
+            {**feat, "properties": {**feat.get("properties", {}), "_distance": round(d / per_unit, 4)}}
+            for d, _, feat in best
+        ])
 
     # ──────────────────────────────────────────────────────────────────────
     # Filtering
     # ──────────────────────────────────────────────────────────────────────
 
-    def filter(self, column: str, value: Any) -> "GeoEngine":
+    def filter(self, column: str, value: Any, op: str = "==") -> GeoEngine:
         """
-        Filter features where properties[column] == value.
+        Filter features by a property value.
 
         Parameters
         ----------
         column : property key
-        value  : value to match (case-insensitive for strings)
+        value  : value to compare against
+        op     : '==' (default) | '!=' | '>' | '>=' | '<' | '<=' |
+                 'in' | 'not in' | 'contains'
+
+        Equality is case-insensitive for strings, and numeric when ``value``
+        is a number (so ``filter('pop', 5)`` matches ``"5"`` and ``5.0``).
+        Ordering operators compare numerically when ``value`` is a number
+        and as case-insensitive strings otherwise; features whose property
+        is missing or not comparable are excluded. ``'in'`` takes a list.
 
         Returns
         -------
@@ -512,26 +997,81 @@ class GeoEngine:
         Examples
         --------
         >>> geo.filter("state", "Maharashtra").count()
-        134
+        2
+        >>> geo.filter("population", 15_000_000, op=">").count()
+        2
         """
         self._require_data("filter")
+        if op not in _FILTER_OPS:
+            raise InvalidArgumentError("op", op, " | ".join(repr(o) for o in _FILTER_OPS),
+                                       "geo.filter('population', 1000000, op='>')")
+        features = self._features()
+        if not features:
+            return self._clone_with([])
 
         # Check column exists in at least one feature
-        sample_keys = set()
-        for feat in self._features():
-            sample_keys.update(feat.get("properties", {}).keys())
+        sample_keys: dict[str, None] = {}
+        for feat in features:
+            sample_keys.update(dict.fromkeys(feat.get("properties", {})))
 
         if column not in sample_keys:
-            raise ColumnNotFoundError(column, list(sample_keys), self._source_path or "dataset")
+            keys = list(sample_keys)
+            raise ColumnNotFoundError(
+                column, keys, self._source_path or "dataset",
+                hint=f"geo.filter('{keys[0] if keys else 'column_name'}', value)",
+            )
 
-        val_str = str(value).strip().lower()
+        if op in ("in", "not in"):
+            if isinstance(value, (str, bytes)) or not isinstance(value, Iterable):
+                raise InvalidArgumentError("value", value, f"a list of values for op={op!r}",
+                                           f"geo.filter('{column}', ['a', 'b'], op='{op}')")
+            options = list(value)
 
-        matched = [
-            feat for feat in self._features()
-            if str(feat.get("properties", {}).get(column, "")).strip().lower() == val_str
-        ]
+        def match(props: dict[str, Any]) -> bool:
+            present = column in props
+            prop = props.get(column, "")
+            if op == "==":
+                return _values_equal(prop, value)
+            if op == "!=":
+                return not _values_equal(prop, value)
+            if op == "in":
+                return any(_values_equal(prop, v) for v in options)
+            if op == "not in":
+                return not any(_values_equal(prop, v) for v in options)
+            if not present or prop is None:
+                return False
+            if op == "contains":
+                return _norm_str(value) in _norm_str(prop)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                left: Any = _as_number(prop)
+                right: Any = float(value)
+                if left is None:
+                    return False
+            else:
+                left, right = _norm_str(prop), _norm_str(value)
+            if op == ">":
+                return bool(left > right)
+            if op == ">=":
+                return bool(left >= right)
+            if op == "<":
+                return bool(left < right)
+            return bool(left <= right)
 
-        return self._clone_with(matched)
+        return self._clone_with([f for f in features if match(f.get("properties", {}))])
+
+    def where(self, predicate: Callable[[dict[str, Any]], Any]) -> GeoEngine:
+        """
+        Filter features with a custom function of their properties.
+
+        Examples
+        --------
+        >>> big = geo.where(lambda p: int(p["population"]) > 10_000_000)
+        """
+        self._require_data("where")
+        if not callable(predicate):
+            raise InvalidArgumentError("predicate", predicate, "a function taking a properties dict",
+                                       "geo.where(lambda p: p['state'] == 'Kerala')")
+        return self._clone_with([f for f in self._features() if predicate(f.get("properties", {}))])
 
     def filter_by_radius(
         self,
@@ -539,19 +1079,21 @@ class GeoEngine:
         lng: float,
         radius: float,
         unit: str = "km",
-    ) -> "GeoEngine":
+        method: str = "haversine",
+    ) -> GeoEngine:
         """
         Filter features within a given radius of a point.
 
         Results are sorted by distance (nearest first) and a ``_distance``
-        property is injected into each feature.
+        property (in ``unit``) is injected into each feature.
 
         Parameters
         ----------
         lat    : center latitude
         lng    : center longitude
-        radius : search radius
-        unit   : 'km' | 'miles' | 'm'
+        radius : search radius (> 0)
+        unit   : distance unit (see distance())
+        method : 'haversine' or 'vincenty'
 
         Returns
         -------
@@ -561,27 +1103,140 @@ class GeoEngine:
         --------
         >>> nearby = geo.filter_by_radius(28.61, 77.20, radius=50)
         >>> nearby.count()
-        8
+        1
         """
         self._require_data("filter_by_radius")
-        _validate_coord(lat, lng)
+        center = _validate_coord(lat, lng)
+        radius_f = _positive_radius(radius)
+        per_unit = _km_per_unit(unit)
 
-        if radius <= 0:
-            raise InvalidRadiusError(radius)
-
-        center = (lat, lng)
         results = []
+        for i, feat, loc in self._located():
+            d = _distance_km(center, loc, method) / per_unit
+            if d <= radius_f:
+                f2 = {**feat, "properties": {**feat.get("properties", {}), "_distance": round(d, 4)}}
+                results.append((d, i, f2))
 
+        results.sort(key=lambda x: (x[0], x[1]))
+        return self._clone_with([r[2] for r in results])
+
+    def filter_by_bbox(
+        self,
+        min_lat: float,
+        min_lng: float,
+        max_lat: float,
+        max_lng: float,
+    ) -> GeoEngine:
+        """
+        Keep features whose location lies inside a bounding box
+        (south, west, north, east). If ``min_lng > max_lng`` the box is taken
+        to cross the antimeridian.
+
+        Accepts the output of ``bounds()`` directly::
+
+            other_area = geo.filter_by_bbox(**other.bounds())
+
+        Examples
+        --------
+        >>> geo.filter_by_bbox(18.0, 72.0, 20.0, 74.0).count()   # Mumbai + Pune
+        2
+        """
+        self._require_data("filter_by_bbox")
+        s, w = _validate_coord(min_lat, min_lng)
+        n, e = _validate_coord(max_lat, max_lng)
+        if s > n:
+            raise InvalidArgumentError("min_lat", min_lat, f"a value <= max_lat ({max_lat})",
+                                       "geo.filter_by_bbox(min_lat=18, min_lng=72, max_lat=20, max_lng=74)")
+        crosses = w > e
+
+        def inside(lat: float, lng: float) -> bool:
+            if not s <= lat <= n:
+                return False
+            return (lng >= w or lng <= e) if crosses else (w <= lng <= e)
+
+        return self._clone_with([feat for _, feat, (la, lo) in self._located() if inside(la, lo)])
+
+    def filter_by_polygon(self, polygon: dict[str, Any]) -> GeoEngine:
+        """
+        Keep features whose location lies inside ``polygon`` (a buffer(),
+        Polygon, MultiPolygon or Feature) — e.g. all customers inside a
+        delivery zone.
+
+        Examples
+        --------
+        >>> zone = geo.buffer((19.07, 72.87), radius=200)
+        >>> geo.filter_by_polygon(zone).count()   # Mumbai + Pune
+        2
+        """
+        self._require_data("filter_by_polygon")
+        if _buffer_circle(polygon) is None:
+            _polygon_parts(polygon)   # validate up front, even for empty datasets
+        return self._clone_with([
+            feat for _, feat, (la, lo) in self._located() if _point_in_geometry(la, lo, polygon)
+        ])
+
+    def filter_by_line(self, line: Any, distance: float, unit: str = "km") -> GeoEngine:
+        """
+        Keep features within ``distance`` of a path — a "line buffer", e.g.
+        every store within 2 km of a highway. Results are sorted nearest-first
+        with a ``_distance`` property (in ``unit``) injected.
+
+        Parameters
+        ----------
+        line     : a list of (lat, lng) points, or a GeoJSON LineString /
+                   MultiLineString (or a Feature wrapping one)
+        distance : maximum distance from the line (> 0)
+        unit     : distance unit (see distance())
+
+        Examples
+        --------
+        >>> highway = [(28.6139, 77.2090), (26.9124, 75.7873)]   # Delhi → Jaipur
+        >>> geo.filter_by_line(highway, distance=50).count()
+        1
+        """
+        self._require_data("filter_by_line")
+        limit = _positive_radius(distance)
+        per_unit = _km_per_unit(unit)
+        parts = [part for part in _line_parts(line) if part]
+        if not parts:
+            raise InvalidArgumentError("line", line, "at least one point",
+                                       "geo.filter_by_line([(28.61, 77.20), (26.91, 75.79)], 5)")
+
+        results = []
+        for i, feat, loc in self._located():
+            d = _point_line_km(loc, parts) / per_unit
+            if d <= limit:
+                f2 = {**feat, "properties": {**feat.get("properties", {}), "_distance": round(d, 4)}}
+                results.append((d, i, f2))
+        results.sort(key=lambda x: (x[0], x[1]))
+        return self._clone_with([r[2] for r in results])
+
+    def sort_by(self, column: str, descending: bool = False) -> GeoEngine:
+        """
+        Sort features by a property. Numbers sort numerically (numeric
+        strings included), other values case-insensitively; features
+        missing the property go last.
+        """
+        self._require_data("sort_by")
+        present: list[Feature] = []
+        missing: list[Feature] = []
         for feat in self._features():
-            coords = feat["geometry"]["coordinates"]
-            feat_pt = (coords[1], coords[0])
-            d = self.distance(center, feat_pt, unit=unit)
-            if d <= radius:
-                f2 = {**feat, "properties": {**feat.get("properties", {}), "_distance": d}}
-                results.append((d, f2))
+            v = feat.get("properties", {}).get(column)
+            (missing if v is None or v == "" else present).append(feat)
 
-        results.sort(key=lambda x: x[0])
-        return self._clone_with([r[1] for r in results])
+        def key(feat: Feature) -> tuple[int, Any]:
+            v = feat["properties"][column]
+            num = _as_number(v)
+            return (0, num) if num is not None else (1, _norm_str(v))
+
+        present.sort(key=key, reverse=descending)
+        return self._clone_with(present + missing)
+
+    def head(self, n: int = 5) -> GeoEngine:
+        """Return a new GeoEngine with the first ``n`` features."""
+        self._require_data("head")
+        _positive_int("n", n, 0, "geo.head(10)")
+        return self._clone_with(list(self._features()[:n]))
 
     # ──────────────────────────────────────────────────────────────────────
     # Data access
@@ -591,30 +1246,33 @@ class GeoEngine:
         """Return the number of loaded features."""
         return len(self._features())
 
-    def get_features(self) -> List[Feature]:
-        """Return the raw list of GeoJSON Feature dicts."""
+    def get_features(self) -> list[Feature]:
+        """Return the raw list of GeoJSON Feature dicts (empty list if 0 features)."""
         self._require_data("get_features")
         return self._features()
 
-    def get_geojson(self) -> Dict[str, Any]:
+    def get_geojson(self) -> dict[str, Any]:
         """Return the full GeoJSON FeatureCollection dict."""
         self._require_data("get_geojson")
         return self._data  # type: ignore[return-value]
 
-    def bounds(self) -> Dict[str, float]:
+    def bounds(self) -> dict[str, float]:
         """
-        Return the bounding box of all loaded features.
+        Return the bounding box of all loaded geometries.
 
         Returns
         -------
         Dict with keys ``min_lat``, ``max_lat``, ``min_lng``, ``max_lng``.
         """
-        self._require_data("bounds")
-        lats, lngs = [], []
+        self._require_features("bounds")
+        lats: list[float] = []
+        lngs: list[float] = []
         for feat in self._features():
-            coords = feat["geometry"]["coordinates"]
-            lngs.append(coords[0])
-            lats.append(coords[1])
+            for pos in _iter_positions(feat.get("geometry")):
+                lngs.append(float(pos[0]))
+                lats.append(float(pos[1]))
+        if not lats:
+            raise NoDataError("bounds", empty=True)
         return {
             "min_lat": min(lats),
             "max_lat": max(lats),
@@ -622,35 +1280,92 @@ class GeoEngine:
             "max_lng": max(lngs),
         }
 
+    def bbox(self) -> list[float]:
+        """
+        Bounding box in GeoJSON (RFC 7946 §5) order: ``[west, south, east, north]``.
+
+        Unlike ``bounds()``, data spanning the antimeridian gets the tight box
+        with ``west > east`` (e.g. Fiji: ``[177.0, -20.0, -178.0, -16.0]``).
+        """
+        self._require_features("bbox")
+        lats: list[float] = []
+        lngs: list[float] = []
+        for feat in self._features():
+            for pos in _iter_positions(feat.get("geometry")):
+                lngs.append(float(pos[0]))
+                lats.append(float(pos[1]))
+        if not lats:
+            raise NoDataError("bbox", empty=True)
+        west, east = _lng_span(lngs)
+        return [west, min(lats), east, max(lats)]
+
+    def centroid(self) -> Coord:
+        """
+        Geographic centre of all features (spherical mean of their
+        locations, safe across the antimeridian), rounded to 6 decimals.
+        """
+        self._require_features("centroid")
+        points = [loc for _, _, loc in self._located()]
+        if not points:
+            raise NoDataError("centroid", empty=True)
+        lat, lng = _spherical_mean(points)
+        return round(lat, 6), round(lng, 6)
+
     def __len__(self) -> int:
         return self.count()
 
+    def __iter__(self) -> Iterator[Feature]:
+        return iter(list(self._features()))
+
     def __repr__(self) -> str:
-        status = f"{self.count()} features" if self._data else "no data loaded"
+        status = f"{self.count()} features" if self._data is not None else "no data loaded"
         return f"<GeoEngine [{status}]>"
 
     # ──────────────────────────────────────────────────────────────────────
     # Visualisation
     # ──────────────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _check_zoom(zoom: int | None) -> int | None:
+        if zoom is None:
+            return None
+        if isinstance(zoom, bool) or not isinstance(zoom, int) or not 0 <= zoom <= 22:
+            raise InvalidArgumentError("zoom", zoom, "an integer from 0 to 22, or None",
+                                       "geo.map('out.html', zoom=6)")
+        return zoom
+
     def map(
         self,
-        output_path: str = "map.html",
+        output_path: PathLike = "map.html",
         title: str = "QOREgeo Map",
-        zoom: int = 5,
-        center: Optional[Coord] = None,
-    ) -> "GeoEngine":
+        zoom: int | None = None,
+        center: Coord | None = None,
+        tiles: str = "dark",
+        overlays: Sequence[dict[str, Any]] | None = None,
+        tile_api_key: str | None = None,
+        attribution: str | None = None,
+    ) -> GeoEngine:
         """
         Export an interactive Leaflet.js map to an HTML file.
 
-        Opens in any browser — no server required.
+        Opens in any browser — no server required. Points, lines and
+        polygons are all drawn; property popups are HTML-escaped.
 
         Parameters
         ----------
         output_path : where to write the HTML file
         title       : map title shown in the browser tab
-        zoom        : initial zoom level (1–18)
-        center      : (lat, lng) initial center; auto-detected if None
+        zoom        : with ``center``: the initial zoom (default 10);
+                      without: the maximum zoom used when fitting the data
+        center      : (lat, lng) initial center; fits all features if None
+        tiles       : basemap — 'dark' | 'light' | 'voyager' (CARTO) | 'osm',
+                      or a custom ``https://…/{z}/{x}/{y}.png`` URL template
+        overlays    : extra shapes drawn as outlines, e.g. ``[geo.buffer(...)]``
+        tile_api_key: CARTO API key (free at https://carto.com/basemaps/apikey/);
+                      defaults to the QOREGEO_CARTO_API_KEY environment
+                      variable. Without one, CARTO tiles carry a watermark.
+                      Note the key is written into the HTML file.
+        attribution : attribution HTML for a custom tile URL
 
         Returns
         -------
@@ -661,23 +1376,35 @@ class GeoEngine:
         >>> geo.load("cities.csv").map("cities.html", title="India Cities")
         """
         self._require_data("map")
+        zoom = self._check_zoom(zoom)
+        view_center = _coerce_point(center) if center is not None else None
         build_map(
             features=self._features(),
-            output_path=output_path,
+            output_path=os.fspath(output_path),
             title=title,
             zoom=zoom,
-            center=center,
+            center=view_center,
+            tiles=tiles,
+            overlays=list(overlays) if overlays else None,
+            verbose=self.verbose,
+            tile_api_key=tile_api_key,
+            attribution=attribution,
         )
         return self
 
     def heatmap(
         self,
-        output_path: str = "heatmap.html",
+        output_path: PathLike = "heatmap.html",
         title: str = "QOREgeo Heatmap",
-        intensity_col: Optional[str] = None,
-        zoom: int = 5,
-        center: Optional[Coord] = None,
-    ) -> "GeoEngine":
+        intensity_col: str | None = None,
+        zoom: int | None = None,
+        center: Coord | None = None,
+        tiles: str = "dark",
+        radius: int = 25,
+        blur: int = 18,
+        tile_api_key: str | None = None,
+        attribution: str | None = None,
+    ) -> GeoEngine:
         """
         Export a density heatmap to an HTML file.
 
@@ -685,9 +1412,15 @@ class GeoEngine:
         ----------
         output_path   : where to write the HTML file
         title         : page title
-        intensity_col : property column to use as heat intensity weight
-        zoom          : initial zoom level
-        center        : (lat, lng) initial center; auto-detected if None
+        intensity_col : numeric property used as heat weight (normalised to
+                        the largest value); rows with missing, negative or
+                        non-numeric values get no weight
+        zoom          : see map()
+        center        : (lat, lng) initial center; fits all points if None
+        tiles         : basemap — see map()
+        radius, blur  : heat point radius and blur in pixels
+        tile_api_key  : CARTO API key — see map()
+        attribution   : attribution HTML for a custom tile URL
 
         Returns
         -------
@@ -698,12 +1431,31 @@ class GeoEngine:
         >>> geo.load("stores.csv").heatmap("heat.html", intensity_col="sales")
         """
         self._require_data("heatmap")
+        zoom = self._check_zoom(zoom)
+        view_center = _coerce_point(center) if center is not None else None
+        _positive_int("radius", radius, 1, "geo.heatmap('heat.html', radius=25)")
+        _positive_int("blur", blur, 0, "geo.heatmap('heat.html', blur=15)")
+        if intensity_col is not None:
+            keys = set()
+            for feat in self._features():
+                keys.update(feat.get("properties", {}))
+            if self._features() and intensity_col not in keys:
+                raise ColumnNotFoundError(
+                    intensity_col, sorted(keys), self._source_path or "dataset",
+                    hint="geo.heatmap('heat.html', intensity_col='<numeric column>')",
+                )
         build_heatmap(
             features=self._features(),
-            output_path=output_path,
+            output_path=os.fspath(output_path),
             title=title,
             intensity_col=intensity_col,
             zoom=zoom,
-            center=center,
+            center=view_center,
+            tiles=tiles,
+            radius=radius,
+            blur=blur,
+            verbose=self.verbose,
+            tile_api_key=tile_api_key,
+            attribution=attribution,
         )
         return self

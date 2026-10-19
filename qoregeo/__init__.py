@@ -14,7 +14,7 @@ Quick Start
 
     # Distance between two points
     km = geo.distance((28.6139, 77.2090), (19.0760, 72.8777))
-    print(km)  # 1153.54
+    print(km)  # 1148.0965
 
     # Compass bearing
     direction = geo.bearing((28.6139, 77.2090), (19.0760, 72.8777))
@@ -34,25 +34,32 @@ Links
 - Issues   : https://github.com/bosekarmegam/qoregeo/issues
 """
 
+from ._version import __version__
 from .engine import GeoEngine
 from .exceptions import (
-    QOREgeoError,
-    NoDataError,
-    InvalidCoordinateError,
-    InvalidUnitError,
     ColumnNotFoundError,
-    FileNotFoundError,
-    UnsupportedFormatError,
     EmptyDatasetError,
-    InvalidRadiusError,
+    GeoFileNotFoundError,
+    InvalidArgumentError,
     InvalidBufferError,
+    InvalidCoordinateError,
+    InvalidGeoJSONError,
+    InvalidRadiusError,
+    InvalidUnitError,
+    NoDataError,
+    QOREgeoError,
+    UnsupportedFormatError,
+)
+from .exceptions import (
+    FileNotFoundError as FileNotFoundError,  # backward-compatible alias (re-export)
 )
 
-__version__  = "1.0.3"
 __author__   = "Suneel Bose"
 __email__    = "suneelbosekarmegam@gmail.com"
 __license__  = "MIT"
 
+# ``FileNotFoundError`` is importable by name but deliberately left out of
+# ``__all__`` so ``from qoregeo import *`` never shadows the built-in.
 __all__ = [
     # Main class
     "GeoEngine",
@@ -61,10 +68,13 @@ __all__ = [
     "NoDataError",
     "InvalidCoordinateError",
     "InvalidUnitError",
+    "InvalidArgumentError",
     "ColumnNotFoundError",
-    "FileNotFoundError",
+    "GeoFileNotFoundError",
     "UnsupportedFormatError",
+    "InvalidGeoJSONError",
     "EmptyDatasetError",
     "InvalidRadiusError",
     "InvalidBufferError",
+    "__version__",
 ]
