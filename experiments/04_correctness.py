@@ -884,8 +884,9 @@ def _contact_edge(ga: dict[str, Any], gb: dict[str, Any], sa: Any, sb: Any) -> f
         e = _edges(g)
         if e.shape[0] == 0:
             continue
-        k = int(np.argmin(shapely.distance(shapely.linestrings(e), other)))
-        length = float(np.linalg.norm(e[k, 1] - e[k, 0]))
+        d = shapely.distance(shapely.linestrings(e), other)
+        near = d <= d.min() * (1.0 + 1e-9) + 1e-18   # at a vertex both adjacent edges tie
+        length = float(np.linalg.norm(e[near, 1] - e[near, 0], axis=1).min())
         best = length if best is None else min(best, length)
     return best
 
@@ -1363,7 +1364,7 @@ def _linestring_across_180(geo: GeoEngine) -> dict[str, Any]:
     y_mid = y0 + (0.0 - x0) / (x1 - x0) * (y1 - y0)   # where the planar (long-way) edge meets lng 0
     probe = (GeoEngine(verbose=False)
              .add_point(y_mid, 0.0, name="lng 0, on the long-way edge")
-             .add_point(-17.7, 179.9, name="lng 179.9, 1 km from the short-way segment"))
+             .add_point(-17.7, 179.9, name="lng 179.9, 4 km from the short-way segment"))
 
     def names(e: GeoEngine) -> list[str]:
         return [f["properties"]["name"] for f in e.get_features()]
@@ -1747,11 +1748,16 @@ def _save(fig: plt.Figure, name: str) -> str:
 
 
 def fig_antimeridian_image(fd: dict[str, Any]) -> str:
-    """The required figure: rendered by qoregeo itself, with its bbox() as an overlay."""
+    """
+    Rendered by qoregeo itself: the 17 towns, the ferry route and the split Lau zone,
+    with their bbox() as the dashed overlay. (The scattered points are left out of the
+    picture: their markers would block every town label.)
+    """
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     path = FIG_DIR / f"{NAME}-antimeridian.svg"
-    GeoEngine(verbose=False).load_data(fd["all_feats"]).image(
-        str(path), width=800, height=560, overlays=[fd["bbox_poly"]], labels="name")
+    named = [f for f in fd["all_feats"] if f["properties"].get("name")]
+    eng = GeoEngine(verbose=False).load_data(named)
+    eng.image(str(path), width=800, height=560, overlays=[_bbox_polygon(eng.bbox())], labels="name")
     return str(path.relative_to(REPO))
 
 
@@ -1810,8 +1816,9 @@ def fig_radius(radius: dict[str, Any]) -> str:
     a2.set_xticks(xpos)
     a2.set_xticklabels([f"{v:g}" for v in lats])
     a2.set_xlabel("Latitude of the centre (deg)")
-    a2.set_ylabel("misclassified, within +-1 % of radius (%)")
-    a2.legend(fontsize=7.5, loc="upper right")
+    a2.set_ylabel("misclassified, within \u00b11 % of radius (%)")
+    a2.set_ylim(0, max(hv) * 1.25)
+    a2.legend(fontsize=7.5, loc="upper left")
     a2.grid(axis="x", visible=False)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     _note(fig)
@@ -1820,7 +1827,7 @@ def fig_radius(radius: dict[str, Any]) -> str:
 
 def fig_tolerance(inter: dict[str, Any]) -> str:
     rows = [r for r in inter["near_rows"] if r["distance_deg"] > 0 and r["contact_edge_deg"]]
-    fig, ax = plt.subplots(figsize=(8, 4.2))
+    fig, ax = plt.subplots(figsize=(8, 4.8))
     edge = np.array([r["contact_edge_deg"] for r in rows])
     dist = np.array([r["distance_deg"] for r in rows])
     q = np.array([r["qoregeo"] for r in rows])
@@ -1834,13 +1841,15 @@ def fig_tolerance(inter: dict[str, Any]) -> str:
     xx = np.logspace(-7, 1.2, 50)
     ax.plot(xx, np.full_like(xx, TOL), color=INK2, linewidth=1, linestyle=(0, (4, 2)),
             label="1e-12 deg")
-    ax.plot(xx, TOL / np.minimum(xx, 1.0), color=C_A, linewidth=1.2, label="1e-12 / edge length (deg)")
+    ax.plot(xx, TOL / np.minimum(xx, 1.0), color=C_A, linewidth=1.2,
+            label="1e-12 / edge length: upper bound of the contact tolerance")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("Length of the edge at the contact (deg, log scale)")
     ax.set_ylabel("Gap between the shapes (deg, log scale)")
-    ax.legend(fontsize=7.5, loc="upper right")
-    fig.tight_layout(rect=(0, 0.03, 1, 1))
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", ncol=2, fontsize=7.5,
+               bbox_to_anchor=(0.5, 0.02), markerscale=2)
+    fig.tight_layout(rect=(0, 0.12, 1, 1))
     _note(fig)
     return _save(fig, "intersects-tolerance")
 

@@ -233,28 +233,36 @@ def _gc_state(enabled: bool):  # type: ignore[no-untyped-def]
             gc.disable()
 
 
-def time_call(fn: Callable[[], Any], repeats: int, min_time: float, gc_on: bool = True
-              ) -> dict[str, Any]:
+def time_call(fn: Callable[[], Any], repeats: int, min_time: float,
+              modes: tuple[bool, ...] = (True,),
+              on_first: Callable[[Any], dict[str, Any]] | None = None) -> dict[bool, dict[str, Any]]:
     """Time ``fn()`` timeit-style: calibrate a loop count, then ``repeats`` timed loops.
 
-    The first call is a warm-up and is reported separately. Each repeat starts
-    after a full ``gc.collect()``. Returns seconds per call.
+    ``modes`` lists garbage-collector states (True = on). With two modes the
+    loops alternate (on, off, on, off, ...), so both see the same background
+    load. The first call is a warm-up; ``on_first`` extracts facts from its
+    result, which is then dropped before timing. Each loop starts after a full
+    ``gc.collect()``. Returns seconds per call, per mode.
     """
-    with _gc_state(gc_on):
+    with _gc_state(modes[0]):
         t0 = time.perf_counter()
-        fn()
+        result = fn()
         first = time.perf_counter() - t0
+    facts = on_first(result) if on_first is not None else {}
+    del result
     number = 1 if first >= min_time else min(100_000, max(1, math.ceil(min_time / max(first, 1e-7))))
-    per_call: list[float] = []
+    per_call: dict[bool, list[float]] = {m: [] for m in modes}
     for _ in range(repeats):
-        with _gc_state(gc_on):
-            t0 = time.perf_counter()
-            for _ in range(number):
-                fn()
-            per_call.append((time.perf_counter() - t0) / number)
-    return {"median_s": statistics.median(per_call), "min_s": min(per_call),
-            "max_s": max(per_call), "first_call_s": first, "number": number,
-            "repeats": repeats, "gc_enabled": gc_on}
+        for m in modes:
+            with _gc_state(m):
+                t0 = time.perf_counter()
+                for _ in range(number):
+                    fn()
+                per_call[m].append((time.perf_counter() - t0) / number)
+    return {m: {"median_s": statistics.median(v), "min_s": min(v), "max_s": max(v),
+                "first_call_s": first, "number": number, "repeats": repeats,
+                "gc_enabled": m, **facts}
+            for m, v in per_call.items()}
 
 
 def time_per_item(fn: Callable[..., Any], items: list[tuple[Any, ...]], repeats: int
@@ -361,31 +369,39 @@ def _np_haversine_km(lat1: np.ndarray, lng1: np.ndarray, lat2: Any, lng2: Any) -
     return 2.0 * qutils.EARTH_RADIUS_KM * np.arcsin(np.minimum(1.0, np.sqrt(a)))
 
 
-def run_operations(ds: dict[str, Any], out_dir: Path, sz: dict[str, Any], gc_on: bool,
-                   polygon64: dict[str, Any]) -> dict[str, Any]:
-    """Time every dataset operation for one N. Returns {op: timing + result info}."""
+def run_operations(ds: dict[str, Any], out_dir: Path, sz: dict[str, Any],
+                   polygon64: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Time every dataset operation for one N, garbage collector on and off.
+
+    Returns ``(gc_on, gc_off)``, each {op: timing + result facts}. The three
+    loads run first, with no dataset in memory; the other operations then run
+    on the engines loaded from the CSV and the GeoJSON file, both held in memory.
+    """
     import shapely
 
     n = ds["n"]
     reps, mt = sz["repeats"], sz["min_time_s"]
+    modes = (True, False) if sz["gc_off_pass"] else (True,)
     csv_path, gj_path = ds["csv"], ds["geojson"]
     out: dict[str, Any] = {}
+    out_off: dict[str, Any] = {}
 
-    def rec(key: str, fn: Callable[[], Any], info: Callable[[Any], dict[str, Any]] | None = None
-            ) -> Any:
-        result = fn()
-        out[key] = time_call(fn, reps, mt, gc_on)
-        out[key]["features_per_s"] = n / out[key]["median_s"] if out[key]["median_s"] > 0 else None
-        if info is not None:
-            out[key].update(info(result))
-        return result
+    def rec(key: str, fn: Callable[[], Any],
+            info: Callable[[Any], dict[str, Any]] | None = None) -> None:
+        res = time_call(fn, reps, mt, modes, info)
+        for m, target in ((True, out), (False, out_off)):
+            if m in res:
+                target[key] = res[m]
+                target[key]["features_per_s"] = n / res[m]["median_s"] if res[m]["median_s"] > 0 else None
 
     def count(r: Any) -> dict[str, Any]:
         return {"result_count": r.count()}
 
-    g = rec("load_csv", lambda: GeoEngine(verbose=False).load(csv_path), count)
+    rec("load_csv", lambda: GeoEngine(verbose=False).load(csv_path), count)
     rec("load_csv_infer_types", lambda: GeoEngine(verbose=False).load(csv_path, infer_types=True), count)
-    g_num = rec("load_geojson", lambda: GeoEngine(verbose=False).load(gj_path), count)
+    rec("load_geojson", lambda: GeoEngine(verbose=False).load(gj_path), count)
+    g = GeoEngine(verbose=False).load(csv_path)
+    g_num = GeoEngine(verbose=False).load(gj_path)
 
     rec("filter_eq", lambda: g.filter("category", "cafe"), count)
     rec("filter_ge", lambda: g.filter("revenue", REVENUE_THRESHOLD, op=">="), count)
@@ -415,11 +431,15 @@ def run_operations(ds: dict[str, Any], out_dir: Path, sz: dict[str, Any], gc_on:
 
     # Context baselines on the same file and the same queries.
     def csv_floor() -> list[dict[str, Any]]:
+        # The same Feature dicts qoregeo builds (coordinates out of the properties),
+        # with no delimiter sniffing, validation or error reporting.
+        feats = []
         with open(csv_path, newline="", encoding="utf-8") as fh:
-            return [{"type": "Feature",
-                     "geometry": {"type": "Point",
-                                  "coordinates": [float(r["longitude"]), float(r["latitude"])]},
-                     "properties": r} for r in csv.DictReader(fh)]
+            for r in csv.DictReader(fh):
+                lat, lng = float(r.pop("latitude")), float(r.pop("longitude"))
+                feats.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lng, lat]},
+                              "properties": r})
+        return feats
 
     def json_floor() -> Any:
         with open(gj_path, encoding="utf-8") as fh:
@@ -450,7 +470,7 @@ def run_operations(ds: dict[str, Any], out_dir: Path, sz: dict[str, Any], gc_on:
         "filter_ge_strings_equals_numbers": (
             out["filter_ge"]["result_count"] == out["filter_ge_numeric_properties"]["result_count"]),
     }
-    return out
+    return out, out_off
 
 
 # Micro-benchmarks
@@ -501,8 +521,8 @@ def run_micro(seed: int, sz: dict[str, Any], polygon64: dict[str, Any]) -> dict[
         a = np.array([(vr.uniform(south, north), vr.uniform(west, east)) for _ in range(vn)])
         b = np.array([(vr.uniform(south, north), vr.uniform(west, east)) for _ in range(vn)])
         t_np = time_call(lambda a=a, b=b: _np_haversine_km(a[:, 0], a[:, 1], b[:, 0], b[:, 1]),
-                         reps, vmt, False)
-        t_hv = time_call(lambda a=a, b=b: haversine_vector(a, b), reps, vmt, False)
+                         reps, vmt, (False,))[False]
+        t_hv = time_call(lambda a=a, b=b: haversine_vector(a, b), reps, vmt, (False,))[False]
         vec[f"numpy haversine, n={vn}"] = {"median_us": t_np["median_s"] / vn * 1e6,
                                            "min_us": t_np["min_s"] / vn * 1e6,
                                            "calls_per_s_median": vn / t_np["median_s"]}
@@ -555,7 +575,8 @@ def run_micro(seed: int, sz: dict[str, Any], polygon64: dict[str, Any]) -> dict[
         vr = _rng(seed, f"micro-pip-vector-{vn}")
         vx = np.array([vr.uniform(min(xs), max(xs)) for _ in range(vn)])
         vy = np.array([vr.uniform(min(ys), max(ys)) for _ in range(vn)])
-        t = time_call(lambda vx=vx, vy=vy: shapely.contains_xy(s_native, vx, vy), reps, vmt, False)
+        t = time_call(lambda vx=vx, vy=vy: shapely.contains_xy(s_native, vx, vy), reps, vmt,
+                      (False,))[False]
         vec_pip[f"shapely.contains_xy vectorized, n={vn}"] = {
             "median_us": t["median_s"] / vn * 1e6, "min_us": t["min_s"] / vn * 1e6,
             "calls_per_s_median": vn / t["median_s"]}
@@ -678,10 +699,13 @@ def load():
     if kind == "qoregeo load GeoJSON":
         return GeoEngine(verbose=False).load(path)
     if kind == "plain-Python CSV reader (same Feature dicts)":
+        feats = []
         with open(path, newline="", encoding="utf-8") as fh:
-            return [{"type": "Feature", "geometry": {"type": "Point", "coordinates":
-                     [float(r["longitude"]), float(r["latitude"])]}, "properties": r}
-                    for r in csv.DictReader(fh)]
+            for r in csv.DictReader(fh):
+                lat, lng = float(r.pop("latitude")), float(r.pop("longitude"))
+                feats.append({"type": "Feature", "geometry": {"type": "Point",
+                              "coordinates": [lng, lat]}, "properties": r})
+        return feats
     if kind == "json.load of the GeoJSON file":
         with open(path, encoding="utf-8") as fh:
             return json.load(fh)
@@ -1266,15 +1290,13 @@ def main(argv: list[str] | None = None) -> int:
         polygon64 = star_polygon(args.seed, sz["polygon_vertices"])
 
         results["operations"] = {}
+        results["operations_gc_disabled"] = {}
         for n in sz["n_values"]:
-            print(f"[{mode}] dataset operations, N={n:,}, garbage collector on", flush=True)
-            results["operations"][n] = run_operations(datasets[n], out_dir, sz, True, polygon64)
-        if sz["gc_off_pass"]:
-            results["operations_gc_disabled"] = {}
-            for n in sz["n_values"]:
-                print(f"[{mode}] dataset operations, N={n:,}, garbage collector off", flush=True)
-                results["operations_gc_disabled"][n] = run_operations(datasets[n], out_dir, sz, False,
-                                                                      polygon64)
+            print(f"[{mode}] dataset operations, N={n:,}", flush=True)
+            on, off = run_operations(datasets[n], out_dir, sz, polygon64)
+            results["operations"][n] = on
+            if off:
+                results["operations_gc_disabled"][n] = off
 
         print(f"[{mode}] micro-benchmarks", flush=True)
         results["micro"] = run_micro(args.seed, sz, polygon64)
