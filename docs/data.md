@@ -31,8 +31,8 @@ Every example runs as written, in a folder that holds copies of the sample files
 | An engine, and want the data | `get_features()`, `get_geojson()`, `for f in geo` | You get the engine's own dicts |
 | An engine, and want a file | `geo.save(path)` | `.geojson`, `.json`, `.csv` or `.tsv` is written atomically |
 
-`load()` and `load_data()` replace whatever the engine held. `add_point()` appends. All four
-methods above that change or write data return the engine, so calls chain:
+`load()` and `load_data()` replace whatever the engine held. `add_point()` appends.
+`load()`, `load_data()`, `add_point()` and `save()` return the engine, so calls chain:
 `GeoEngine().load("cities.csv").save("cities.geojson")`.
 
 Coordinates follow two conventions. The Python API takes and returns `(lat, lng)`. GeoJSON
@@ -67,7 +67,7 @@ Column names are stripped of surrounding spaces.
 
 | Parameter | Default | What it does |
 |---|---|---|
-| `path` | required | A `str` or `pathlib.Path`. The extension picks the reader, in any case: `.csv`, `.tsv` and `.txt` are delimited text, `.geojson` and `.json` are GeoJSON. |
+| `path` | required | A `str` or `pathlib.Path`. The extension picks the reader, in upper or lower case: `.csv`, `.tsv` and `.txt` are delimited text, `.geojson` and `.json` are GeoJSON. |
 | `lat_col` | `None` | The latitude column. `None` detects it from the names below. |
 | `lng_col` | `None` | The longitude column. `None` detects it. |
 | `encoding` | `"utf-8-sig"` | The text encoding, for CSV and GeoJSON. The default reads plain UTF-8 and also strips the byte order mark that Excel writes. |
@@ -76,8 +76,8 @@ Column names are stripped of surrounding spaces.
 
 ### Latitude and longitude column names
 
-With no `lat_col` or `lng_col`, `load()` looks for these exact names. Case and surrounding
-spaces are ignored, so `Lat`, ` LATITUDE ` and `lat` all match.
+With no `lat_col` or `lng_col`, `load()` looks for these exact names. Case is ignored, and so
+are spaces around a name, so `Lat`, `LAT` and `lat` all match.
 
 | Column | Names recognized, in priority order |
 |---|---|
@@ -183,11 +183,13 @@ How the delimiter is chosen when `delimiter=None`:
 
 - A `.tsv` file is always tab-separated.
 - An Excel `sep=;` first line sets the delimiter, and the line is skipped.
-- Otherwise qoregeo reads the header and up to 20 more lines and tries comma, semicolon, tab and
-  pipe. It picks the one that keeps the most rows the same width as the header, then the one that
-  splits the header into the most columns. Quoted fields are honored, so a comma inside
-  `"Kochi, Kerala"` does not count.
-- For a `.txt` file, tab wins a tie. For other files, comma wins a tie.
+- Otherwise qoregeo reads the header and up to 20 more lines. It tries comma, semicolon, tab and
+  pipe, in that order, and keeps the ones that split the header into at least two columns. The
+  winner is the one with the most data rows that have as many fields as the header. A tie goes
+  to the one that gives more columns, then to the earlier one in the order.
+- For a `.txt` file, tab comes first in the order.
+- If no candidate splits the header, comma is used (tab for a `.txt` file).
+- Quoted fields are honored, so the comma inside `"Kochi, Kerala"` does not count.
 - Blank lines before the header are skipped.
 
 Pass `delimiter=` for anything else. It must be a single character other than a quote, `\r` or
@@ -240,25 +242,25 @@ print(hospitals.filter("emergency", True).count())  # 7
 | `4.5`, `19.90`, `1e3`, `.5` | `4.5`, `19.9`, `1000.0`, `0.5` (`float`) |
 | `true`, `FALSE` (any case) | `True`, `False` |
 | empty cell | `None` |
-| `011001` (a leading zero, as in PIN codes and IDs) | stays `'011001'` |
+| `00123` (a leading zero, as in ZIP codes and IDs) | stays `'00123'` |
 | `+911123456789` (a leading `+`, as in phone numbers) | stays a string |
 | `0.12345678901234567` (more than 15 significant digits) | stays a string, so no digits are lost |
 | `n/a`, `twelve`, `yes`, `nan` | stays a string |
 
 ```python
 Path("types.csv").write_text(
-    "pin,phone,beds,rating,open,note,lat,lng\n"
-    "011001,+911123456789,40,4.5,TRUE,,28.6,77.2\n",
+    "code,phone,beds,rating,open,note,lat,lng\n"
+    "00123,+911123456789,40,4.5,TRUE,,28.6,77.2\n",
     encoding="utf-8",
 )
 row = GeoEngine().load("types.csv", infer_types=True).get_features()[0]["properties"]
-print(row)  # {'pin': '011001', 'phone': '+911123456789', 'beds': 40, 'rating': 4.5, 'open': True, 'note': None}
+print(row)  # {'code': '00123', 'phone': '+911123456789', 'beds': 40, 'rating': 4.5, 'open': True, 'note': None}
 ```
 
 You do not need `infer_types` for `filter()` or `sort_by()`. They compare number-like strings as
 numbers, so `filter("beds", 300, op=">=")` finds 4 hospitals either way. Use it when your own
-code does arithmetic on values, when you want real `true`/`false` values, and when you save to
-GeoJSON and want numbers to stay numbers. `infer_types` applies to delimited text only. GeoJSON
+code does arithmetic on values, when you want `True` and `False` instead of text, and when you
+save to GeoJSON and want numbers to stay numbers. `infer_types` applies to delimited text only. GeoJSON
 values already have JSON types.
 
 ### Rows that are skipped
@@ -294,7 +296,7 @@ QOREgeo: skipped 2 row(s) in 'messy.csv' with non-numeric or out-of-range coordi
   (longitude), is skipped. One warning per file lists the first 5 such lines.
 - Whitefield Depot loads, because its coordinates are fine. A numeric comparison skips its
   `twelve`, which is why `filter("staff", 10, op=">")` returns 2 and not 3.
-- Line numbers count from the top of the file, header included.
+- Line numbers are the file's own line numbers. In `messy.csv` the header is line 1.
 
 Swapped coordinates are caught only when the swapped latitude falls outside -90 to 90. In India,
 a swapped pair such as (77.2090, 28.6139) is a valid point in the Arctic, so look at a map or
@@ -315,22 +317,23 @@ print(type(stopped).__name__)  # UserWarning
 print(geo)  # <GeoEngine [no data loaded]>
 ```
 
-Every warning qoregeo raises starts with `QOREgeo:`, so the `message="QOREgeo"` filter matches
-all of them and nothing else. The other load warnings for delimited text:
+Every `UserWarning` that qoregeo raises starts with `QOREgeo:`, which is what the
+`message="QOREgeo"` filter matches. The other load warnings for delimited text:
 
 | Situation | What happens |
 |---|---|
 | Two columns share a name | The last column with that name is kept, with a warning |
 | A row has more values than the header | The extra values are dropped, with one warning per file |
-| A `geometry` column cell is not valid GeoJSON | The row's latitude and longitude are used instead, with a warning |
+| A `geometry` cell starts with `{` but is not a valid GeoJSON geometry | The row's latitude and longitude are used instead, with a warning |
 | The file has a header and no usable rows | `EmptyDatasetError` |
 
 ### Lines and polygons in a CSV
 
 A CSV file can hold more than points. If it has a column named `geometry` whose cells hold
-GeoJSON geometries, those geometries are loaded instead of a Point. Cells that are empty fall
-back to the row's latitude and longitude. This is the format `save()` writes for lines and
-polygons, so they survive a round trip through CSV
+GeoJSON geometries, those geometries are loaded instead of a Point. The file still needs
+latitude and longitude columns, but a row with a valid `geometry` cell may leave them blank. A
+row with an empty `geometry` cell gets a Point from its latitude and longitude. This is the
+format `save()` writes for lines and polygons, so they survive a round trip through CSV
 (see [Save to GeoJSON, CSV or TSV](#save-to-geojson-csv-or-tsv)).
 
 ## Load a GeoJSON file
@@ -412,10 +415,11 @@ QOREgeo: skipped 2 feature(s) with invalid geometry in 'sites.geojson': #2 (lati
 ```
 
 - A feature with `"geometry": null` is kept with its properties. It counts in `len()`, but it
-  has no location, so spatial methods such as `centroid()`, `nearest()` and the filters skip it.
+  has no location, so spatial methods such as `centroid()`, `nearest()` and
+  `filter_by_radius()` skip it. Attribute filters such as `filter("name", ...)` still see it.
 - A feature with a broken geometry is skipped. Broken means an unknown type, wrong nesting,
-  non-numeric or non-finite positions, a latitude outside -90 to 90, or a ring with fewer than 3
-  positions. One warning lists the first 5.
+  non-numeric or non-finite positions, a latitude outside -90 to 90, or a polygon ring with only
+  1 or 2 positions. One warning lists the first 5.
 - A `Point` longitude must be within -180 to 180. Other geometries may use -360 to 360, so
   rings drawn across the antimeridian load.
 - Extra top-level members such as `"name"` are kept and written back by `save()`. A top-level
@@ -442,7 +446,7 @@ print(monuments.get_features()[0]["properties"]["name"])  # India Gate
 
 `load_data()` takes the same shapes as a GeoJSON file, as Python objects: a list of Features or
 geometries, a FeatureCollection dict, a single Feature, a bare geometry, or any iterable of
-Features, such as a generator. It copies each geometry and each properties dict, so changing
+Features or geometries, such as a generator. It copies each geometry and each properties dict, so changing
 your objects afterwards does not change the engine. Values nested inside properties, such as a
 list, are shared.
 
@@ -479,6 +483,16 @@ print(error.reason)  # item #0 is a tuple, not a dict
 
 An empty list, or `None`, raises `EmptyDatasetError`. Invalid geometries are skipped with the
 same warning as in a file.
+
+To combine several files in one engine, join their feature lists:
+
+```python
+combined = GeoEngine().load_data(
+    GeoEngine().load("hospitals.csv").get_features()
+    + GeoEngine().load("stores.csv").get_features()
+)
+print(len(combined))  # 40
+```
 
 ## Add points one at a time
 
@@ -618,10 +632,10 @@ An empty result still writes a valid file: an empty FeatureCollection, or a CSV 
 | Line and polygon geometry | Kept | A representative point in `latitude` and `longitude`, plus a `geometry` column with the full GeoJSON |
 | `"geometry": null` | Kept as `null` | Empty coordinate cells; the row is skipped when the file is loaded again |
 | Properties | JSON types, in a 2-space indented file | Text, one column per property in first-seen order |
-| Lists and dicts in properties | Kept | Written as JSON text |
+| Lists, tuples, sets and dicts in properties | Lists (sets sorted) and objects | JSON text |
 | `None` | `null` | An empty cell |
 | `NaN`, `Infinity` | `null` (they are not valid JSON) | `nan`, `inf` |
-| Dates, `Decimal`, sets, tuples | ISO strings, numbers, sorted lists, lists | Their text form |
+| Dates and `Decimal` values | ISO strings and numbers | Their text form, such as `2026-03-14` and `12.50` |
 | Top-level members and Feature `"id"` | Kept | Dropped |
 | A character the encoding cannot store | `UnicodeEncodeError`; the old file is kept | Written as a backslash escape such as `\xe9` |
 | Line endings | `\n` | `\r\n`, as Python's `csv` module writes |
@@ -648,15 +662,16 @@ print(round(back.area(back.get_features()[0]), 2))  # 31.52
 
 The polygons came back whole, so the Central zone still measures 31.52 km² with its hole. A
 property named `latitude` or `longitude`, or `geometry` when that column is written, would clash
-with the coordinate columns. It is left out of the CSV with a warning. Filters that measure
-distance add a `_distance` property, and it is saved like any other.
+with the coordinate columns. It is left out of the CSV with a warning. `filter_by_radius()`,
+`filter_by_line()` and `k_nearest()` add a `_distance` property, and it is saved like any other.
 
 ## Spreadsheet-safe CSV with csv_safe
 
 Excel, LibreOffice and Google Sheets treat a cell that starts with `=`, `+`, `-` or `@` as a
 formula. A CSV file built from data you did not write can carry a formula that runs when someone
-opens the file, which is called CSV or formula injection. `csv_safe=True` puts a `'` in front of
-such text cells so the spreadsheet shows them as text.
+opens the file. This is called
+[CSV or formula injection](https://owasp.org/www-community/attacks/CSV_Injection).
+`csv_safe=True` puts a `'` in front of such text cells so the spreadsheet shows them as text.
 
 ```python
 shared = GeoEngine()
@@ -808,7 +823,7 @@ print(problems)  # {'missing.csv': 'GeoFileNotFoundError', 'notes.docx': 'Unsupp
 | The extension is not supported, by `load()` or `save()` | `UnsupportedFormatError` | `ValueError` | `.ext` |
 | No latitude or longitude column was found | `ColumnNotFoundError` | `LookupError` | `.column`, `.available`, `.filepath` |
 | The bytes do not decode with `encoding`, or the CSV cannot be parsed | `FileReadError` | `ValueError` | `.path`, `.reason` |
-| The file is not JSON, or is JSON but not GeoJSON | `InvalidGeoJSONError` | `UnsupportedFormatError` | `.source`, `.reason` |
+| The file is not JSON, or is JSON but not GeoJSON | `InvalidGeoJSONError` | `UnsupportedFormatError`, `ValueError` | `.source`, `.reason` |
 | The file or object has no usable features | `EmptyDatasetError` | `ValueError` | `.path` |
 | A bad `delimiter`, `encoding` or path argument, or a map written over the loaded file | `InvalidArgumentError` | `ValueError` | `.name`, `.value`, `.expected` |
 | `add_point()` got a latitude or longitude that is not a number or out of range | `InvalidCoordinateError` | `ValueError` | `.lat`, `.lng` |
