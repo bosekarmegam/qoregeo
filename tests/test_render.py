@@ -617,7 +617,8 @@ class TestPngFormat:
         assert rest[4:].decode("utf-8") == "Tokyo 東京"
 
     def test_opaque_and_background(self) -> None:
-        img = png([point(0, 0)], width=100, height=80, background="#123456")
+        img = png([point(0, 0)], width=100, height=80, background="#123456",
+                  grid=False, scale_bar=False)
         assert img.px(0, 0) == (0x12, 0x34, 0x56, 255)
         assert img.px(99, 40) == (0x12, 0x34, 0x56, 255)
         assert all(c[3] == 255 for _, _, c in img.all_pixels())
@@ -640,7 +641,7 @@ class TestPngFormat:
 class TestPngPixels:
     def test_point_is_teal_with_white_outline(self) -> None:
         img = png([point(77.2, 28.6)], width=200, height=100, background="#000000",
-                  point_radius=6)
+                  point_radius=6, grid=False, scale_bar=False)
         assert img.px(100, 50) == TEAL                 # marker centre
         assert img.px(97, 50) == TEAL
         assert close(img.px(106, 50), WHITE, tol=40)   # the outline straddles r = 6
@@ -653,7 +654,7 @@ class TestPngPixels:
         assert large > small * 10
 
     def test_polygon_fill_hole_and_outline(self) -> None:
-        img = png([donut()], width=800, height=600)
+        img = png([donut()], width=800, height=600, grid=False, scale_bar=False)
         assert img.px(400, 300) == WHITE               # inside the hole: untouched
         interior = img.px(550, 300)                    # between the hole and the outer ring
         assert close(interior, (207, 247, 239, 255), tol=2)   # 18 % teal over white
@@ -665,13 +666,13 @@ class TestPngPixels:
     def test_polygon_rings_filled_together(self) -> None:
         # Hole given with the same winding as the outer ring: even-odd still cuts it out.
         same_winding = feature({"type": "Polygon", "coordinates": [square(10), square(2)]})
-        img = png([same_winding], width=800, height=600)
+        img = png([same_winding], width=800, height=600, grid=False, scale_bar=False)
         assert img.px(400, 300) == WHITE
         assert img.px(550, 300) != WHITE
 
     def test_line_pixels(self) -> None:
         line = feature({"type": "LineString", "coordinates": [[-10, 0], [10, 0]]})
-        img = png([line], width=800, height=600)
+        img = png([line], width=800, height=600, grid=False, scale_bar=False)
         assert img.px(400, 300) == TEAL and img.px(400, 299) == TEAL   # 2 px wide
         assert img.px(400, 303) == WHITE and img.px(400, 296) == WHITE
         assert img.px(400, 100) == WHITE
@@ -732,7 +733,8 @@ class TestPngPixels:
         edge = [point(12 * i / 600, lat) for i in range(600) for lat in (0, 8)]
         edge += [point(lng, 8 * i / 400) for i in range(400) for lng in (0, 12)]
         start = time.perf_counter()
-        data = render_png(edge, width=1200, height=800, padding=0, point_radius=50)
+        data = render_png(edge, width=1200, height=800, padding=0, point_radius=50,
+                          grid=False, scale_bar=False)
         assert time.perf_counter() - start < 2.0
         img = PNG(data)
         assert img.px(600, 400) == WHITE
@@ -768,7 +770,7 @@ class TestPngPixels:
 class TestPngText:
     def test_title_drawn_in_band(self) -> None:
         with_title = png([point(0, 0)], width=400, height=300, title="Hello World")
-        without = png([point(0, 0)], width=400, height=300)
+        without = png([point(0, 0)], width=400, height=300, grid=False, scale_bar=False)
         band = [(x, y) for y in range(28) for x in range(400)]
         assert any(with_title.px(x, y) == DARK_TEXT for x, y in band)
         assert all(without.px(x, y) == WHITE for x, y in band if y < 20)

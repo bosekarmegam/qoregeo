@@ -24,15 +24,30 @@ Drawing
 * The style matches the HTML maps: teal (#00D4AA) points with a white outline,
   2 px lines, polygons with an 18 % fill and holes cut out (even-odd), and
   overlays as dashed gold (#FFD700) outlines with a faint fill.
-* No basemap: the images are self-contained and render offline.
+* No basemap: the images are self-contained and render offline. Instead, so
+  that a reader (or a vision model) can tell where on Earth the data is and
+  what it shows, the map gets:
+
+  - a light latitude / longitude graticule (``grid=True``) with labels on
+    the left and bottom edges, e.g. ``28.6°N`` and ``77.2°E`` (``179°W`` on
+    an antimeridian map), at a "nice" step giving about 3-7 lines;
+  - a scale bar in the bottom-left corner (``scale_bar=True``), e.g.
+    ``500 m`` or ``20 km``, for views up to ~60° across;
+  - optional feature labels (``labels="name"``): the value of that property
+    next to each point (centred on other geometries), dark grey with a white
+    halo, skipped where they would overlap one another, at most 300.
+
+  The layout is computed once, so the SVG and the PNG of the same map place
+  every line, label and scale bar at the same pixels.
 
 The PNG is rasterised into a ``bytearray`` (anti-aliased strokes and markers,
-scanline polygon fill, an embedded 5x7 bitmap font for the title) and encoded
+scanline polygon fill, an embedded 5x7 bitmap font for the text) and encoded
 with ``zlib`` — 8-bit RGBA, no external libraries.
 """
 
 from __future__ import annotations
 
+import bisect
 import functools
 import math
 import re
@@ -44,11 +59,18 @@ from typing import Any
 
 from ._version import __version__
 from .exceptions import InvalidArgumentError
-from .utils import GEOMETRY_TYPES, _geometry_problem, _lng_span, _normalize_lng
+from .utils import (
+    GEOMETRY_TYPES,
+    _geometry_problem,
+    _lng_span,
+    _normalize_lng,
+    _representative_point,
+)
 
 _Pt = tuple[float, float]
 _RGB = tuple[int, int, int]
 _Tables = tuple[bytes, bytes, bytes]
+_Box = tuple[int, int, int, int]       # x0, y0, x1, y1 (pixels, end-exclusive)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +95,21 @@ _TITLE_MIN_HEIGHT = 2 * _TITLE_BAND  # shorter images put a small title over the
 _CREDIT_TEXT = "QOREgeo"
 _CREDIT_MIN = (96, 48)             # smallest canvas (w, h) that shows the credit
 _FONT_STACK = "Helvetica, Arial, sans-serif"
+
+# Annotations: feature labels, graticule and scale bar.
+_LABEL_TEXT: _RGB = (0x33, 0x33, 0x33)
+_GRID_LINE: _RGB = (0xE6, 0xE8, 0xEB)
+_GRID_TEXT: _RGB = (0x8A, 0x8F, 0x98)
+_LABEL_MAX_CHARS = 40
+_LABEL_LIMIT = 300                 # labels drawn at most (the rest are skipped)
+_LABEL_FONT = (11, 13)             # SVG font-size at text scale 1 / 2
+_ANNOTATION_MIN = (96, 64)         # smallest map (width, height) with a grid / scale bar
+_GRID_STEPS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+               1, 2, 5, 10, 15, 30, 45, 60, 90)
+_GRID_MAX_LINES = 7                # the finest step giving at most this many lines
+_SCALE_BAR_PX = (60, 160)          # shortest and longest scale bar
+_SCALE_BAR_MAX_DEG = 60.0          # no scale bar on wider (or taller) views
+_EARTH_RADIUS_M = 6378137.0        # Web Mercator sphere
 
 _MAX_LAT = 85.0511287798           # Web Mercator limit
 _MIN_SPAN = math.radians(0.01)     # smallest extent shown (~1 km) — e.g. a single point
@@ -147,11 +184,35 @@ def _parse_color(fn: str, color: Any) -> _RGB:
     return int(digits[0:2], 16), int(digits[2:4], 16), int(digits[4:6], 16)
 
 
-def _collect(fn: str, name: str, items: Any) -> list[dict[str, Any]]:
+def _check_labels(fn: str, labels: Any) -> str | None:
+    if labels is None or isinstance(labels, str):
+        return labels
+    raise InvalidArgumentError(
+        "labels", _preview(labels),
+        "the name of a feature property to label features with (a string), or None",
+        f'{fn}(features, labels="name")',
+    )
+
+
+def _check_flag(fn: str, name: str, value: Any) -> bool:
+    if not isinstance(value, bool):
+        raise InvalidArgumentError(
+            name, _preview(value), "True or False", f"{fn}(features, {name}=False)",
+        )
+    return value
+
+
+# A drawable geometry and the properties of the Feature it came from (None
+# for a bare geometry or an overlay).
+_Item = tuple[dict[str, Any], Any]
+
+
+def _collect(fn: str, name: str, items: Any) -> list[_Item]:
     """
     The drawable geometries in ``items`` — a list of Features, geometries or
-    FeatureCollections (or one such dict). Null geometries are skipped;
-    anything else that is not valid GeoJSON raises InvalidArgumentError.
+    FeatureCollections (or one such dict) — each with its Feature's
+    properties. Null geometries are skipped; anything else that is not valid
+    GeoJSON raises InvalidArgumentError.
     """
     if items is None:
         return []
@@ -168,13 +229,13 @@ def _collect(fn: str, name: str, items: Any) -> list[dict[str, Any]]:
             name, _preview(items),
             "a list of GeoJSON Feature / geometry dicts (or a FeatureCollection)", example,
         )
-    out: list[dict[str, Any]] = []
+    out: list[_Item] = []
     for i, item in enumerate(items):
         _gather(item, f"{name}[{i}]", out, example, allow_collection=True)
     return out
 
 
-def _gather(obj: Any, where: str, out: list[dict[str, Any]], example: str,
+def _gather(obj: Any, where: str, out: list[_Item], example: str,
             allow_collection: bool) -> None:
     if not isinstance(obj, dict):
         raise InvalidArgumentError(
@@ -190,10 +251,12 @@ def _gather(obj: Any, where: str, out: list[dict[str, Any]], example: str,
         for j, feat in enumerate(feats):
             _gather(feat, f"{where}['features'][{j}]", out, example, allow_collection=False)
         return
+    properties = None
     if otype == "Feature" or (otype is None and "geometry" in obj):
         geometry = obj.get("geometry")
         if geometry is None:
             return
+        properties = obj.get("properties")
         where, obj = f"{where}['geometry']", geometry
     elif otype not in GEOMETRY_TYPES:
         raise InvalidArgumentError(
@@ -205,7 +268,7 @@ def _gather(obj: Any, where: str, out: list[dict[str, Any]], example: str,
         raise InvalidArgumentError(
             where, _preview(obj), f"a valid GeoJSON geometry ({problem})", example,
         )
-    out.append(obj)
+    out.append((obj, properties))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -310,17 +373,195 @@ def _clean_title(fn: str, title: Any) -> str | None:
     return text if text.strip() else None
 
 
+class _View:
+    """
+    The fitted projection: (unwrapped) longitude / latitude <-> canvas pixels.
+    ``px`` does the same arithmetic as the projection of the features, so a
+    label anchored on a point lands on exactly the pixel of its marker.
+    """
+
+    __slots__ = ("scale", "mid_x", "mid_y", "ox", "oy", "point_lng", "unwrap")
+
+    def __init__(self, scale: float, mid_x: float, mid_y: float, ox: float, oy: float,
+                 point_lng: Callable[[float], float],
+                 unwrap: Callable[[_Layer], _Layer]) -> None:
+        self.scale, self.mid_x, self.mid_y, self.ox, self.oy = scale, mid_x, mid_y, ox, oy
+        self.point_lng = point_lng        # a point's longitude on this map (unwrapped)
+        self.unwrap = unwrap              # the same for a whole layer of shapes
+
+    def px(self, lng: float, lat: float) -> _Pt:
+        return (self.ox + (math.radians(lng) - self.mid_x) * self.scale,
+                self.oy - (_mercator_y(lat) - self.mid_y) * self.scale)
+
+    def lng(self, x: float) -> float:
+        """The (unwrapped) longitude at canvas column ``x``."""
+        return math.degrees(self.mid_x + (x - self.ox) / self.scale)
+
+    def lat(self, y: float) -> float:
+        """The latitude at canvas row ``y``."""
+        m = self.mid_y - (y - self.oy) / self.scale
+        m = -20.0 if m < -20.0 else 20.0 if m > 20.0 else m    # beyond ±89.9999...°
+        return math.degrees(2 * math.atan(math.exp(m)) - math.pi / 2)
+
+
+class _Label:
+    """A line of text laid out once, for both the SVG and the PNG."""
+
+    __slots__ = ("x", "y", "width", "text", "ascii", "anchor")
+
+    def __init__(self, x: int, y: int, width: int, text: str, ascii_text: str,
+                 anchor: str = "start") -> None:
+        self.x, self.y, self.width = x, y, width   # top-left of the glyphs, width in px
+        self.text = text                           # the SVG text (any Unicode)
+        self.ascii = ascii_text                    # the PNG text (bitmap font)
+        self.anchor = anchor                       # SVG text-anchor: 'start', 'middle', 'end'
+
+
+class _ScaleBar:
+    """A bar ``x0..x1`` (end-exclusive) whose 2 rows start at ``y``, with end ticks."""
+
+    __slots__ = ("x0", "x1", "y", "label")
+
+    def __init__(self, x0: int, x1: int, y: int, label: _Label) -> None:
+        self.x0, self.x1, self.y, self.label = x0, x1, y, label
+
+    def rects(self) -> list[_Box]:
+        """The bar and its two ticks as (x, y, width, height) rectangles."""
+        return [(self.x0, self.y, self.x1 - self.x0, 2),
+                (self.x0, self.y - 4, 2, 6), (self.x1 - 2, self.y - 4, 2, 6)]
+
+
+class _Placer:
+    """
+    Greedy collision check for text: a box is placed only if it lies on the
+    canvas and clear of every box placed (or blocked) before it. A spatial
+    hash keeps this fast with thousands of candidates.
+    """
+
+    _CELL = 64
+    GAP = 1                                       # px kept clear between two boxes
+
+    def __init__(self, width: int, height: int) -> None:
+        self.w, self.h = width, height
+        self.cells: dict[tuple[int, int], list[_Box]] = {}
+
+    def _keys(self, box: _Box) -> list[tuple[int, int]]:
+        c, g = self._CELL, self.GAP
+        x0, y0, x1, y1 = box
+        return [(cx, cy) for cx in range((x0 - g) // c, (x1 + g) // c + 1)
+                for cy in range((y0 - g) // c, (y1 + g) // c + 1)]
+
+    def block(self, box: _Box) -> None:
+        """Reserve ``box`` (the title, the credit...) unconditionally."""
+        for key in self._keys(box):
+            self.cells.setdefault(key, []).append(box)
+
+    def place(self, box: _Box) -> bool:
+        x0, y0, x1, y1 = box
+        if x0 < 0 or y0 < 0 or x1 > self.w or y1 > self.h:
+            return False
+        g = self.GAP
+        for key in self._keys(box):
+            for b in self.cells.get(key, ()):
+                if x0 < b[2] + g and b[0] < x1 + g and y0 < b[3] + g and b[1] < y1 + g:
+                    return False
+        self.block(box)
+        return True
+
+
+class _Markers:
+    """The pixels of the point markers, row by row: does a box touch any marker?"""
+
+    def __init__(self, points: list[_Pt], radius: float, stroke: float) -> None:
+        # A marker stamped on pixel (ix, iy) covers ix - e .. ix + e (see _marker_stamp).
+        self.reach = math.ceil(radius + stroke / 2 + 0.5) - 1
+        rows: dict[int, list[int]] = {}
+        for ix, iy in dict.fromkeys((math.floor(x), math.floor(y)) for x, y in points):
+            rows.setdefault(iy, []).append(ix)
+        for xs in rows.values():
+            xs.sort()
+        self.rows = rows
+
+    def touch(self, box: _Box, gap: int) -> bool:
+        """True if a marker lies within ``gap`` px of ``box``."""
+        e = self.reach + gap
+        x0, y0, x1, y1 = box[0] - e, box[1] - e, box[2] + e, box[3] + e
+        rows = self.rows
+        for y in range(y0, y1):
+            xs = rows.get(y)
+            if xs:
+                i = bisect.bisect_left(xs, x0)
+                if i < len(xs) and xs[i] < x1:
+                    return True
+        return False
+
+
+def _text_px(chars: int, scale: int) -> int:
+    """Width in pixels of ``chars`` characters of the 5x7 font (6 px advance)."""
+    return 6 * scale * chars - scale
+
+
+def _label_texts(value: Any) -> tuple[str, str, int] | None:
+    """
+    ``(svg_text, png_text, cells)`` for a property value, or None for no
+    label. Both texts are cut to 40 characters (with '…' / '...'); ``cells``
+    is the width in character cells, wide (CJK) characters counting double.
+    """
+    try:
+        raw = str(value)
+    except Exception:        # e.g. an int beyond Python's int-to-str digit limit
+        return None
+    raw = " ".join(raw[:4 * _LABEL_MAX_CHARS].split())
+    if not raw:
+        return None
+    text = raw
+    if len(text) > _LABEL_MAX_CHARS:
+        text = text[:_LABEL_MAX_CHARS - 1].rstrip() + "…"
+    ascii_text = _ascii(raw)
+    if len(ascii_text) > _LABEL_MAX_CHARS:
+        ascii_text = ascii_text[:_LABEL_MAX_CHARS - 3].rstrip() + "..."
+    cells = len(ascii_text)
+    if not text.isascii():
+        cells = max(cells, sum(
+            0 if unicodedata.combining(ch) else 2 if unicodedata.east_asian_width(ch) in "WF"
+            else 1 for ch in text))
+    return (text, ascii_text, cells) if cells else None
+
+
+def _decimals(step: float) -> int:
+    """Decimals needed to write multiples of ``step`` (0.005 → 3, 0.5 → 1, 15 → 0)."""
+    return next((d for d in range(4) if abs(step * 10 ** d - round(step * 10 ** d)) < 1e-9), 3)
+
+
+def _degrees(value: float, decimals: int, positive: str, negative: str) -> str:
+    """28.6 → '28.6°N', -179 → '179°W'; 0° and 180° have no hemisphere letter."""
+    v = round(value, decimals)
+    if v == 0:
+        return "0°"
+    if abs(v) == 180:
+        return "180°"
+    return f"{abs(v):.{decimals}f}°{positive if v > 0 else negative}"
+
+
 class _Scene:
-    """Validated options plus the features and overlays in pixel coordinates."""
+    """
+    Validated options, the features and overlays in pixel coordinates, and
+    the layout of the annotations — graticule, scale bar and labels — that
+    the SVG and the PNG writers both draw from.
+    """
 
     def __init__(self, fn: str, features: Any, width: Any, height: Any, title: Any,
-                 overlays: Any, background: Any, padding: Any, point_radius: Any) -> None:
+                 overlays: Any, background: Any, padding: Any, point_radius: Any,
+                 labels: Any = None, grid: Any = False, scale_bar: Any = False) -> None:
         self.width = _check_size(fn, "width", width)
         self.height = _check_size(fn, "height", height)
         self.padding = _check_padding(fn, padding, self.width, self.height)
         self.radius = _check_radius(fn, point_radius)
         self.background = _parse_color(fn, background)
         self.title = _clean_title(fn, title)
+        self.label_key = _check_labels(fn, labels)
+        show_grid = _check_flag(fn, "grid", grid)
+        show_scale_bar = _check_flag(fn, "scale_bar", scale_bar)
 
         # A thick outline would swallow a tiny marker, so it scales down with it.
         self.point_stroke = min(_POINT_STROKE, self.radius / 2)
@@ -332,12 +573,37 @@ class _Scene:
         self.title_band = _TITLE_BAND if self.title and self.big_title else 0
         self.title_x = max(8, min(self.padding, 24)) if self.big_title else 4
 
+        # Annotation style: the grid recedes, the scale bar reads like text.
+        light = _is_light(self.background)
+        self.grid_line = _GRID_LINE if light else _mix(self.background, _WHITE, 0.14)
+        self.grid_text = _GRID_TEXT
+        self.ink = _LABEL_TEXT if light else _LIGHT_TEXT
+        # Labels: dark grey with a white halo; light with a dark halo on dark maps.
+        self.label_ink, self.label_halo = ((_LABEL_TEXT, _WHITE) if light
+                                           else (_LIGHT_TEXT, self.background))
+        self.label_scale = 1 if self.width < 900 else 2     # feature labels
+        self.small_scale = 1 if self.width < 1800 else 2    # grid and scale bar text
+
         geo_features, geo_overlays = _Layer(), _Layer()
-        for g in _collect(fn, "features", features):
+        labelled: list[tuple[dict[str, Any], Any]] = []
+        for g, props in _collect(fn, "features", features):
             _add_geometry(g, geo_features)
-        for g in _collect(fn, "overlays", overlays):
+            if self.label_key is not None and isinstance(props, dict):
+                value = props.get(self.label_key)
+                if value is not None:
+                    labelled.append((g, value))
+        for g, _ in _collect(fn, "overlays", overlays):
             _add_geometry(g, geo_overlays)
+        self.view: _View | None = None
         self.features, self.overlays = self._project(geo_features, geo_overlays)
+
+        self.grid_x: list[int] = []               # meridians: pixel columns
+        self.grid_y: list[int] = []               # parallels: pixel rows
+        self.grid_labels: list[_Label] = []
+        self.scale_bar: _ScaleBar | None = None
+        self.labels: list[_Label] = []
+        if self.view is not None:                 # an empty map gets no annotations
+            self._layout(self.view, labelled, show_grid, show_scale_bar)
 
     def _project(self, feats: _Layer, overs: _Layer) -> tuple[_Layer, _Layer]:
         """Web Mercator, unwrapped across the antimeridian, fitted into the canvas."""
@@ -395,17 +661,194 @@ class _Scene:
         mid_x, mid_y = (min_x + max_x) / 2, (min_y + max_y) / 2
         ox = self.width / 2
         oy = self.title_band + (self.height - self.title_band) / 2
+        self.view = _View(scale, mid_x, mid_y, ox, oy, point_lng, unwrap)
 
         def to_px(p: _Pt) -> _Pt:
             return ox + (p[0] - mid_x) * scale, oy - (p[1] - mid_y) * scale
 
         return mf.mapped(to_px), mo.mapped(to_px)
 
+    # Annotation layout --------------------------------------------------------
+
+    def _layout(self, view: _View, labelled: list[tuple[dict[str, Any], Any]],
+                show_grid: bool, show_scale_bar: bool) -> None:
+        """
+        Place the scale bar, then the feature labels, then the grid labels,
+        each clear of the title, the credit and everything placed before it.
+        """
+        w, h, top = self.width, self.height, self.title_band
+        placer = _Placer(w, h)
+        if self.title:
+            if self.big_title:
+                placer.block((0, 0, w, top))
+            else:
+                chars = len(_fit_text(_ascii(self.title), w - 2 * self.title_x, 1))
+                placer.block((self.title_x - 1, 1, self.title_x + 6 * chars, 10))
+        if self.credit:                           # (with room to its left: no run-on text)
+            placer.block((w - 12 - _text_px(len(_CREDIT_TEXT), 1), h - 14, w - 5, h - 5))
+        # Thumbnails get neither: a few lines and labels would bury the data.
+        roomy = w >= _ANNOTATION_MIN[0] and h - top >= _ANNOTATION_MIN[1]
+        if show_scale_bar and roomy:
+            self.scale_bar = self._place_scale_bar(view, placer)
+        if labelled:
+            self.labels = self._place_labels(view, labelled, placer)
+        if show_grid and roomy:
+            self._place_grid(view, placer)
+
+    def _place_scale_bar(self, view: _View, placer: _Placer) -> _ScaleBar | None:
+        w, h, top = self.width, self.height, self.title_band
+        # Over a continent the Mercator scale changes too much to mean anything.
+        if view.lng(w) - view.lng(0) > _SCALE_BAR_MAX_DEG \
+                or view.lat(top) - view.lat(h) > _SCALE_BAR_MAX_DEG:
+            return None
+        metres_per_px = math.cos(math.radians(view.lat(view.oy))) * _EARTH_RADIUS_M / view.scale
+        shortest, longest = _SCALE_BAR_PX
+        lengths = [m * 10 ** e for e in range(9) for m in (1, 2, 5)]
+        fitting = [m for m in lengths if m / metres_per_px <= longest]
+        if not fitting or fitting[-1] / metres_per_px < shortest:
+            return None
+        metres = fitting[-1]
+        length = round(metres / metres_per_px)
+        text = f"{metres} m" if metres < 1000 else f"{metres // 1000} km"
+        s = self.small_scale
+        x0, y = 8, h - 8                          # bar bottom level with the credit's baseline
+        tw = _text_px(len(text), s)
+        label = _Label(x0 + (length - tw) // 2, y - 3 - 7 * s, tw, text, text, "middle")
+        if not placer.place((x0 - 1, label.y - 1, x0 + length + 1, y + 3)):
+            return None
+        return _ScaleBar(x0, x0 + length, y, label)
+
+    def _place_labels(self, view: _View, labelled: list[tuple[dict[str, Any], Any]],
+                      placer: _Placer) -> list[_Label]:
+        """
+        Greedy, in feature order. A point's label goes to the right of its
+        marker, or to the left when the right is taken; a label is skipped if
+        both would overlap a label placed before it, cover a marker or leave
+        the canvas. Other geometries get one label centred on their
+        representative point. A spot that already has a label gets no second.
+        """
+        w, h = self.width, self.height
+        s = self.label_scale
+        th = 7 * s
+        gap = _Placer.GAP
+        # From the marker's pixel to the text: radius + outline + a small gap
+        # (so a label clears its own marker by the same gap as any other).
+        beside = math.ceil(self.radius + self.point_stroke / 2 + 0.5 + 2 * s)
+        markers = _Markers(self.features.points + self.overlays.points, self.radius,
+                           self.point_stroke)
+        spots: set[tuple[int, int]] = set()
+        out: list[_Label] = []
+        for geometry, value in labelled:
+            texts: tuple[str, str, int] | None = None
+            for px, py, is_point in self._anchors(view, geometry):
+                ix, iy = math.floor(px), math.floor(py)
+                if not (0 <= px < w and 0 <= py < h) or (ix, iy) in spots:
+                    continue
+                if texts is None:
+                    texts = _label_texts(value) or ("", "", 0)
+                text, ascii_text, cells = texts
+                if not cells:
+                    break
+                tw = _text_px(cells, s)
+                y = iy - th // 2
+                # (x, SVG text-anchor, clearance to the left): a label on the
+                # left must not sit where it would read as another point's label.
+                options = ([(ix + beside, "start", 0), (ix + 1 - beside - tw, "end", beside)]
+                           if is_point else [(round(px - tw / 2), "middle", 0)])
+                for x, anchor, clear in options:
+                    box = (x - 1, y - 1, x + tw + 1, y + th + 1)
+                    if markers.touch((box[0] - clear, box[1], box[2], box[3]), gap) \
+                            or not placer.place(box):
+                        continue
+                    out.append(_Label(x, y, tw, text, ascii_text, anchor))
+                    spots.add((ix, iy))
+                    if len(out) >= _LABEL_LIMIT:
+                        return out
+                    break
+        return out
+
+    @staticmethod
+    def _anchors(view: _View, geometry: dict[str, Any]) -> list[tuple[float, float, bool]]:
+        """
+        Where a feature's label goes: ``(x, y, is_point)`` for each Point /
+        MultiPoint member, else one anchor at the geometry's representative
+        point (moved by whole turns onto the shape as drawn on this map).
+        """
+        gtype = geometry.get("type")
+        if gtype in ("Point", "MultiPoint"):
+            coords = geometry.get("coordinates") or []
+            members = [coords] if gtype == "Point" else coords
+            return [(*view.px(view.point_lng(float(p[0])), float(p[1])), True) for p in members]
+        rep = _representative_point(geometry)
+        layer = _Layer()
+        _add_geometry(geometry, layer)
+        xs = [p[0] for p in view.unwrap(layer).positions()]
+        if rep is None or not xs:
+            return []
+        lat, lng = rep
+        lo, hi = min(xs), max(xs)
+        mid = (lo + hi) / 2
+        lng += 360.0 * round((mid - lng) / 360.0)
+        if not lo <= lng <= hi:
+            lng = mid
+        return [(*view.px(lng, lat), False)]
+
+    def _place_grid(self, view: _View, placer: _Placer) -> None:
+        """
+        Meridians and parallels at a 'nice' step (3-7 lines across the larger
+        extent), labelled along the bottom and left edges where there is room.
+        """
+        w, h, top = self.width, self.height, self.title_band
+        s = self.small_scale
+        th = 7 * s
+        west, east = view.lng(0), view.lng(w)
+        centre = (west + east) / 2
+        west, east = max(west, centre - 180.0), min(east, centre + 180.0)
+        north, south = min(_MAX_LAT, view.lat(top)), max(-_MAX_LAT, view.lat(h))
+        extent = max(east - west, north - south)
+        step = next((st for st in _GRID_STEPS if extent / st <= _GRID_MAX_LINES), _GRID_STEPS[-1])
+        decimals = _decimals(step)
+
+        lng_labels: list[_Label] = []
+        for k in range(math.ceil(west / step - 1e-9), math.floor(east / step + 1e-9) + 1):
+            lng = round(k * step, decimals)
+            x = math.floor(view.px(lng, 0.0)[0])
+            if lng >= centre + 180.0 or not 0 <= x < w:   # (no meridian drawn twice)
+                continue
+            self.grid_x.append(x)
+            # Unwrapped longitudes (181°) are written as they are known (179°W).
+            text = _degrees(_normalize_lng(lng), decimals, "E", "W")
+            tw = _text_px(len(text), s)
+            lng_labels.append(_Label(x + 3, h - 6 - th, tw, text, text))
+        lat_labels: list[_Label] = []
+        for k in range(math.ceil(south / step - 1e-9), math.floor(north / step + 1e-9) + 1):
+            lat = round(k * step, decimals)
+            y = math.floor(view.px(0.0, lat)[1])
+            if not top <= y < h:
+                continue
+            self.grid_y.append(y)
+            text = _degrees(lat, decimals, "N", "S")
+            tw = _text_px(len(text), s)
+            lat_labels.append(_Label(5, y - 2 - th, tw, text, text))   # just above its line
+        for label in lng_labels + lat_labels:
+            if placer.place((label.x - 1, label.y - 1, label.x + label.width + 1,
+                             label.y + th + 1)):
+                self.grid_labels.append(label)
+
+
+def _is_light(bg: _RGB) -> bool:
+    return 0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2] >= 140
+
 
 def _contrast_text(bg: _RGB) -> _RGB:
     """Dark text on light backgrounds, light text on dark ones."""
-    luma = 0.2126 * bg[0] + 0.7152 * bg[1] + 0.0722 * bg[2]
-    return _DARK_TEXT if luma >= 140 else _LIGHT_TEXT
+    return _DARK_TEXT if _is_light(bg) else _LIGHT_TEXT
+
+
+def _mix(a: _RGB, b: _RGB, t: float) -> _RGB:
+    """``a`` moved a fraction ``t`` of the way to ``b``."""
+    return (round(a[0] + (b[0] - a[0]) * t), round(a[1] + (b[1] - a[1]) * t),
+            round(a[2] + (b[2] - a[2]) * t))
 
 
 def _hex(rgb: _RGB) -> str:
@@ -482,6 +925,71 @@ def _svg_shapes(layer: _Layer, gid: str, stroke: _RGB, fill_opacity: float,
             f'stroke-linecap="round">{"".join(paths)}</g>')
 
 
+def _svg_text_style(size: float, fill: _RGB, halo: _RGB) -> str:
+    """Text attributes with a halo: a ``halo``-coloured stroke painted under the fill."""
+    return (f'font-family="{_FONT_STACK}" font-size="{_num(size)}" fill="{_hex(fill)}" '
+            f'stroke="{_hex(halo)}" stroke-width="3" stroke-linejoin="round" '
+            f'paint-order="stroke"')
+
+
+def _svg_texts(labels: list[_Label], baseline: float) -> str:
+    """``<text>`` elements; ``baseline`` is measured from the top of the glyph box."""
+    parts = []
+    for label in labels:
+        if label.anchor == "middle":
+            x, anchor = label.x + label.width / 2, ' text-anchor="middle"'
+        elif label.anchor == "end":
+            x, anchor = label.x + label.width, ' text-anchor="end"'
+        else:
+            x, anchor = label.x, ""
+        parts.append(f'<text x="{_num(x)}" y="{_num(label.y + baseline)}"{anchor}>'
+                     f"{_xml_text(label.text)}</text>")
+    return "".join(parts)
+
+
+def _svg_grid(scene: _Scene) -> str:
+    """Graticule lines (crisp 1 px, on the same pixels as the PNG) and their labels."""
+    if not scene.grid_x and not scene.grid_y:
+        return ""
+    w, h, top = scene.width, scene.height, scene.title_band
+    d = "".join(f"M{_num(x + 0.5)} {top}L{_num(x + 0.5)} {h}" for x in scene.grid_x)
+    d += "".join(f"M0 {_num(y + 0.5)}L{w} {_num(y + 0.5)}" for y in scene.grid_y)
+    out = (f'<g id="qg-grid" fill="none" stroke="{_hex(scene.grid_line)}" stroke-width="1" '
+           f'shape-rendering="crispEdges"><path d="{d}"/></g>')
+    if scene.grid_labels:
+        s = scene.small_scale
+        out += (f'\n<g id="qg-grid-labels" '
+                f'{_svg_text_style(10 * s, scene.grid_text, scene.background)}>'
+                f"{_svg_texts(scene.grid_labels, 7 * s)}</g>")
+    return out
+
+
+def _svg_scale_bar(scene: _Scene) -> str:
+    bar = scene.scale_bar
+    if bar is None:
+        return ""
+    s = scene.small_scale
+    halo = "".join(f'<rect x="{x - 1}" y="{y - 1}" width="{rw + 2}" height="{rh + 2}"/>'
+                   for x, y, rw, rh in bar.rects())
+    ink = "".join(f'<rect x="{x}" y="{y}" width="{rw}" height="{rh}"/>'
+                  for x, y, rw, rh in bar.rects())
+    return (f'<g id="qg-scale-bar"><g fill="{_hex(scene.background)}">{halo}</g>'
+            f'<g fill="{_hex(scene.ink)}">{ink}</g>'
+            f'<g {_svg_text_style(10 * s, scene.ink, scene.background)}>'
+            f"{_svg_texts([bar.label], 7 * s)}</g></g>")
+
+
+def _svg_labels(scene: _Scene) -> str:
+    if not scene.labels:
+        return ""
+    s = scene.label_scale
+    size = _LABEL_FONT[s - 1]
+    # Capitals centred on the glyph box (and so on the marker): cap height ≈ 0.72 em.
+    baseline = 3.5 * s + 0.36 * size
+    return (f'<g id="qg-labels" {_svg_text_style(size, scene.label_ink, scene.label_halo)}>'
+            f"{_svg_texts(scene.labels, baseline)}</g>")
+
+
 def _svg(scene: _Scene) -> str:
     w, h = scene.width, scene.height
     title = scene.title or "QOREgeo map"
@@ -495,10 +1003,13 @@ def _svg(scene: _Scene) -> str:
     ]
     feats, overs = scene.features, scene.overlays
     layers = [
+        _svg_grid(scene),
         _svg_shapes(feats, "qg-shapes", _TEAL, _POLYGON_FILL_OPACITY, dashed=False),
         _svg_points(feats.points, scene, "qg-points") if feats.points else "",
         _svg_shapes(overs, "qg-overlays", _GOLD, _OVERLAY_FILL_OPACITY, dashed=True),
         _svg_points(overs.points, scene, "qg-overlay-points") if overs.points else "",
+        _svg_scale_bar(scene),
+        _svg_labels(scene),
     ]
     out += [layer + "\n" for layer in layers if layer]
     if scene.title:
@@ -725,6 +1236,38 @@ class _Canvas:
                         self.fill_rect(x + col * scale, y + r * scale, scale, scale, rgb)
             x += 6 * scale
 
+    def label(self, x: int, y: int, text: str, scale: int, rgb: _RGB, halo: _RGB) -> None:
+        """
+        ``text`` in the bitmap font with a 1 px ``halo`` all round (the glyph
+        mask grown by one pixel in every direction, drawn first); top-left
+        of the glyphs at (x, y). Rows are written as runs, one slice each.
+        """
+        rows = _text_rows(text, scale)
+        if not rows:
+            return
+        width = len(rows[0])
+        bits = [0, *(int(row, 2) << 1 for row in rows), 0]     # 1 px margin all round
+        grown = []
+        for i in range(len(bits)):
+            v = bits[i] | (bits[i - 1] if i else 0) | (bits[i + 1] if i + 1 < len(bits) else 0)
+            grown.append(format(v | v << 1 | v >> 1, f"0{width + 2}b"))
+        self._runs(x - 1, y - 1, grown, halo)
+        self._runs(x, y, rows, rgb)
+
+    def _runs(self, x: int, y: int, rows: list[str], rgb: _RGB) -> None:
+        """Paint the '1' runs of ``rows`` (one string per pixel row) from (x, y)."""
+        pixel = bytes((*rgb, 255))
+        w, buf = self.w, self.buf
+        for j, row in enumerate(rows):
+            yy = y + j
+            if not 0 <= yy < self.h:
+                continue
+            base = yy * w
+            for m in _ONES.finditer(row):
+                a, b = max(0, x + m.start()), min(w, x + m.end())
+                if a < b:
+                    buf[(base + a) * 4:(base + b) * 4] = pixel * (b - a)
+
     def png(self, title: str | None) -> bytes:
         # Filter byte 0 + each row, compressed in ~1 MB batches: no second
         # full-size copy of the image (an 8192x8192 canvas is 256 MB).
@@ -818,12 +1361,37 @@ _FONT = bytes.fromhex(
 )
 
 
+_DEGREE = bytes((0x02, 0x05, 0x05, 0x02, 0x00))    # '°' for the grid labels
+_ONES = re.compile("1+")
+
+
 def _glyph(ch: str) -> bytes:
+    if ch == "°":
+        return _DEGREE
     code = ord(ch)
     if not 0x20 <= code <= 0x7E:
         code = 0x3F                                 # '?'
     i = (code - 0x20) * 5
     return _FONT[i:i + 5]
+
+
+@functools.lru_cache(maxsize=1024)
+def _glyph_rows(ch: str, scale: int) -> tuple[str, ...]:
+    """A glyph and its 1-column gap as '0'/'1' strings, one per pixel row."""
+    glyph = _glyph(ch)
+    rows: list[str] = []
+    for r in range(7):
+        row = "".join(("1" if glyph[c] >> r & 1 else "0") * scale for c in range(5))
+        rows += [row + "0" * scale] * scale
+    return tuple(rows)
+
+
+def _text_rows(text: str, scale: int) -> list[str]:
+    """The pixel rows of ``text`` (without the gap after the last glyph)."""
+    if not text:
+        return []
+    glyphs = [_glyph_rows(ch, scale) for ch in text]
+    return ["".join(g[r] for g in glyphs)[:-scale] for r in range(7 * scale)]
 
 
 # Typographic punctuation and letters NFKD leaves alone, with plain-ASCII
@@ -864,6 +1432,15 @@ def _png(scene: _Scene) -> bytes:
     canvas = _Canvas(scene.width, scene.height, scene.background)
     feats, overs = scene.features, scene.overlays
 
+    # The graticule goes under the data; its labels get a background-coloured halo.
+    top, gs = scene.title_band, scene.small_scale
+    for x in scene.grid_x:
+        canvas.fill_rect(x, top, 1, scene.height - top, scene.grid_line)
+    for y in scene.grid_y:
+        canvas.fill_rect(0, y, scene.width, 1, scene.grid_line)
+    for label in scene.grid_labels:
+        canvas.label(label.x, label.y, label.ascii, gs, scene.grid_text, scene.background)
+
     for rings in feats.polygons:
         canvas.fill_polygon(rings, _TEAL, _POLYGON_FILL_OPACITY)
         canvas.blend_coverage(canvas.stroke_coverage(rings, True, _LINE_WIDTH), _TEAL)
@@ -880,6 +1457,17 @@ def _png(scene: _Scene) -> bytes:
                               _GOLD)
     if overs.points:
         canvas.markers(overs.points, scene.radius, scene.point_stroke)
+
+    bar = scene.scale_bar
+    if bar is not None:
+        for x, y, rw, rh in bar.rects():
+            canvas.fill_rect(x - 1, y - 1, rw + 2, rh + 2, scene.background)
+        for x, y, rw, rh in bar.rects():
+            canvas.fill_rect(x, y, rw, rh, scene.ink)
+        canvas.label(bar.label.x, bar.label.y, bar.label.ascii, gs, scene.ink, scene.background)
+    for label in scene.labels:
+        canvas.label(label.x, label.y, label.ascii, scene.label_scale, scene.label_ink,
+                     scene.label_halo)
 
     if scene.title:
         x, scale = scene.title_x, 2 if scene.big_title else 1
@@ -905,6 +1493,9 @@ def render_svg(
     background: str = "#ffffff",
     padding: int = 24,
     point_radius: float = 4.0,
+    labels: str | None = None,
+    grid: bool = True,
+    scale_bar: bool = True,
 ) -> str:
     """
     Render GeoJSON features as a standalone SVG 1.1 document.
@@ -922,6 +1513,19 @@ def render_svg(
         background  : Background colour, ``'#rrggbb'`` or ``'#rgb'``.
         padding     : Space in pixels between the data and the image edge.
         point_radius: Radius of point markers in pixels (0.5–50).
+        labels      : Name of a feature property to label the features with,
+                      e.g. ``"name"``: its value is written to the right of
+                      each point (centred on lines and polygons). Labels that
+                      would overlap one another or leave the image are
+                      skipped (first come, first placed), long ones are cut
+                      to 40 characters, and at most 300 are drawn. Features
+                      without the property (or with ``None``) get no label.
+        grid        : Draw a light latitude / longitude graticule with its
+                      values on the left and bottom edges (e.g. ``28.6°N``,
+                      ``77.2°E``) so the reader can tell where the map is.
+        scale_bar   : Draw a scale bar (e.g. ``500 m``, ``20 km``) in the
+                      bottom-left corner; left out on views wider or taller
+                      than about 60°, where a single scale is meaningless.
 
     Returns:
         The SVG document as a string. It is pure ASCII (other characters
@@ -938,7 +1542,7 @@ def render_svg(
         >>> open("stores.svg", "w", encoding="utf-8").write(svg)
     """
     scene = _Scene("render_svg", features, width, height, title, overlays,
-                   background, padding, point_radius)
+                   background, padding, point_radius, labels, grid, scale_bar)
     return _svg(scene)
 
 
@@ -951,13 +1555,17 @@ def render_png(
     background: str = "#ffffff",
     padding: int = 24,
     point_radius: float = 4.0,
+    labels: str | None = None,
+    grid: bool = True,
+    scale_bar: bool = True,
 ) -> bytes:
     """
     Render GeoJSON features as a PNG image (8-bit RGBA), in pure Python.
 
-    Takes the same arguments as :func:`render_svg`. The title is drawn with a
-    built-in ASCII bitmap font (accents are dropped, other non-ASCII
-    characters become ``?``) and is also stored in the PNG's metadata.
+    Takes the same arguments as :func:`render_svg` and lays the map out
+    identically. The title and labels are drawn with a built-in ASCII bitmap
+    font (accents are dropped, other non-ASCII characters become ``?``); the
+    title is also stored in the PNG's metadata.
 
     Returns:
         The PNG file contents as bytes.
@@ -967,11 +1575,12 @@ def render_png(
             overlay is not valid GeoJSON.
 
     Example:
-        >>> png = render_png(geo.features, width=1200, height=800, title="Stores")
+        >>> png = render_png(geo.features, width=1200, height=800, title="Stores",
+        ...                  labels="name")
         >>> open("stores.png", "wb").write(png)
     """
     scene = _Scene("render_png", features, width, height, title, overlays,
-                   background, padding, point_radius)
+                   background, padding, point_radius, labels, grid, scale_bar)
     return _png(scene)
 
 
