@@ -1,0 +1,2974 @@
+{
+ "meta": {
+  "experiment": "area-accuracy",
+  "mode": "quick",
+  "qoregeo_version": "1.1.0",
+  "python_version": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+  "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "reference_libraries": {
+   "geographiclib": "2.1",
+   "pyproj": "3.8.0",
+   "proj": "9.8.1",
+   "matplotlib": "3.11.2"
+  },
+  "seed": 20261019,
+  "sizes": {
+   "latitudes": [
+    0.0,
+    15.0,
+    30.0,
+    45.0,
+    60.0,
+    75.0,
+    85.0
+   ],
+   "sizes_km": [
+    1.0,
+    10.0,
+    100.0,
+    1000.0
+   ],
+   "box_segments_per_edge": [
+    16,
+    32
+   ],
+   "circle_vertices": [
+    64,
+    128
+   ],
+   "length_segments": 16,
+   "random_polygons": 40,
+   "random_segments_per_edge": 8,
+   "random_convergence_subset": 10,
+   "colorado_segments_per_edge": [
+    32,
+    64
+   ],
+   "timing_repeats": 3
+  },
+  "utc_timestamp": "2026-10-19T12:49:16+00:00",
+  "command": "python experiments/02_area_accuracy.py --quick",
+  "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
+  "runtime_seconds": 7.0,
+  "figures": [
+   "docs/assets/experiments/area-accuracy-latitude.svg",
+   "docs/assets/experiments/area-accuracy-length.svg",
+   "docs/assets/experiments/area-accuracy-buffer.svg"
+  ],
+  "method": [
+   "Error = (qoregeo - reference) / reference. Reference: GeographicLib PolygonArea on WGS84.",
+   "Both libraries receive the same densified vertex list. Box edges are split into equal lat/lng steps (so the north and south edges follow parallels); circles are sampled with GeographicLib Direct at equal azimuth steps.",
+   "Each case runs at two densities. Box references are Richardson-extrapolated from the two and checked against the closed-form WGS84 area of a parallel/meridian box.",
+   "Squares: side_km along the central meridian and side_km along the central parallel (WGS84). Circles: geodesic radius = size. Circles that contain a pole are given to qoregeo with explicit pole vertices (GeoJSON has no other way to close such a ring in lng/lat).",
+   "qoregeo is called with unit='m2' and unit='m' so its 4-decimal rounding is negligible.",
+   "area() of a buffer() result is the spherical cap 2 pi R^2 (1 - cos(r/R)); qoregeo detects a buffer by the _center and _radius_km keys on the geometry (or on a Feature's geometry)."
+  ],
+  "notes": [
+   "The Colorado 'official' figure from the brief (269,837 km2) equals 104,185 sq mi. The Census 2010 total is 104,094 sq mi (269,601 km2). Both are recorded; the Census table itself could not be fetched from this machine.",
+   "Timing numbers are indicative; the machine was shared with other jobs."
+  ]
+ },
+ "results": {
+  "area_error_pct_by_size_and_latitude": {
+   "squares_side": {
+    "1 km": {
+     "0": 0.449049,
+     "15": 0.358979,
+     "30": 0.113108,
+     "45": -0.22227,
+     "60": -0.557085,
+     "75": -0.80183,
+     "85": -0.88119
+    },
+    "10 km": {
+     "0": 0.449049,
+     "15": 0.358979,
+     "30": 0.113108,
+     "45": -0.222269,
+     "60": -0.557084,
+     "75": -0.801829,
+     "85": -0.881189
+    },
+    "100 km": {
+     "0": 0.449021,
+     "15": 0.358959,
+     "30": 0.113109,
+     "45": -0.222242,
+     "60": -0.55703,
+     "75": -0.801755,
+     "85": -0.881109
+    },
+    "1000 km": {
+     "0": 0.446263,
+     "15": 0.356946,
+     "30": 0.113119,
+     "45": -0.219506,
+     "60": -0.551612,
+     "75": -0.794401,
+     "85": -0.873102
+    }
+   },
+   "circles_radius": {
+    "1 km": {
+     "0": 0.449049,
+     "15": 0.358979,
+     "30": 0.113108,
+     "45": -0.22227,
+     "60": -0.557085,
+     "75": -0.80183,
+     "85": -0.88119
+    },
+    "10 km": {
+     "0": 0.449048,
+     "15": 0.358978,
+     "30": 0.113108,
+     "45": -0.222269,
+     "60": -0.557084,
+     "75": -0.801828,
+     "85": -0.881188
+    },
+    "100 km": {
+     "0": 0.448958,
+     "15": 0.358905,
+     "30": 0.113081,
+     "45": -0.222235,
+     "60": -0.556989,
+     "75": -0.80169,
+     "85": -0.881035
+    },
+    "1000 km": {
+     "0": 0.439982,
+     "15": 0.351612,
+     "30": 0.110348,
+     "45": -0.218833,
+     "60": -0.547559,
+     "75": -0.787915,
+     "85": -0.813773
+    }
+   },
+   "small_shape_theory": {
+    "0": 0.449049,
+    "15": 0.358979,
+    "30": 0.113108,
+    "45": -0.22227,
+    "60": -0.557085,
+    "75": -0.80183,
+    "85": -0.88119
+   }
+  },
+  "docs_claim_check": {
+   "claim": "skills/qoregeo/SKILL.md: within about 0.5 % of WGS84 values up to ~55 degrees latitude and up to ~0.9 % near the poles",
+   "theory_max_abs_pct_lat_0_to_55": 0.4514,
+   "theory_max_abs_pct_lat_0_to_90": 0.8913,
+   "theory_sign_change_lat": 35.4,
+   "measured_max_abs_pct_lat_0_to_55": 0.449049,
+   "measured_max_abs_pct_all": 0.88119,
+   "random_polygons_max_abs_pct_lat_0_to_55": 0.44868,
+   "random_polygons_max_abs_pct_all": 0.859531,
+   "holds": true,
+   "engine_docstring_claim": "qoregeo/engine.py GeoEngine.area: 'within about 0.5% of ellipsoidal areas', with no latitude limit",
+   "engine_docstring_claim_holds": false
+  },
+  "reference_checks": {
+   "squares_max_abs_geographiclib_vs_closed_form": 2.95450447555e-07,
+   "squares_max_abs_unextrapolated_geographiclib_vs_closed_form": 0.000512438415302,
+   "squares_max_abs_qoregeo_vs_sphere_closed_form": 4.22185840478e-11,
+   "squares_max_abs_corners_only_vs_densified": 1.7151125274e-11,
+   "circles_max_abs_ratio_change_n_to_2n": 0.00154323260183,
+   "max_abs_pyproj_vs_geographiclib": 1.13123000673e-11
+  },
+  "colorado": {
+   "box": {
+    "south": 37.0,
+    "north": 41.0,
+    "west": -109.05,
+    "east": -102.05
+   },
+   "qoregeo_corners_km2": 268994.6061,
+   "qoregeo_densified_km2": 268994.606081,
+   "sphere_closed_form_km2": 268994.606081,
+   "geographiclib_densified_km2": 269216.89028,
+   "geographiclib_corners_only_km2": 269154.549884,
+   "wgs84_closed_form_km2": 269216.890279,
+   "pyproj_densified_km2": 269216.875157,
+   "official_task_figure_km2": 269837,
+   "official_task_figure_in_sq_mi": 104184.648155,
+   "census_2010_total_sq_mi": 104094,
+   "census_2010_total_km2": 269602.222357,
+   "qoregeo_vs_wgs84_box_pct": -0.082567,
+   "qoregeo_vs_wgs84_box_km2": -222.284198345,
+   "geographiclib_corners_vs_box_km2": -62.3403954954,
+   "census_vs_wgs84_box_km2": 385.332077811,
+   "census_vs_wgs84_box_pct": 0.143131,
+   "task_figure_vs_wgs84_box_km2": 620.109720495,
+   "task_figure_vs_wgs84_box_pct": 0.230338,
+   "qoregeo_vs_census_pct": -0.225375,
+   "qoregeo_vs_task_figure_pct": -0.312186,
+   "small_shape_theory_at_39N_pct": -0.0828798
+  },
+  "buffer": {
+   "rows": [
+    {
+     "lat": 0.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03938,
+     "area_error_pct": 1.91406e-05,
+     "pi_r2_error_pct": 1.95509e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": -0.558302,
+      "max": 0.111885
+     },
+     "drawn_region_vs_true_circle_pct": -0.447042
+    },
+    {
+     "lat": 0.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159139.788,
+     "area_error_pct": 1.94441e-05,
+     "pi_r2_error_pct": 3.99705e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.558301,
+      "max": 0.111885
+     },
+     "drawn_region_vs_true_circle_pct": -0.447041
+    },
+    {
+     "lat": 0.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415272583.7,
+     "area_error_pct": 2.85486e-05,
+     "pi_r2_error_pct": 0.00208164,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.55822,
+      "max": 0.111885
+     },
+     "drawn_region_vs_true_circle_pct": -0.446951
+    },
+    {
+     "lat": 0.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135118807340.0,
+     "area_error_pct": 0.000933045,
+     "pi_r2_error_pct": 0.206494,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.550141,
+      "max": 0.111885
+     },
+     "drawn_region_vs_true_circle_pct": -0.437983
+    },
+    {
+     "lat": 15.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03965,
+     "area_error_pct": 1.91322e-05,
+     "pi_r2_error_pct": 1.95425e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": -0.491414,
+      "max": 0.13434
+     },
+     "drawn_region_vs_true_circle_pct": -0.357695
+    },
+    {
+     "lat": 15.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159139.846,
+     "area_error_pct": 1.94256e-05,
+     "pi_r2_error_pct": 3.9952e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.491766,
+      "max": 0.134339
+     },
+     "drawn_region_vs_true_circle_pct": -0.357694
+    },
+    {
+     "lat": 15.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415273164.6,
+     "area_error_pct": 2.66996e-05,
+     "pi_r2_error_pct": 0.00207979,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.495225,
+      "max": 0.134334
+     },
+     "drawn_region_vs_true_circle_pct": -0.357622
+    },
+    {
+     "lat": 15.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135124563280.0,
+     "area_error_pct": 0.000749449,
+     "pi_r2_error_pct": 0.20631,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.523195,
+      "max": 0.13379
+     },
+     "drawn_region_vs_true_circle_pct": -0.350427
+    },
+    {
+     "lat": 30.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03955,
+     "area_error_pct": 1.91352e-05,
+     "pi_r2_error_pct": 1.95455e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": -0.308209,
+      "max": 0.195764
+     },
+     "drawn_region_vs_true_circle_pct": -0.112981
+    },
+    {
+     "lat": 30.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159140.005,
+     "area_error_pct": 1.93751e-05,
+     "pi_r2_error_pct": 3.99016e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.308822,
+      "max": 0.195763
+     },
+     "drawn_region_vs_true_circle_pct": -0.11298
+    },
+    {
+     "lat": 30.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415274750.3,
+     "area_error_pct": 2.16521e-05,
+     "pi_r2_error_pct": 0.00207474,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.314914,
+      "max": 0.195743
+     },
+     "drawn_region_vs_true_circle_pct": -0.112957
+    },
+    {
+     "lat": 30.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135140276600.0,
+     "area_error_pct": 0.000248245,
+     "pi_r2_error_pct": 0.205808,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.371594,
+      "max": 0.195585
+     },
+     "drawn_region_vs_true_circle_pct": -0.110642
+    },
+    {
+     "lat": 45.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03938,
+     "area_error_pct": 1.91407e-05,
+     "pi_r2_error_pct": 1.9551e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": -0.0570085,
+      "max": 0.279853
+     },
+     "drawn_region_vs_true_circle_pct": 0.222765
+    },
+    {
+     "lat": 45.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159140.221,
+     "area_error_pct": 1.93063e-05,
+     "pi_r2_error_pct": 3.98327e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.0577198,
+      "max": 0.279853
+     },
+     "drawn_region_vs_true_circle_pct": 0.222764
+    },
+    {
+     "lat": 45.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415276913.2,
+     "area_error_pct": 1.47671e-05,
+     "pi_r2_error_pct": 0.00206786,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.0648308,
+      "max": 0.279812
+     },
+     "drawn_region_vs_true_circle_pct": 0.22272
+    },
+    {
+     "lat": 45.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135161712590.0,
+     "area_error_pct": -0.000435485,
+     "pi_r2_error_pct": 0.205123,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": -0.135241,
+      "max": 0.280238
+     },
+     "drawn_region_vs_true_circle_pct": 0.218278
+    },
+    {
+     "lat": 60.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03936,
+     "area_error_pct": 1.91413e-05,
+     "pi_r2_error_pct": 1.95516e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": 0.19527,
+      "max": 0.364155
+     },
+     "drawn_region_vs_true_circle_pct": 0.560206
+    },
+    {
+     "lat": 60.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159140.437,
+     "area_error_pct": 1.92375e-05,
+     "pi_r2_error_pct": 3.9764e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.194651,
+      "max": 0.364155
+     },
+     "drawn_region_vs_true_circle_pct": 0.560204
+    },
+    {
+     "lat": 60.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415279072.5,
+     "area_error_pct": 7.89368e-06,
+     "pi_r2_error_pct": 0.00206098,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.188426,
+      "max": 0.364093
+     },
+     "drawn_region_vs_true_circle_pct": 0.560091
+    },
+    {
+     "lat": 60.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135183115280.0,
+     "area_error_pct": -0.00111814,
+     "pi_r2_error_pct": 0.204439,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.123101,
+      "max": 0.364922
+     },
+     "drawn_region_vs_true_circle_pct": 0.548788
+    },
+    {
+     "lat": 75.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03944,
+     "area_error_pct": 1.91387e-05,
+     "pi_r2_error_pct": 1.9549e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": 0.380646,
+      "max": 0.426004
+     },
+     "drawn_region_vs_true_circle_pct": 0.808311
+    },
+    {
+     "lat": 75.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159140.595,
+     "area_error_pct": 1.91873e-05,
+     "pi_r2_error_pct": 3.97137e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.380287,
+      "max": 0.426003
+     },
+     "drawn_region_vs_true_circle_pct": 0.80831
+    },
+    {
+     "lat": 75.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415280650.9,
+     "area_error_pct": 2.86929e-06,
+     "pi_r2_error_pct": 0.00205596,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.376634,
+      "max": 0.425926
+     },
+     "drawn_region_vs_true_circle_pct": 0.808145
+    },
+    {
+     "lat": 75.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135198762010.0,
+     "area_error_pct": -0.0016172,
+     "pi_r2_error_pct": 0.203939,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.334056,
+      "max": 0.426937
+     },
+     "drawn_region_vs_true_circle_pct": 0.791752
+    },
+    {
+     "lat": 85.0,
+     "radius_km": 1.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 3141592.6407,
+     "pi_r2_m2": 3141592.65359,
+     "wgs84_circle_m2": 3141592.03938,
+     "area_error_pct": 1.91405e-05,
+     "pi_r2_error_pct": 1.95508e-05,
+     "cap_vs_pi_r2_pct": -4.10295e-07,
+     "plain_polygon_vs_cap_pct": -0.16056,
+     "vertex_distance_error_pct": {
+      "min": 0.440943,
+      "max": 0.446099
+     },
+     "drawn_region_vs_true_circle_pct": 0.889024
+    },
+    {
+     "lat": 85.0,
+     "radius_km": 10.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 314159200.873,
+     "pi_r2_m2": 314159265.359,
+     "wgs84_circle_m2": 314159140.646,
+     "area_error_pct": 1.9171e-05,
+     "pi_r2_error_pct": 3.96974e-05,
+     "cap_vs_pi_r2_pct": -2.05264e-05,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.440818,
+      "max": 0.446098
+     },
+     "drawn_region_vs_true_circle_pct": 0.889022
+    },
+    {
+     "lat": 85.0,
+     "radius_km": 100.0,
+     "num_points": 64,
+     "contains_pole": false,
+     "qoregeo_area_m2": 31415281552.3,
+     "pi_r2_m2": 31415926535.9,
+     "wgs84_circle_m2": 31415281162.8,
+     "area_error_pct": 1.24011e-06,
+     "pi_r2_error_pct": 0.00205433,
+     "cap_vs_pi_r2_pct": -0.00205305,
+     "plain_polygon_vs_cap_pct": -0.160561,
+     "vertex_distance_error_pct": {
+      "min": 0.439492,
+      "max": 0.446103
+     },
+     "drawn_region_vs_true_circle_pct": 0.88884
+    },
+    {
+     "lat": 85.0,
+     "radius_km": 1000.0,
+     "num_points": 64,
+     "contains_pole": true,
+     "qoregeo_area_m2": 3135148059430.0,
+     "pi_r2_m2": 3141592653590.0,
+     "wgs84_circle_m2": 3135203835840.0,
+     "area_error_pct": -0.00177904,
+     "pi_r2_error_pct": 0.203777,
+     "cap_vs_pi_r2_pct": -0.205138,
+     "plain_polygon_vs_cap_pct": -19.9661,
+     "vertex_distance_error_pct": {
+      "min": 0.419068,
+      "max": 0.44651
+     },
+     "drawn_region_vs_true_circle_pct": 0.870784
+    }
+   ],
+   "max_abs_area_error_pct_by_radius": {
+    "1 km": 1.91413e-05,
+    "10 km": 1.94441e-05,
+    "100 km": 2.85486e-05,
+    "1000 km": 0.00177904
+   },
+   "max_abs_pi_r2_error_pct_by_radius": {
+    "1 km": 1.95516e-05,
+    "10 km": 3.99705e-05,
+    "100 km": 0.00208164,
+    "1000 km": 0.206494
+   },
+   "drawn_region_vs_true_circle_pct_range": [
+    -0.447042,
+    0.889024
+   ],
+   "vertex_distance_error_pct_range": [
+    -0.558302,
+    0.44651
+   ]
+  },
+  "length": {
+   "haversine_error_pct": {
+    "meridian": {
+     "1 km": {
+      "0": 0.56144,
+      "15": 0.4938,
+      "30": 0.30909,
+      "45": 0.05696,
+      "60": -0.19496,
+      "75": -0.37924,
+      "85": -0.43902
+     },
+     "10 km": {
+      "0": 0.561436,
+      "15": 0.493801,
+      "30": 0.309093,
+      "45": 0.056962,
+      "60": -0.194958,
+      "75": -0.379242,
+      "85": -0.439021
+     },
+     "100 km": {
+      "0": 0.561416,
+      "15": 0.493783,
+      "30": 0.309083,
+      "45": 0.0569621,
+      "60": -0.194948,
+      "75": -0.379224,
+      "85": -0.439001
+     },
+     "1000 km": {
+      "0": 0.559343,
+      "15": 0.491994,
+      "30": 0.308063,
+      "45": 0.0569758,
+      "60": -0.193919,
+      "75": -0.377464,
+      "85": -0.437006
+     }
+    },
+    "parallel": {
+     "1 km": {
+      "0": -0.11176,
+      "15": -0.13416,
+      "30": -0.19538,
+      "45": -0.27907,
+      "60": -0.36283,
+      "75": -0.4242,
+      "85": -0.44412
+     },
+     "10 km": {
+      "0": -0.11176,
+      "15": -0.134159,
+      "30": -0.195381,
+      "45": -0.279073,
+      "60": -0.362834,
+      "75": -0.424196,
+      "85": -0.444118
+     },
+     "100 km": {
+      "0": -0.11176,
+      "15": -0.134159,
+      "30": -0.195381,
+      "45": -0.279073,
+      "60": -0.362834,
+      "75": -0.424197,
+      "85": -0.444118
+     },
+     "1000 km": {
+      "0": -0.11176,
+      "15": -0.134159,
+      "30": -0.195381,
+      "45": -0.279072,
+      "60": -0.362834,
+      "75": -0.424197,
+      "85": -0.444118
+     }
+    }
+   },
+   "haversine_error_pct_range": [
+    -0.44412,
+    0.56144
+   ],
+   "vincenty_max_abs_error_pct": 9.60125e-07,
+   "rows": {
+    "meridian": [
+     {
+      "lat": 0.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 1005.6144,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": 0.56144,
+      "vincenty_error_pct": 2.27374e-14,
+      "theory_pct": 0.561437,
+      "chords_vs_true_arc_pct": -2.27374e-14
+     },
+     {
+      "lat": 0.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 10056.1436,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": 0.561436,
+      "vincenty_error_pct": 0.0,
+      "theory_pct": 0.561437,
+      "chords_vs_true_arc_pct": 0.0
+     },
+     {
+      "lat": 0.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 100561.4156,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": 0.561416,
+      "vincenty_error_pct": -1.45519e-14,
+      "theory_pct": 0.561437,
+      "chords_vs_true_arc_pct": 1.45519e-14
+     },
+     {
+      "lat": 0.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 1005593.4272,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": 0.559343,
+      "vincenty_error_pct": -2.32831e-14,
+      "theory_pct": 0.561437,
+      "chords_vs_true_arc_pct": 2.32831e-14
+     },
+     {
+      "lat": 15.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 1004.938,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": 0.4938,
+      "vincenty_error_pct": 1.8872e-12,
+      "theory_pct": 0.493801,
+      "chords_vs_true_arc_pct": -1.8872e-12
+     },
+     {
+      "lat": 15.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 10049.3801,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": 0.493801,
+      "vincenty_error_pct": -5.91172e-12,
+      "theory_pct": 0.493801,
+      "chords_vs_true_arc_pct": 5.91172e-12
+     },
+     {
+      "lat": 15.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 100493.7826,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": 0.493783,
+      "vincenty_error_pct": 1.01863e-13,
+      "theory_pct": 0.493801,
+      "chords_vs_true_arc_pct": -1.01863e-13
+     },
+     {
+      "lat": 15.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 1004919.9372,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": 0.491994,
+      "vincenty_error_pct": 5.82077e-14,
+      "theory_pct": 0.493801,
+      "chords_vs_true_arc_pct": -5.82077e-14
+     },
+     {
+      "lat": 30.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 1003.0909,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": 0.30909,
+      "vincenty_error_pct": -9.15293e-11,
+      "theory_pct": 0.309094,
+      "chords_vs_true_arc_pct": 9.15293e-11
+     },
+     {
+      "lat": 30.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 10030.9093,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": 0.309093,
+      "vincenty_error_pct": 1.28057e-11,
+      "theory_pct": 0.309094,
+      "chords_vs_true_arc_pct": -1.28057e-11
+     },
+     {
+      "lat": 30.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 100309.0832,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": 0.309083,
+      "vincenty_error_pct": 2.91038e-14,
+      "theory_pct": 0.309094,
+      "chords_vs_true_arc_pct": -2.91038e-14
+     },
+     {
+      "lat": 30.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 1003080.6312,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": 0.308063,
+      "vincenty_error_pct": 0.0,
+      "theory_pct": 0.309094,
+      "chords_vs_true_arc_pct": 0.0
+     },
+     {
+      "lat": 45.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 1000.5696,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": 0.05696,
+      "vincenty_error_pct": -2.56136e-10,
+      "theory_pct": 0.0569619,
+      "chords_vs_true_arc_pct": 2.56136e-10
+     },
+     {
+      "lat": 45.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 10005.6962,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": 0.056962,
+      "vincenty_error_pct": -1.00226e-11,
+      "theory_pct": 0.0569619,
+      "chords_vs_true_arc_pct": 1.00226e-11
+     },
+     {
+      "lat": 45.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 100056.9621,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": 0.0569621,
+      "vincenty_error_pct": -9.02219e-13,
+      "theory_pct": 0.0569619,
+      "chords_vs_true_arc_pct": 9.02219e-13
+     },
+     {
+      "lat": 45.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 1000569.7575,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": 0.0569758,
+      "vincenty_error_pct": 3.49246e-14,
+      "theory_pct": 0.0569619,
+      "chords_vs_true_arc_pct": -3.49246e-14
+     },
+     {
+      "lat": 60.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 998.0504,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.19496,
+      "vincenty_error_pct": -5.424e-11,
+      "theory_pct": -0.194958,
+      "chords_vs_true_arc_pct": 5.424e-11
+     },
+     {
+      "lat": 60.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 9980.5042,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.194958,
+      "vincenty_error_pct": -7.83984e-12,
+      "theory_pct": -0.194958,
+      "chords_vs_true_arc_pct": 7.83984e-12
+     },
+     {
+      "lat": 60.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 99805.0524,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": -0.194948,
+      "vincenty_error_pct": -1.45519e-13,
+      "theory_pct": -0.194958,
+      "chords_vs_true_arc_pct": 1.45519e-13
+     },
+     {
+      "lat": 60.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 998060.8097,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": -0.193919,
+      "vincenty_error_pct": 4.65661e-14,
+      "theory_pct": -0.194958,
+      "chords_vs_true_arc_pct": -4.65661e-14
+     },
+     {
+      "lat": 75.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 996.2076,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.37924,
+      "vincenty_error_pct": -8.69363e-11,
+      "theory_pct": -0.379242,
+      "chords_vs_true_arc_pct": 8.69363e-11
+     },
+     {
+      "lat": 75.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 9962.0758,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.379242,
+      "vincenty_error_pct": -6.91216e-13,
+      "theory_pct": -0.379242,
+      "chords_vs_true_arc_pct": 6.91216e-13
+     },
+     {
+      "lat": 75.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 99620.7758,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": -0.379224,
+      "vincenty_error_pct": -3.92902e-13,
+      "theory_pct": -0.379242,
+      "chords_vs_true_arc_pct": 3.92902e-13
+     },
+     {
+      "lat": 75.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 996225.3553,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": -0.377464,
+      "vincenty_error_pct": -1.16415e-13,
+      "theory_pct": -0.379242,
+      "chords_vs_true_arc_pct": 1.16415e-13
+     },
+     {
+      "lat": 85.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 995.6098,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.43902,
+      "vincenty_error_pct": 9.12905e-12,
+      "theory_pct": -0.439021,
+      "chords_vs_true_arc_pct": -9.12905e-12
+     },
+     {
+      "lat": 85.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 9956.0979,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.439021,
+      "vincenty_error_pct": -6.18456e-13,
+      "theory_pct": -0.439021,
+      "chords_vs_true_arc_pct": 6.18456e-13
+     },
+     {
+      "lat": 85.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 99560.9988,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": -0.439001,
+      "vincenty_error_pct": -1.01863e-13,
+      "theory_pct": -0.439021,
+      "chords_vs_true_arc_pct": 1.01863e-13
+     },
+     {
+      "lat": 85.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 995629.9371,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": -0.437006,
+      "vincenty_error_pct": 2.32831e-14,
+      "theory_pct": -0.439021,
+      "chords_vs_true_arc_pct": -2.32831e-14
+     }
+    ],
+    "parallel": [
+     {
+      "lat": 0.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 998.8824,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.11176,
+      "vincenty_error_pct": -1.13687e-14,
+      "theory_pct": -0.11176,
+      "chords_vs_true_arc_pct": 1.13687e-14
+     },
+     {
+      "lat": 0.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 10000.0,
+      "haversine_m": 9988.824,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.11176,
+      "vincenty_error_pct": 0.0,
+      "theory_pct": -0.11176,
+      "chords_vs_true_arc_pct": 0.0
+     },
+     {
+      "lat": 0.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 100000.0,
+      "haversine_m": 99888.2401,
+      "vincenty_m": 100000.0,
+      "haversine_error_pct": -0.11176,
+      "vincenty_error_pct": 0.0,
+      "theory_pct": -0.11176,
+      "chords_vs_true_arc_pct": 0.0
+     },
+     {
+      "lat": 0.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 1000000.0,
+      "haversine_m": 998882.4009,
+      "vincenty_m": 1000000.0,
+      "haversine_error_pct": -0.11176,
+      "vincenty_error_pct": 0.0,
+      "theory_pct": -0.11176,
+      "chords_vs_true_arc_pct": 0.0
+     },
+     {
+      "lat": 15.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 1000.0,
+      "haversine_m": 998.6584,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.13416,
+      "vincenty_error_pct": 2.82967e-11,
+      "theory_pct": -0.134159,
+      "chords_vs_true_arc_pct": -2.82967e-11
+     },
+     {
+      "lat": 15.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99999972,
+      "haversine_m": 9986.5841,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.134159,
+      "vincenty_error_pct": 2.83513e-09,
+      "theory_pct": -0.134159,
+      "chords_vs_true_arc_pct": -2.83513e-09
+     },
+     {
+      "lat": 15.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.9997129,
+      "haversine_m": 99865.8404,
+      "vincenty_m": 99999.9997,
+      "haversine_error_pct": -0.134159,
+      "vincenty_error_pct": -1.28748e-08,
+      "theory_pct": -0.134159,
+      "chords_vs_true_arc_pct": -2.87125e-07
+     },
+     {
+      "lat": 15.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999999.712872,
+      "haversine_m": 998658.1204,
+      "vincenty_m": 999999.7128,
+      "haversine_error_pct": -0.134159,
+      "vincenty_error_pct": -7.21166e-09,
+      "theory_pct": -0.134159,
+      "chords_vs_true_arc_pct": -2.87128e-05
+     },
+     {
+      "lat": 30.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 999.999999999,
+      "haversine_m": 998.0462,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.19538,
+      "vincenty_error_pct": 1.31763e-10,
+      "theory_pct": -0.195381,
+      "chords_vs_true_arc_pct": -1.31763e-10
+     },
+     {
+      "lat": 30.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99999868,
+      "haversine_m": 9980.4619,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.195381,
+      "vincenty_error_pct": 1.31795e-08,
+      "theory_pct": -0.195381,
+      "chords_vs_true_arc_pct": -1.31795e-08
+     },
+     {
+      "lat": 30.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.9986686,
+      "haversine_m": 99804.6175,
+      "vincenty_m": 99999.9987,
+      "haversine_error_pct": -0.195381,
+      "vincenty_error_pct": 3.14119e-08,
+      "theory_pct": -0.195381,
+      "chords_vs_true_arc_pct": -1.33141e-06
+     },
+     {
+      "lat": 30.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999998.668576,
+      "haversine_m": 998044.8598,
+      "vincenty_m": 999998.6685,
+      "haversine_error_pct": -0.195381,
+      "vincenty_error_pct": -7.58807e-09,
+      "theory_pct": -0.195381,
+      "chords_vs_true_arc_pct": -0.000133142
+     },
+     {
+      "lat": 45.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 999.999999996,
+      "haversine_m": 997.2093,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.27907,
+      "vincenty_error_pct": 3.96051e-10,
+      "theory_pct": -0.279072,
+      "chords_vs_true_arc_pct": -3.96051e-10
+     },
+     {
+      "lat": 45.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99999601,
+      "haversine_m": 9972.0927,
+      "vincenty_m": 9999.9999,
+      "haversine_error_pct": -0.279073,
+      "vincenty_error_pct": -9.60125e-07,
+      "theory_pct": -0.279072,
+      "chords_vs_true_arc_pct": -3.98754e-08
+     },
+     {
+      "lat": 45.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.9960125,
+      "haversine_m": 99720.9235,
+      "vincenty_m": 99999.996,
+      "haversine_error_pct": -0.279073,
+      "vincenty_error_pct": -1.24602e-08,
+      "theory_pct": -0.279072,
+      "chords_vs_true_arc_pct": -3.98754e-06
+     },
+     {
+      "lat": 45.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999996.012427,
+      "haversine_m": 997205.2987,
+      "vincenty_m": 999996.0124,
+      "haversine_error_pct": -0.279072,
+      "vincenty_error_pct": -2.69487e-09,
+      "theory_pct": -0.279072,
+      "chords_vs_true_arc_pct": -0.000398757
+     },
+     {
+      "lat": 60.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 999.999999988,
+      "haversine_m": 996.3717,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.36283,
+      "vincenty_error_pct": 1.19029e-09,
+      "theory_pct": -0.362834,
+      "chords_vs_true_arc_pct": -1.19029e-09
+     },
+     {
+      "lat": 60.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99998806,
+      "haversine_m": 9963.7166,
+      "vincenty_m": 10000.0,
+      "haversine_error_pct": -0.362834,
+      "vincenty_error_pct": 1.19425e-07,
+      "theory_pct": -0.362834,
+      "chords_vs_true_arc_pct": -1.19425e-07
+     },
+     {
+      "lat": 60.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.9880575,
+      "haversine_m": 99637.154,
+      "vincenty_m": 99999.9881,
+      "haversine_error_pct": -0.362834,
+      "vincenty_error_pct": 4.25316e-08,
+      "theory_pct": -0.362834,
+      "chords_vs_true_arc_pct": -1.19425e-05
+     },
+     {
+      "lat": 60.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999988.057398,
+      "haversine_m": 996359.7593,
+      "vincenty_m": 999988.0574,
+      "haversine_error_pct": -0.362834,
+      "vincenty_error_pct": 2.28153e-10,
+      "theory_pct": -0.362834,
+      "chords_vs_true_arc_pct": -0.00119426
+     },
+     {
+      "lat": 75.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 999.999999945,
+      "haversine_m": 995.758,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.4242,
+      "vincenty_error_pct": 5.53279e-09,
+      "theory_pct": -0.424197,
+      "chords_vs_true_arc_pct": -5.53279e-09
+     },
+     {
+      "lat": 75.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99994462,
+      "haversine_m": 9957.5803,
+      "vincenty_m": 9999.9999,
+      "haversine_error_pct": -0.424196,
+      "vincenty_error_pct": -4.46223e-07,
+      "theory_pct": -0.424197,
+      "chords_vs_true_arc_pct": -5.53777e-07
+     },
+     {
+      "lat": 75.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.9446223,
+      "haversine_m": 99575.7483,
+      "vincenty_m": 99999.9446,
+      "haversine_error_pct": -0.424197,
+      "vincenty_error_pct": -2.22782e-08,
+      "theory_pct": -0.424197,
+      "chords_vs_true_arc_pct": -5.53777e-05
+     },
+     {
+      "lat": 75.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999944.622666,
+      "haversine_m": 995702.8917,
+      "vincenty_m": 999944.6227,
+      "haversine_error_pct": -0.424197,
+      "vincenty_error_pct": 3.44005e-09,
+      "theory_pct": -0.424197,
+      "chords_vs_true_arc_pct": -0.00553773
+     },
+     {
+      "lat": 85.0,
+      "size_km": 1.0,
+      "segments": 16,
+      "geographiclib_m": 999.999999481,
+      "haversine_m": 995.5588,
+      "vincenty_m": 1000.0,
+      "haversine_error_pct": -0.44412,
+      "vincenty_error_pct": 5.1918e-08,
+      "theory_pct": -0.444118,
+      "chords_vs_true_arc_pct": -5.1918e-08
+     },
+     {
+      "lat": 85.0,
+      "size_km": 10.0,
+      "segments": 16,
+      "geographiclib_m": 9999.99948077,
+      "haversine_m": 9955.5877,
+      "vincenty_m": 9999.9995,
+      "haversine_error_pct": -0.444118,
+      "vincenty_error_pct": 1.92334e-07,
+      "theory_pct": -0.444118,
+      "chords_vs_true_arc_pct": -5.19233e-06
+     },
+     {
+      "lat": 85.0,
+      "size_km": 100.0,
+      "segments": 16,
+      "geographiclib_m": 99999.4807673,
+      "haversine_m": 99555.365,
+      "vincenty_m": 99999.4808,
+      "haversine_error_pct": -0.444118,
+      "vincenty_error_pct": 3.26956e-08,
+      "theory_pct": -0.444118,
+      "chords_vs_true_arc_pct": -0.000519233
+     },
+     {
+      "lat": 85.0,
+      "size_km": 1000.0,
+      "segments": 16,
+      "geographiclib_m": 999480.842471,
+      "haversine_m": 995041.9679,
+      "vincenty_m": 999480.8425,
+      "haversine_error_pct": -0.444118,
+      "vincenty_error_pct": 2.87183e-09,
+      "theory_pct": -0.444118,
+      "chords_vs_true_arc_pct": -0.0519158
+     }
+    ]
+   }
+  },
+  "holes": [
+   {
+    "case": "100 km box with a 50 km box hole at 0 N",
+    "qoregeo_m2": 7533578968.58,
+    "reference_m2": 7499903330.83,
+    "wgs84_closed_form_m2": 7499903330.83,
+    "error_pct": 0.449014,
+    "outer_only_error_pct": 0.449021,
+    "hole_orientation_changes_result": false,
+    "feature_wrapper_changes_result": false,
+    "check_reference_vs_closed_form": -2.54316428983e-15
+   },
+   {
+    "case": "100 km box with a 50 km box hole at 45 N",
+    "qoregeo_m2": 7483236572.61,
+    "reference_m2": 7499903976.86,
+    "wgs84_closed_form_m2": 7499903976.86,
+    "error_pct": -0.222235,
+    "outer_only_error_pct": -0.222242,
+    "hole_orientation_changes_result": true,
+    "feature_wrapper_changes_result": false,
+    "check_reference_vs_closed_form": 1.27158203538e-14
+   },
+   {
+    "case": "100 km box with a 50 km box hole at 75 N",
+    "qoregeo_m2": 7439775035.86,
+    "reference_m2": 7499904534.6,
+    "wgs84_closed_form_m2": 7499904534.6,
+    "error_pct": -0.801737,
+    "outer_only_error_pct": -0.801755,
+    "hole_orientation_changes_result": true,
+    "feature_wrapper_changes_result": false,
+    "check_reference_vs_closed_form": -2.10319653011e-13
+   },
+   {
+    "case": "annulus, geodesic circles r = 100 km and 50 km at 30 N",
+    "qoregeo_m2": 23578511753.0,
+    "reference_m2": 23551880751.0,
+    "error_pct": 0.113074,
+    "outer_only_error_pct": 0.113081
+   },
+   {
+    "case": "annulus, geodesic circles r = 100 km and 50 km at 60 N",
+    "qoregeo_m2": 23420709028.3,
+    "reference_m2": 23551884786.9,
+    "error_pct": -0.556965,
+    "outer_only_error_pct": -0.556989
+   },
+   {
+    "case": "MultiPolygon: 100 km boxes at 10 N and 70 N",
+    "qoregeo_m2": 19967149114.0,
+    "reference_m2": 19999792415.3,
+    "error_pct": -0.163218,
+    "parts_error_pct": [
+     0.408474,
+     -0.73491
+    ]
+   }
+  ],
+  "symmetry_north_south": [
+   {
+    "lat": 45.0,
+    "square_100km_north_pct": -0.222242,
+    "square_100km_south_pct": -0.222242,
+    "circle_100km_north_pct": -0.222235,
+    "circle_100km_south_pct": -0.222235
+   },
+   {
+    "lat": 85.0,
+    "square_100km_north_pct": -0.881109,
+    "square_100km_south_pct": -0.881109,
+    "circle_100km_north_pct": -0.881035,
+    "circle_100km_south_pct": -0.881035
+   }
+  ],
+  "edge_cases": {
+   "buffer_covering_north_pole": {
+    "call": "geo.buffer((85.0, 10.0), 1000)",
+    "area_of_buffer_km2": 3135148.0594,
+    "area_of_its_coordinates_km2": 2509182.6794,
+    "coordinate_lng_range": [
+     -157.460679293,
+     190.0
+    ],
+    "point_in_polygon_89.9N_buffer": true,
+    "point_in_polygon_89.9N_coordinates": false,
+    "geographiclib_area_of_its_vertices_km2": 3157519.77187
+   },
+   "buffer_inside_feature_collection": {
+    "area_of_buffer_m2": 314159200.873,
+    "area_of_feature_m2": 314159200.873,
+    "area_of_feature_collection_m2": 313654784.659
+   },
+   "polar_cap_written_with_pole_vertices": {
+    "qoregeo_km2": 970477.3351,
+    "sphere_cap_km2": 970477.335101,
+    "wgs84_cap_km2": 979155.200115
+   }
+  },
+  "random_polygons": {
+   "count": 40,
+   "segments_per_edge": 8,
+   "description": "Star-shaped polygons, 6 to 16 vertices, radius log-uniform from 1 to 500 km, center uniform in latitude -85 to 85 and longitude -180 to 180, vertices placed with GeographicLib Direct, edges split into equal lat/lng steps.",
+   "by_abs_latitude": [
+    {
+     "abs_lat_from": 0,
+     "abs_lat_to": 10,
+     "count": 5,
+     "min_error_pct": 0.443883,
+     "max_error_pct": 0.44868
+    },
+    {
+     "abs_lat_from": 10,
+     "abs_lat_to": 20,
+     "count": 6,
+     "min_error_pct": 0.301025,
+     "max_error_pct": 0.372591
+    },
+    {
+     "abs_lat_from": 20,
+     "abs_lat_to": 30,
+     "count": 7,
+     "min_error_pct": 0.151123,
+     "max_error_pct": 0.287144
+    },
+    {
+     "abs_lat_from": 30,
+     "abs_lat_to": 40,
+     "count": 5,
+     "min_error_pct": -0.0932195,
+     "max_error_pct": 0.0765321
+    },
+    {
+     "abs_lat_from": 40,
+     "abs_lat_to": 50,
+     "count": 4,
+     "min_error_pct": -0.315635,
+     "max_error_pct": -0.1073
+    },
+    {
+     "abs_lat_from": 50,
+     "abs_lat_to": 60,
+     "count": 5,
+     "min_error_pct": -0.516608,
+     "max_error_pct": -0.422903
+    },
+    {
+     "abs_lat_from": 60,
+     "abs_lat_to": 70,
+     "count": 2,
+     "min_error_pct": -0.731061,
+     "max_error_pct": -0.586732
+    },
+    {
+     "abs_lat_from": 70,
+     "abs_lat_to": 80,
+     "count": 4,
+     "min_error_pct": -0.842578,
+     "max_error_pct": -0.739478
+    },
+    {
+     "abs_lat_from": 80,
+     "abs_lat_to": 90,
+     "count": 2,
+     "min_error_pct": -0.859531,
+     "max_error_pct": -0.859356
+    }
+   ],
+   "max_abs_error_pct_lat_le_55": 0.44868,
+   "max_abs_error_pct_all": 0.859531,
+   "max_abs_deviation_from_theory_pct": 0.006682,
+   "check_max_abs_error_change_m_to_2m": 5.77405722993e-05,
+   "rows": [
+    {
+     "lat": 15.1115222638,
+     "radius_km": 373.588976922,
+     "vertices": 9,
+     "error_pct": 0.351311,
+     "theory_pct": 0.357666,
+     "check_error_change_m_to_2m": 5.77405722993e-05
+    },
+    {
+     "lat": 69.7315165928,
+     "radius_km": 3.15597501365,
+     "vertices": 7,
+     "error_pct": -0.731061,
+     "theory_pct": -0.730958,
+     "check_error_change_m_to_2m": 5.97485588676e-07
+    },
+    {
+     "lat": -0.957384009784,
+     "radius_km": 4.37046570118,
+     "vertices": 9,
+     "error_pct": 0.44868,
+     "theory_pct": 0.448674,
+     "check_error_change_m_to_2m": 6.8438488366e-09
+    },
+    {
+     "lat": 3.5634271098,
+     "radius_km": 22.5667283009,
+     "vertices": 9,
+     "error_pct": 0.443883,
+     "theory_pct": 0.443854,
+     "check_error_change_m_to_2m": 4.74987381692e-08
+    },
+    {
+     "lat": 76.1134266432,
+     "radius_km": 14.2857072514,
+     "vertices": 10,
+     "error_pct": -0.811168,
+     "theory_pct": -0.814375,
+     "check_error_change_m_to_2m": -2.37193959336e-05
+    },
+    {
+     "lat": 58.0386886226,
+     "radius_km": 1.86986597472,
+     "vertices": 8,
+     "error_pct": -0.516608,
+     "theory_pct": -0.516659,
+     "check_error_change_m_to_2m": -3.43014755089e-07
+    },
+    {
+     "lat": -13.8389807732,
+     "radius_km": 205.53344255,
+     "vertices": 14,
+     "error_pct": 0.370602,
+     "theory_pct": 0.372118,
+     "check_error_change_m_to_2m": 2.51299132469e-06
+    },
+    {
+     "lat": -79.5875784279,
+     "radius_km": 26.8500533178,
+     "vertices": 8,
+     "error_pct": -0.842578,
+     "theory_pct": -0.847697,
+     "check_error_change_m_to_2m": -3.74568390948e-05
+    },
+    {
+     "lat": 70.3534811164,
+     "radius_km": 38.1617461062,
+     "vertices": 8,
+     "error_pct": -0.739478,
+     "theory_pct": -0.74027,
+     "check_error_change_m_to_2m": -8.40310202545e-06
+    },
+    {
+     "lat": -27.2669746305,
+     "radius_km": 3.4336078061,
+     "vertices": 6,
+     "error_pct": 0.166932,
+     "theory_pct": 0.166969,
+     "check_error_change_m_to_2m": 9.22497564114e-07
+    },
+    {
+     "lat": 57.977287328,
+     "radius_km": 15.5925619853,
+     "vertices": 16,
+     "error_pct": -0.515554,
+     "theory_pct": -0.51537
+    },
+    {
+     "lat": 28.0622408606,
+     "radius_km": 35.7785115781,
+     "vertices": 15,
+     "error_pct": 0.151123,
+     "theory_pct": 0.151639
+    },
+    {
+     "lat": 78.7921907064,
+     "radius_km": 2.26440201367,
+     "vertices": 13,
+     "error_pct": -0.840614,
+     "theory_pct": -0.840863
+    },
+    {
+     "lat": -32.9140477008,
+     "radius_km": 1.09350399519,
+     "vertices": 13,
+     "error_pct": 0.0523442,
+     "theory_pct": 0.0523471
+    },
+    {
+     "lat": -48.9742014534,
+     "radius_km": 1.02520714939,
+     "vertices": 13,
+     "error_pct": -0.314942,
+     "theory_pct": -0.314923
+    },
+    {
+     "lat": 31.7695354284,
+     "radius_km": 3.27614450234,
+     "vertices": 6,
+     "error_pct": 0.0765321,
+     "theory_pct": 0.0765837
+    },
+    {
+     "lat": -49.0460250034,
+     "radius_km": 83.8319171347,
+     "vertices": 7,
+     "error_pct": -0.315635,
+     "theory_pct": -0.316586
+    },
+    {
+     "lat": -18.1109658993,
+     "radius_km": 115.926956895,
+     "vertices": 15,
+     "error_pct": 0.319211,
+     "theory_pct": 0.319131
+    },
+    {
+     "lat": -26.9580363873,
+     "radius_km": 1.66160727926,
+     "vertices": 10,
+     "error_pct": 0.172883,
+     "theory_pct": 0.172844
+    },
+    {
+     "lat": 13.7914814578,
+     "radius_km": 4.67662949925,
+     "vertices": 16,
+     "error_pct": 0.372591,
+     "theory_pct": 0.372635
+    },
+    {
+     "lat": -19.317186934,
+     "radius_km": 60.8791027969,
+     "vertices": 9,
+     "error_pct": 0.301025,
+     "theory_pct": 0.301936
+    },
+    {
+     "lat": 24.4791189673,
+     "radius_km": 3.71095570869,
+     "vertices": 8,
+     "error_pct": 0.218305,
+     "theory_pct": 0.218271
+    },
+    {
+     "lat": 32.9505437213,
+     "radius_km": 1.60216196133,
+     "vertices": 16,
+     "error_pct": 0.0515353,
+     "theory_pct": 0.0515668
+    },
+    {
+     "lat": -1.60533022983,
+     "radius_km": 40.8839113679,
+     "vertices": 9,
+     "error_pct": 0.447967,
+     "theory_pct": 0.447994
+    },
+    {
+     "lat": -1.38312935411,
+     "radius_km": 400.378359553,
+     "vertices": 16,
+     "error_pct": 0.446562,
+     "theory_pct": 0.448266
+    },
+    {
+     "lat": -20.0447618064,
+     "radius_km": 162.836321597,
+     "vertices": 7,
+     "error_pct": 0.287144,
+     "theory_pct": 0.291113
+    },
+    {
+     "lat": 24.6812877953,
+     "radius_km": 318.377355405,
+     "vertices": 7,
+     "error_pct": 0.221367,
+     "theory_pct": 0.214685
+    },
+    {
+     "lat": 40.0645016385,
+     "radius_km": 3.69080392832,
+     "vertices": 11,
+     "error_pct": -0.1073,
+     "theory_pct": -0.107345
+    },
+    {
+     "lat": -0.679508054092,
+     "radius_km": 270.33199193,
+     "vertices": 14,
+     "error_pct": 0.448477,
+     "theory_pct": 0.44886
+    },
+    {
+     "lat": 18.8636015131,
+     "radius_km": 115.861937908,
+     "vertices": 11,
+     "error_pct": 0.30871,
+     "theory_pct": 0.308513
+    },
+    {
+     "lat": -57.572518674,
+     "radius_km": 21.6727419725,
+     "vertices": 12,
+     "error_pct": -0.507604,
+     "theory_pct": -0.506839
+    },
+    {
+     "lat": -81.0723974829,
+     "radius_km": 18.4930073413,
+     "vertices": 8,
+     "error_pct": -0.859356,
+     "theory_pct": -0.859163
+    },
+    {
+     "lat": 36.7937273549,
+     "radius_km": 45.7121091109,
+     "vertices": 9,
+     "error_pct": -0.0325071,
+     "theory_pct": -0.0328155
+    },
+    {
+     "lat": 55.2003848366,
+     "radius_km": 20.7304621559,
+     "vertices": 11,
+     "error_pct": -0.454792,
+     "theory_pct": -0.455752
+    },
+    {
+     "lat": 81.1819783866,
+     "radius_km": 17.9599807025,
+     "vertices": 6,
+     "error_pct": -0.859531,
+     "theory_pct": -0.859942
+    },
+    {
+     "lat": 39.4483874665,
+     "radius_km": 4.14843680353,
+     "vertices": 15,
+     "error_pct": -0.0932195,
+     "theory_pct": -0.0931638
+    },
+    {
+     "lat": 61.4900303129,
+     "radius_km": 3.04862968772,
+     "vertices": 16,
+     "error_pct": -0.586732,
+     "theory_pct": -0.586754
+    },
+    {
+     "lat": -26.8007936592,
+     "radius_km": 22.0838666618,
+     "vertices": 12,
+     "error_pct": 0.175842,
+     "theory_pct": 0.175817
+    },
+    {
+     "lat": 53.7179410479,
+     "radius_km": 6.35768942066,
+     "vertices": 13,
+     "error_pct": -0.422903,
+     "theory_pct": -0.422984
+    },
+    {
+     "lat": 48.3157981484,
+     "radius_km": 1.10284643206,
+     "vertices": 11,
+     "error_pct": -0.29964,
+     "theory_pct": -0.299652
+    }
+   ]
+  },
+  "timing": {
+   "polygon": "geodesic circle, r = 100 km at 45 N, 1,024 vertices",
+   "per_call": {
+    "qoregeo.area (pure Python, sphere)": {
+     "median_us": 460.01,
+     "min_us": 439.91,
+     "calls_per_run": 500,
+     "runs": 3
+    },
+    "geographiclib PolygonArea (pure Python, WGS84)": {
+     "median_us": 57592.44,
+     "min_us": 54945.65,
+     "calls_per_run": 5,
+     "runs": 3
+    },
+    "pyproj Geod.polygon_area_perimeter (C, WGS84)": {
+     "median_us": 743.43,
+     "min_us": 724.16,
+     "calls_per_run": 500,
+     "runs": 3
+    }
+   }
+  },
+  "squares": [
+   {
+    "lat": 0.0,
+    "size_km": 1.0,
+    "box": {
+     "south": -0.00452184738516,
+     "north": 0.00452184738516,
+     "dlng": 0.0089831528412
+    },
+    "qoregeo_m2": 1004490.4909,
+    "qoregeo_corners_only_m2": 1004490.4909,
+    "geographiclib_m2": 999999.998969,
+    "wgs84_closed_form_m2": 999999.998969,
+    "sphere_closed_form_m2": 1004490.49087,
+    "error_pct": 0.449049,
+    "error_vs_closed_form_pct": 0.449049,
+    "small_shape_theory_pct": 0.449049,
+    "check_qoregeo_vs_sphere_closed_form": 3.28078750853e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": 1.16415321947e-16,
+    "check_geographiclib_unextrapolated_vs_closed_form": 2.014101485e-12,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "size_km": 10.0,
+    "box": {
+     "south": -0.0452184737582,
+     "north": 0.0452184737582,
+     "dlng": 0.089831528412
+    },
+    "qoregeo_m2": 100449038.556,
+    "qoregeo_corners_only_m2": 100449038.556,
+    "geographiclib_m2": 99999989.6886,
+    "wgs84_closed_form_m2": 99999989.6886,
+    "sphere_closed_form_m2": 100449038.556,
+    "error_pct": 0.449049,
+    "error_vs_closed_form_pct": 0.449049,
+    "small_shape_theory_pct": 0.449049,
+    "check_qoregeo_vs_sphere_closed_form": 6.48269762988e-13,
+    "check_corners_vs_dense": -9.9554653991e-13,
+    "check_geographiclib_vs_closed_form": 0.0,
+    "check_geographiclib_unextrapolated_vs_closed_form": 2.0139457872e-10,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "size_km": 100.0,
+    "box": {
+     "south": -0.452184644254,
+     "north": 0.452184644254,
+     "dlng": 0.89831528412
+    },
+    "qoregeo_m2": 10044798550.3,
+    "qoregeo_corners_only_m2": 10044798550.3,
+    "geographiclib_m2": 9999896886.2,
+    "wgs84_closed_form_m2": 9999896886.2,
+    "sphere_closed_form_m2": 10044798550.3,
+    "error_pct": 0.449021,
+    "error_vs_closed_form_pct": 0.449021,
+    "small_shape_theory_pct": 0.449049,
+    "check_qoregeo_vs_sphere_closed_form": -9.49421047747e-15,
+    "check_corners_vs_dense": 1.00638631061e-14,
+    "check_geographiclib_vs_closed_form": -1.90736830041e-15,
+    "check_geographiclib_unextrapolated_vs_closed_form": 2.01382274054e-08,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": -4.52175323354,
+     "north": 4.52175323354,
+     "dlng": 8.9831528412
+    },
+    "qoregeo_m2": 1003427214510.0,
+    "qoregeo_corners_only_m2": 1003427214510.0,
+    "geographiclib_m2": 998969186202.0,
+    "wgs84_closed_form_m2": 998969186221.0,
+    "sphere_closed_form_m2": 1003427214510.0,
+    "error_pct": 0.446263,
+    "error_vs_closed_form_pct": 0.446263,
+    "small_shape_theory_pct": 0.449049,
+    "check_qoregeo_vs_sphere_closed_form": -2.67637436595e-15,
+    "check_corners_vs_dense": 2.31141422514e-15,
+    "check_geographiclib_vs_closed_form": -1.91675853595e-11,
+    "check_geographiclib_unextrapolated_vs_closed_form": 2.00146296678e-06,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 14.995481193,
+     "north": 15.0045188052,
+     "dlng": 0.00929795867905
+    },
+    "qoregeo_m2": 1003589.7886,
+    "qoregeo_corners_only_m2": 1003589.7886,
+    "geographiclib_m2": 999999.99897,
+    "wgs84_closed_form_m2": 999999.99897,
+    "sphere_closed_form_m2": 1003589.7886,
+    "error_pct": 0.358979,
+    "error_vs_closed_form_pct": 0.358979,
+    "small_shape_theory_pct": 0.358979,
+    "check_qoregeo_vs_sphere_closed_form": -2.216855174e-12,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": -4.25498001716e-13,
+    "check_geographiclib_unextrapolated_vs_closed_form": 1.41235068586e-12,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 14.9548118499,
+     "north": 15.0451879711,
+     "dlng": 0.0929795867905
+    },
+    "qoregeo_m2": 100358968.423,
+    "qoregeo_corners_only_m2": 100358968.423,
+    "geographiclib_m2": 99999989.6978,
+    "wgs84_closed_form_m2": 99999989.6978,
+    "sphere_closed_form_m2": 100358968.423,
+    "error_pct": 0.358979,
+    "error_vs_closed_form_pct": 0.358979,
+    "small_shape_theory_pct": 0.358979,
+    "check_qoregeo_vs_sphere_closed_form": -5.33038247868e-14,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": 3.12924417309e-15,
+    "check_geographiclib_unextrapolated_vs_closed_form": 1.7251687039e-10,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 14.5481105237,
+     "north": 15.4518715752,
+     "dlng": 0.929795867905
+    },
+    "qoregeo_m2": 10035792468.6,
+    "qoregeo_corners_only_m2": 10035792468.6,
+    "geographiclib_m2": 9999896978.66,
+    "wgs84_closed_form_m2": 9999896978.66,
+    "sphere_closed_form_m2": 10035792468.6,
+    "error_pct": 0.358959,
+    "error_vs_closed_form_pct": 0.358959,
+    "small_shape_theory_pct": 0.358979,
+    "check_qoregeo_vs_sphere_closed_form": -1.88154064803e-14,
+    "check_corners_vs_dense": 1.99557341458e-14,
+    "check_geographiclib_vs_closed_form": 9.34610458561e-15,
+    "check_geographiclib_unextrapolated_vs_closed_form": 1.72491998059e-08,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 10.4803819987,
+     "north": 19.5178316329,
+     "dlng": 9.29795867905
+    },
+    "qoregeo_m2": 1002535894700.0,
+    "qoregeo_corners_only_m2": 1002535894700.0,
+    "geographiclib_m2": 998970107915.0,
+    "wgs84_closed_form_m2": 998970107927.0,
+    "sphere_closed_form_m2": 1002535894700.0,
+    "error_pct": 0.356946,
+    "error_vs_closed_form_pct": 0.356946,
+    "small_shape_theory_pct": 0.358979,
+    "check_qoregeo_vs_sphere_closed_form": 1.21761538061e-16,
+    "check_corners_vs_dense": -1.09585384255e-15,
+    "check_geographiclib_vs_closed_form": -1.17399962025e-11,
+    "check_geographiclib_unextrapolated_vs_closed_form": 1.71525351391e-06,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 30.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 29.9954894979,
+     "north": 30.004510499,
+     "dlng": 0.0103641678112
+    },
+    "qoregeo_m2": 1001131.0839,
+    "qoregeo_corners_only_m2": 1001131.0839,
+    "geographiclib_m2": 999999.998973,
+    "wgs84_closed_form_m2": 999999.998973,
+    "sphere_closed_form_m2": 1001131.08388,
+    "error_pct": 0.113108,
+    "error_vs_closed_form_pct": 0.113108,
+    "small_shape_theory_pct": 0.113108,
+    "check_qoregeo_vs_sphere_closed_form": 2.45393692802e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": -8.03498552074e-13,
+    "check_geographiclib_unextrapolated_vs_closed_form": 1.16415321946e-15,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 30.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 29.9548948402,
+     "north": 30.0451048505,
+     "dlng": 0.103641678112
+    },
+    "qoregeo_m2": 100113098.203,
+    "qoregeo_corners_only_m2": 100113098.203,
+    "geographiclib_m2": 99999989.7231,
+    "wgs84_closed_form_m2": 99999989.7231,
+    "sphere_closed_form_m2": 100113098.203,
+    "error_pct": 0.113108,
+    "error_vs_closed_form_pct": 0.113108,
+    "small_shape_theory_pct": 0.113108,
+    "check_qoregeo_vs_sphere_closed_form": 4.55460414988e-13,
+    "check_corners_vs_dense": -9.98887204242e-13,
+    "check_geographiclib_vs_closed_form": -7.8529127562e-14,
+    "check_geographiclib_unextrapolated_vs_closed_form": 6.7510760808e-11,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 30.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 29.548934529,
+     "north": 30.4510345411,
+     "dlng": 1.03641678112
+    },
+    "qoregeo_m2": 10011207974.3,
+    "qoregeo_corners_only_m2": 10011207974.3,
+    "geographiclib_m2": 9999897231.04,
+    "wgs84_closed_form_m2": 9999897231.04,
+    "sphere_closed_form_m2": 10011207974.3,
+    "error_pct": 0.113109,
+    "error_vs_closed_form_pct": 0.113109,
+    "small_shape_theory_pct": 0.113108,
+    "check_qoregeo_vs_sphere_closed_form": -8.23052134658e-14,
+    "check_corners_vs_dense": 6.99213271804e-14,
+    "check_geographiclib_vs_closed_form": 4.00547329274e-15,
+    "check_geographiclib_unextrapolated_vs_closed_form": 6.75800840856e-09,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 30.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 25.4880025181,
+     "north": 34.5089108987,
+     "dlng": 10.3641678112
+    },
+    "qoregeo_m2": 1000102649610.0,
+    "qoregeo_corners_only_m2": 1000102649610.0,
+    "geographiclib_m2": 998972624026.0,
+    "wgs84_closed_form_m2": 998972624013.0,
+    "sphere_closed_form_m2": 1000102649610.0,
+    "error_pct": 0.113119,
+    "error_vs_closed_form_pct": 0.113119,
+    "small_shape_theory_pct": 0.113108,
+    "check_qoregeo_vs_sphere_closed_form": -5.37054246591e-15,
+    "check_corners_vs_dense": 7.07935143234e-15,
+    "check_geographiclib_vs_closed_form": 1.35402781441e-11,
+    "check_geographiclib_unextrapolated_vs_closed_form": 6.7584486644e-07,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 45.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 44.995500835,
+     "north": 45.0044991614,
+     "dlng": 0.012682817247
+    },
+    "qoregeo_m2": 997777.3039,
+    "qoregeo_corners_only_m2": 997777.3039,
+    "geographiclib_m2": 999999.998976,
+    "wgs84_closed_form_m2": 999999.998977,
+    "sphere_closed_form_m2": 997777.303878,
+    "error_pct": -0.22227,
+    "error_vs_closed_form_pct": -0.22227,
+    "small_shape_theory_pct": -0.22227,
+    "check_qoregeo_vs_sphere_closed_form": 2.18942321965e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": -1.29139516635e-12,
+    "check_geographiclib_unextrapolated_vs_closed_form": -2.99012754418e-12,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 45.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 44.9550081903,
+     "north": 45.0449914537,
+     "dlng": 0.12682817247
+    },
+    "qoregeo_m2": 99777720.5445,
+    "qoregeo_corners_only_m2": 99777720.5444,
+    "geographiclib_m2": 99999989.7575,
+    "wgs84_closed_form_m2": 99999989.7575,
+    "sphere_closed_form_m2": 99777720.5444,
+    "error_pct": -0.222269,
+    "error_vs_closed_form_pct": -0.222269,
+    "small_shape_theory_pct": -0.22227,
+    "check_qoregeo_vs_sphere_closed_form": 1.39919992623e-12,
+    "check_corners_vs_dense": -1.00209536824e-12,
+    "check_geographiclib_vs_closed_form": 6.57141275956e-14,
+    "check_geographiclib_unextrapolated_vs_closed_form": -1.98622813303e-10,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 45.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 44.5500658848,
+     "north": 45.4498985201,
+     "dlng": 1.2682817247
+    },
+    "qoregeo_m2": 9977673620.52,
+    "qoregeo_corners_only_m2": 9977673620.51,
+    "geographiclib_m2": 9999897575.31,
+    "wgs84_closed_form_m2": 9999897575.31,
+    "sphere_closed_form_m2": 9977673620.51,
+    "error_pct": -0.222242,
+    "error_vs_closed_form_pct": -0.222242,
+    "small_shape_theory_pct": -0.22227,
+    "check_qoregeo_vs_sphere_closed_form": 1.60958116081e-13,
+    "check_corners_vs_dense": -1.20240682916e-13,
+    "check_geographiclib_vs_closed_form": 7.82020949279e-15,
+    "check_geographiclib_unextrapolated_vs_closed_form": -1.98680391148e-08,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 45.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 40.4990600743,
+     "north": 49.4973876571,
+     "dlng": 12.682817247
+    },
+    "qoregeo_m2": 996783239316.0,
+    "qoregeo_corners_only_m2": 996783239316.0,
+    "geographiclib_m2": 998976056240.0,
+    "wgs84_closed_form_m2": 998976056174.0,
+    "sphere_closed_form_m2": 996783239316.0,
+    "error_pct": -0.219506,
+    "error_vs_closed_form_pct": -0.219506,
+    "small_shape_theory_pct": -0.22227,
+    "check_qoregeo_vs_sphere_closed_form": -6.85799803846e-15,
+    "check_corners_vs_dense": 5.51089128091e-15,
+    "check_geographiclib_vs_closed_form": 6.60902557171e-11,
+    "check_geographiclib_unextrapolated_vs_closed_form": -1.96238008585e-06,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 59.9955121631,
+     "north": 60.0044878338,
+     "dlng": 0.0179211464484
+    },
+    "qoregeo_m2": 994429.1509,
+    "qoregeo_corners_only_m2": 994429.1509,
+    "geographiclib_m2": 999999.998979,
+    "wgs84_closed_form_m2": 999999.99898,
+    "sphere_closed_form_m2": 994429.150876,
+    "error_pct": -0.557085,
+    "error_vs_closed_form_pct": -0.557085,
+    "small_shape_theory_pct": -0.557085,
+    "check_qoregeo_vs_sphere_closed_form": 2.41730312836e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": -1.43051147607e-12,
+    "check_geographiclib_unextrapolated_vs_closed_form": -1.03315105767e-11,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 59.955121493,
+     "north": 60.0448781997,
+     "dlng": 0.179211464484
+    },
+    "qoregeo_m2": 99442905.5808,
+    "qoregeo_corners_only_m2": 99442905.5807,
+    "geographiclib_m2": 99999989.7919,
+    "wgs84_closed_form_m2": 99999989.7919,
+    "sphere_closed_form_m2": 99442905.5807,
+    "error_pct": -0.557084,
+    "error_vs_closed_form_pct": -0.557084,
+    "small_shape_theory_pct": -0.557085,
+    "check_qoregeo_vs_sphere_closed_form": 1.03244168124e-12,
+    "check_corners_vs_dense": -1.00561917603e-12,
+    "check_geographiclib_vs_closed_form": 1.54078022473e-13,
+    "check_geographiclib_unextrapolated_vs_closed_form": -9.94644415585e-10,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 59.5512010587,
+     "north": 60.4487682185,
+     "dlng": 1.79211464484
+    },
+    "qoregeo_m2": 9944195489.38,
+    "qoregeo_corners_only_m2": 9944195489.37,
+    "geographiclib_m2": 9999897918.99,
+    "wgs84_closed_form_m2": 9999897918.99,
+    "sphere_closed_form_m2": 9944195489.37,
+    "error_pct": -0.55703,
+    "error_vs_closed_form_pct": -0.55703,
+    "small_shape_theory_pct": -0.557085,
+    "check_qoregeo_vs_sphere_closed_form": 1.42894891091e-13,
+    "check_corners_vs_dense": -1.40785033639e-13,
+    "check_geographiclib_vs_closed_form": -1.04905245688e-14,
+    "check_geographiclib_unextrapolated_vs_closed_form": -9.94777757712e-08,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 55.5105848769,
+     "north": 64.4863489809,
+     "dlng": 17.9211464484
+    },
+    "qoregeo_m2": 993468987471.0,
+    "qoregeo_corners_only_m2": 993468987471.0,
+    "geographiclib_m2": 998979482830.0,
+    "wgs84_closed_form_m2": 998979482704.0,
+    "sphere_closed_form_m2": 993468987471.0,
+    "error_pct": -0.551612,
+    "error_vs_closed_form_pct": -0.551612,
+    "small_shape_theory_pct": -0.557085,
+    "check_qoregeo_vs_sphere_closed_form": 4.54629346206e-15,
+    "check_corners_vs_dense": -4.91491185088e-15,
+    "check_geographiclib_vs_closed_form": 1.25620507471e-10,
+    "check_geographiclib_unextrapolated_vs_closed_form": -9.85103929893e-06,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 75.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 74.9955204503,
+     "north": 75.0044795479,
+     "dlng": 0.0345996747278
+    },
+    "qoregeo_m2": 991981.7001,
+    "qoregeo_corners_only_m2": 991981.7001,
+    "geographiclib_m2": 999999.998991,
+    "wgs84_closed_form_m2": 999999.998987,
+    "sphere_closed_form_m2": 991981.700142,
+    "error_pct": -0.80183,
+    "error_vs_closed_form_pct": -0.80183,
+    "small_shape_theory_pct": -0.80183,
+    "check_qoregeo_vs_sphere_closed_form": -4.22185840478e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": 4.03716694972e-12,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.18322922814e-11,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 75.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 74.9552044233,
+     "north": 75.0447953998,
+     "dlng": 0.345996747278
+    },
+    "qoregeo_m2": 99198160.7504,
+    "qoregeo_corners_only_m2": 99198160.7504,
+    "geographiclib_m2": 99999989.8169,
+    "wgs84_closed_form_m2": 99999989.817,
+    "sphere_closed_form_m2": 99198160.7504,
+    "error_pct": -0.801829,
+    "error_vs_closed_form_pct": -0.801829,
+    "small_shape_theory_pct": -0.80183,
+    "check_qoregeo_vs_sphere_closed_form": -1.47211781544e-14,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": -1.14351522646e-12,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.33973018065e-09,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 75.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 74.5520361914,
+     "north": 75.4479461144,
+     "dlng": 3.45996747278
+    },
+    "qoregeo_m2": 9919723440.4,
+    "qoregeo_corners_only_m2": 9919723440.39,
+    "geographiclib_m2": 9999898170.22,
+    "wgs84_closed_form_m2": 9999898170.23,
+    "sphere_closed_form_m2": 9919723440.39,
+    "error_pct": -0.801755,
+    "error_vs_closed_form_pct": -0.801755,
+    "small_shape_theory_pct": -0.80183,
+    "check_qoregeo_vs_sphere_closed_form": 1.86894612762e-13,
+    "check_corners_vs_dense": -1.91509294558e-13,
+    "check_geographiclib_vs_closed_form": -1.22453029163e-13,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.33838844615e-07,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 75.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 70.519488292,
+     "north": 79.4787457805,
+     "dlng": 34.5996747278
+    },
+    "qoregeo_m2": 991046059267.0,
+    "qoregeo_corners_only_m2": 991046059267.0,
+    "geographiclib_m2": 998981985421.0,
+    "wgs84_closed_form_m2": 998981987527.0,
+    "sphere_closed_form_m2": 991046059267.0,
+    "error_pct": -0.794401,
+    "error_vs_closed_form_pct": -0.794402,
+    "small_shape_theory_pct": -0.80183,
+    "check_qoregeo_vs_sphere_closed_form": -1.675155493e-14,
+    "check_corners_vs_dense": 2.08162704645e-14,
+    "check_geographiclib_vs_closed_form": -2.10898962911e-09,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.28933929677e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "size_km": 1.0,
+    "box": {
+     "south": 84.9955231389,
+     "north": 85.0044768605,
+     "dlng": 0.102727174554
+    },
+    "qoregeo_m2": 991188.1029,
+    "qoregeo_corners_only_m2": 991188.1029,
+    "geographiclib_m2": 999999.998988,
+    "wgs84_closed_form_m2": 999999.998985,
+    "sphere_closed_form_m2": 991188.10294,
+    "error_pct": -0.88119,
+    "error_vs_closed_form_pct": -0.88119,
+    "small_shape_theory_pct": -0.88119,
+    "check_qoregeo_vs_sphere_closed_form": -4.0330899854e-11,
+    "check_corners_vs_dense": 0.0,
+    "check_geographiclib_vs_closed_form": 2.78104562595e-12,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.10931481195e-10,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "size_km": 10.0,
+    "box": {
+     "south": 84.9552313614,
+     "north": 85.0447685772,
+     "dlng": 1.02727174554
+    },
+    "qoregeo_m2": 99118801.1071,
+    "qoregeo_corners_only_m2": 99118801.1088,
+    "geographiclib_m2": 99999989.8251,
+    "wgs84_closed_form_m2": 99999989.8251,
+    "sphere_closed_form_m2": 99118801.109,
+    "error_pct": -0.881189,
+    "error_vs_closed_form_pct": -0.881189,
+    "small_shape_theory_pct": -0.88119,
+    "check_qoregeo_vs_sphere_closed_form": -1.95550039004e-11,
+    "check_corners_vs_dense": 1.7151125274e-11,
+    "check_geographiclib_vs_closed_form": 2.37673545225e-13,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.17245956241e-08,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "size_km": 100.0,
+    "box": {
+     "south": 84.5523107616,
+     "north": 85.4476830982,
+     "dlng": 10.2727174554
+    },
+    "qoregeo_m2": 9911788260.85,
+    "qoregeo_corners_only_m2": 9911788260.84,
+    "geographiclib_m2": 9999898251.38,
+    "wgs84_closed_form_m2": 9999898251.69,
+    "sphere_closed_form_m2": 9911788260.84,
+    "error_pct": -0.881109,
+    "error_vs_closed_form_pct": -0.881109,
+    "small_shape_theory_pct": -0.88119,
+    "check_qoregeo_vs_sphere_closed_form": 1.15805783681e-12,
+    "check_corners_vs_dense": -9.28293619935e-13,
+    "check_geographiclib_vs_closed_form": -3.09096620348e-11,
+    "check_geographiclib_unextrapolated_vs_closed_form": -5.17197970742e-06,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "size_km": 1000.0,
+    "box": {
+     "south": 80.5227422068,
+     "north": 89.4766449784,
+     "dlng": 102.727174554
+    },
+    "qoregeo_m2": 990260366834.0,
+    "qoregeo_corners_only_m2": 990260366834.0,
+    "geographiclib_m2": 998982504592.0,
+    "wgs84_closed_form_m2": 998982799742.0,
+    "sphere_closed_form_m2": 990260366834.0,
+    "error_pct": -0.873102,
+    "error_vs_closed_form_pct": -0.873131,
+    "small_shape_theory_pct": -0.88119,
+    "check_qoregeo_vs_sphere_closed_form": -9.15902980925e-14,
+    "check_corners_vs_dense": 1.13779064791e-13,
+    "check_geographiclib_vs_closed_form": -2.95450447555e-07,
+    "check_geographiclib_unextrapolated_vs_closed_form": -0.000512438415302,
+    "check_pyproj_vs_geographiclib": 0.0
+   }
+  ],
+  "circles": [
+   {
+    "lat": 0.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3154432.7819,
+    "geographiclib_m2": 3140331.15062,
+    "wgs84_circle_m2": 3141592.03938,
+    "error_pct": 0.449049,
+    "small_shape_theory_pct": 0.449049,
+    "check_ratio_change_n_to_2n": 2.74895661789e-11,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 315443211.184,
+    "geographiclib_m2": 314033051.167,
+    "wgs84_circle_m2": 314159139.788,
+    "error_pct": 0.449048,
+    "small_shape_theory_pct": 0.449049,
+    "check_ratio_change_n_to_2n": 2.24381335734e-09,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31543651055.8,
+    "geographiclib_m2": 31402666290.2,
+    "wgs84_circle_m2": 31415272583.7,
+    "error_pct": 0.448958,
+    "small_shape_theory_pct": 0.449049,
+    "check_ratio_change_n_to_2n": 2.24379071101e-07,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 0.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3147672183320.0,
+    "geographiclib_m2": 3133883670680.0,
+    "wgs84_circle_m2": 3135118807340.0,
+    "error_pct": 0.439982,
+    "small_shape_theory_pct": 0.449049,
+    "check_ratio_change_n_to_2n": 2.22960824023e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3151604.2786,
+    "geographiclib_m2": 3140331.15078,
+    "wgs84_circle_m2": 3141592.03965,
+    "error_pct": 0.358979,
+    "small_shape_theory_pct": 0.358979,
+    "check_ratio_change_n_to_2n": -5.10700370882e-11,
+    "check_pyproj_vs_geographiclib": -5.59920892558e-13
+   },
+   {
+    "lat": 15.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 315160361.496,
+    "geographiclib_m2": 314033051.225,
+    "wgs84_circle_m2": 314159139.846,
+    "error_pct": 0.358978,
+    "small_shape_theory_pct": 0.358979,
+    "check_ratio_change_n_to_2n": 2.23659091247e-09,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 15.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31515372559.5,
+    "geographiclib_m2": 31402666868.7,
+    "wgs84_circle_m2": 31415273164.6,
+    "error_pct": 0.358905,
+    "small_shape_theory_pct": 0.358979,
+    "check_ratio_change_n_to_2n": 2.23575064906e-07,
+    "check_pyproj_vs_geographiclib": 8.50337997438e-16
+   },
+   {
+    "lat": 15.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3144908535660.0,
+    "geographiclib_m2": 3133889404050.0,
+    "wgs84_circle_m2": 3135124563280.0,
+    "error_pct": 0.351612,
+    "small_shape_theory_pct": 0.358979,
+    "check_ratio_change_n_to_2n": 2.22170999644e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 30.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3143883.1316,
+    "geographiclib_m2": 3140331.15069,
+    "wgs84_circle_m2": 3141592.03955,
+    "error_pct": 0.113108,
+    "small_shape_theory_pct": 0.113108,
+    "check_ratio_change_n_to_2n": -6.06832362138e-11,
+    "check_pyproj_vs_geographiclib": -2.96093760141e-12
+   },
+   {
+    "lat": 30.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 314388248.555,
+    "geographiclib_m2": 314033051.383,
+    "wgs84_circle_m2": 314159140.005,
+    "error_pct": 0.113108,
+    "small_shape_theory_pct": 0.113108,
+    "check_ratio_change_n_to_2n": 2.21417395529e-09,
+    "check_pyproj_vs_geographiclib": 8.08563893593e-14
+   },
+   {
+    "lat": 30.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31438178812.4,
+    "geographiclib_m2": 31402668448.1,
+    "wgs84_circle_m2": 31415274750.3,
+    "error_pct": 0.113081,
+    "small_shape_theory_pct": 0.113108,
+    "check_ratio_change_n_to_2n": 2.21386574184e-07,
+    "check_pyproj_vs_geographiclib": 1.09329165601e-15
+   },
+   {
+    "lat": 30.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3137363242130.0,
+    "geographiclib_m2": 3133905055790.0,
+    "wgs84_circle_m2": 3135140276600.0,
+    "error_pct": 0.110348,
+    "small_shape_theory_pct": 0.113108,
+    "check_ratio_change_n_to_2n": 2.2002093178e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 45.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3133351.1519,
+    "geographiclib_m2": 3140331.15057,
+    "wgs84_circle_m2": 3141592.03938,
+    "error_pct": -0.22227,
+    "small_shape_theory_pct": -0.22227,
+    "check_ratio_change_n_to_2n": 2.73026046216e-12,
+    "check_pyproj_vs_geographiclib": -1.13123000673e-11
+   },
+   {
+    "lat": 45.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 313335052.951,
+    "geographiclib_m2": 314033051.598,
+    "wgs84_circle_m2": 314159140.221,
+    "error_pct": -0.222269,
+    "small_shape_theory_pct": -0.22227,
+    "check_ratio_change_n_to_2n": 2.18416285058e-09,
+    "check_pyproj_vs_geographiclib": 1.53741021916e-14
+   },
+   {
+    "lat": 45.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31332882902.0,
+    "geographiclib_m2": 31402670602.3,
+    "wgs84_circle_m2": 31415276913.2,
+    "error_pct": -0.222235,
+    "small_shape_theory_pct": -0.22227,
+    "check_ratio_change_n_to_2n": 2.18416501996e-07,
+    "check_pyproj_vs_geographiclib": -1.09329158101e-15
+   },
+   {
+    "lat": 45.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3127068340440.0,
+    "geographiclib_m2": 3133926407750.0,
+    "wgs84_circle_m2": 3135161712590.0,
+    "error_pct": -0.218833,
+    "small_shape_theory_pct": -0.22227,
+    "check_ratio_change_n_to_2n": 2.1710222971e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3122836.8428,
+    "geographiclib_m2": 3140331.15058,
+    "wgs84_circle_m2": 3141592.03936,
+    "error_pct": -0.557085,
+    "small_shape_theory_pct": -0.557085,
+    "check_ratio_change_n_to_2n": 2.93298718645e-12,
+    "check_pyproj_vs_geographiclib": -1.51842953924e-13
+   },
+   {
+    "lat": 60.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 312283624.373,
+    "geographiclib_m2": 314033051.813,
+    "wgs84_circle_m2": 314159140.437,
+    "error_pct": -0.557084,
+    "small_shape_theory_pct": -0.557085,
+    "check_ratio_change_n_to_2n": 2.15386175562e-09,
+    "check_pyproj_vs_geographiclib": -5.16266147314e-14
+   },
+   {
+    "lat": 60.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31227763327.9,
+    "geographiclib_m2": 31402672753.0,
+    "wgs84_circle_m2": 31415279072.5,
+    "error_pct": -0.556989,
+    "small_shape_theory_pct": -0.557085,
+    "check_ratio_change_n_to_2n": 2.15468948239e-07,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 60.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3116787509080.0,
+    "geographiclib_m2": 3133947726530.0,
+    "wgs84_circle_m2": 3135183115280.0,
+    "error_pct": -0.547559,
+    "small_shape_theory_pct": -0.557085,
+    "check_ratio_change_n_to_2n": 2.14204640355e-05,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 75.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3115151.0371,
+    "geographiclib_m2": 3140331.15064,
+    "wgs84_circle_m2": 3141592.03944,
+    "error_pct": -0.80183,
+    "small_shape_theory_pct": -0.80183,
+    "check_ratio_change_n_to_2n": -1.81558101886e-11,
+    "check_pyproj_vs_geographiclib": 5.50430707964e-13
+   },
+   {
+    "lat": 75.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 311515045.483,
+    "geographiclib_m2": 314033051.971,
+    "wgs84_circle_m2": 314159140.595,
+    "error_pct": -0.801828,
+    "small_shape_theory_pct": -0.80183,
+    "check_ratio_change_n_to_2n": 2.13353557044e-09,
+    "check_pyproj_vs_geographiclib": -3.03685968856e-15
+   },
+   {
+    "lat": 75.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31150922253.5,
+    "geographiclib_m2": 31402674325.1,
+    "wgs84_circle_m2": 31415280650.9,
+    "error_pct": -0.80169,
+    "small_shape_theory_pct": -0.80183,
+    "check_ratio_change_n_to_2n": 2.13325518472e-07,
+    "check_pyproj_vs_geographiclib": 1.4577219352e-15
+   },
+   {
+    "lat": 75.0,
+    "radius_km": 1000.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3109270356130.0,
+    "geographiclib_m2": 3133963311900.0,
+    "wgs84_circle_m2": 3135198762010.0,
+    "error_pct": -0.787915,
+    "small_shape_theory_pct": -0.80183,
+    "check_ratio_change_n_to_2n": 2.12096798409e-05,
+    "check_pyproj_vs_geographiclib": -1.55803116184e-16
+   },
+   {
+    "lat": 85.0,
+    "radius_km": 1.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 3112658.8792,
+    "geographiclib_m2": 3140331.1506,
+    "wgs84_circle_m2": 3141592.03938,
+    "error_pct": -0.88119,
+    "small_shape_theory_pct": -0.88119,
+    "check_ratio_change_n_to_2n": 4.20941059787e-12,
+    "check_pyproj_vs_geographiclib": -3.03685907846e-13
+   },
+   {
+    "lat": 85.0,
+    "radius_km": 10.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 311265830.228,
+    "geographiclib_m2": 314033052.022,
+    "wgs84_circle_m2": 314159140.646,
+    "error_pct": -0.881188,
+    "small_shape_theory_pct": -0.88119,
+    "check_ratio_change_n_to_2n": 2.1272421602e-09,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "radius_km": 100.0,
+    "contains_pole": false,
+    "vertices": 128,
+    "qoregeo_m2": 31126006142.9,
+    "geographiclib_m2": 31402674834.9,
+    "wgs84_circle_m2": 31415281162.8,
+    "error_pct": -0.881035,
+    "small_shape_theory_pct": -0.88119,
+    "check_ratio_change_n_to_2n": 2.1263179073e-07,
+    "check_pyproj_vs_geographiclib": 0.0
+   },
+   {
+    "lat": 85.0,
+    "radius_km": 1000.0,
+    "contains_pole": true,
+    "vertices": 128,
+    "qoregeo_m2": 3108464962110.0,
+    "geographiclib_m2": 3133968365830.0,
+    "wgs84_circle_m2": 3135203835840.0,
+    "error_pct": -0.813773,
+    "small_shape_theory_pct": -0.88119,
+    "check_ratio_change_n_to_2n": -0.00154323260183,
+    "check_pyproj_vs_geographiclib": 0.0
+   }
+  ]
+ }
+}

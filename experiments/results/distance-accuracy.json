@@ -53,10 +53,10 @@
     20000000.0
    ]
   },
-  "utc_timestamp": "2026-10-19T12:45:12+00:00",
+  "utc_timestamp": "2026-10-19T12:49:27+00:00",
   "command": "python experiments/01_distance_accuracy.py --quick",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
-  "runtime_seconds": 2.9,
+  "runtime_seconds": 3.9,
   "figures": [
    "docs/assets/experiments/distance-accuracy-relative-error.svg",
    "docs/assets/experiments/distance-accuracy-haversine-by-latitude.svg",
@@ -1282,8 +1282,8 @@
      }
     ],
     "time_per_call_us": {
-     "converged_median": 23.370999997496256,
-     "fallback_median": 169.27199999372533,
+     "converged_median": 32.61300003032375,
+     "fallback_median": 223.53600002134044,
      "note": "single-shot wall time per call, indicative only"
     }
    },
@@ -1532,7 +1532,7 @@
      "bearing_deg": 90.0,
      "geodesic_azimuth_deg": 0.0
     },
-    "near-polar antipodes": {
+    "exact antipodes near the poles": {
      "a": [
       89.5,
       0.0
@@ -1714,6 +1714,16 @@
        "p99": null,
        "max": null,
        "mean": null
+      }
+     },
+     "bearing_from_exact_pole": {
+      "n": 200,
+      "abs_deg": {
+       "p50": 0.002279455232397254,
+       "p95": 0.00476483823210998,
+       "p99": 0.00495286812666194,
+       "max": 0.00499396034814481,
+       "mean": 0.002328933461714797
       }
      }
     },
@@ -2304,6 +2314,13 @@
       "max": 4.223542400715075,
       "mean": 0.45133490786631797
      },
+     "unrounded_position_error_pct_of_distance": {
+      "p50": 0.2696180773778519,
+      "p95": 0.5074032555917485,
+      "p99": 0.5447087585672358,
+      "max": 0.5507072384710814,
+      "mean": 0.29268573778962165
+     },
      "sphere_self_consistency_abs_m": {
       "p50": 2.752393868377112e-10,
       "p95": 1.1291626078602228e-09,
@@ -2334,6 +2351,13 @@
       "p99": 383.0995189255887,
       "max": 490.55117940417904,
       "mean": 66.449938822946
+     },
+     "unrounded_position_error_pct_of_distance": {
+      "p50": 0.28991201824632906,
+      "p95": 0.5135423125272431,
+      "p99": 0.5524759338145063,
+      "max": 0.557228729068524,
+      "mean": 0.29923996314477874
      },
      "sphere_self_consistency_abs_m": {
       "p50": 3.069544618483633e-10,
@@ -2366,6 +2390,13 @@
       "max": 5122.317609741635,
       "mean": 1138.6144867802034
      },
+     "unrounded_position_error_pct_of_distance": {
+      "p50": 0.2773848019428118,
+      "p95": 0.5146742780502018,
+      "p99": 0.545850370039702,
+      "max": 0.5562780273079668,
+      "mean": 0.29940105753016355
+     },
      "sphere_self_consistency_abs_m": {
       "p50": 3.4924596548080444e-10,
       "p95": 1.6909325495362272e-09,
@@ -2397,6 +2428,13 @@
       "max": 33952.5940250303,
       "mean": 9797.628019875812
      },
+     "unrounded_position_error_pct_of_distance": {
+      "p50": 0.2549635765684761,
+      "p95": 0.4661360910802172,
+      "p99": 0.5278247298055619,
+      "max": 0.5439829322450073,
+      "mean": 0.27282463369080695
+     },
      "sphere_self_consistency_abs_m": {
       "p50": 4.656612873077393e-10,
       "p95": 2.7939677238464355e-09,
@@ -2427,6 +2465,13 @@
       "p99": 32800.69176873805,
       "max": 35967.51057186711,
       "mean": 17094.198022819484
+     },
+     "unrounded_position_error_pct_of_distance": {
+      "p50": 0.1201108772282791,
+      "p95": 0.23968699179696945,
+      "p99": 0.3001506800610214,
+      "max": 0.3489250261330334,
+      "mean": 0.1262105674143492
      },
      "sphere_self_consistency_abs_m": {
       "p50": 1.862645149230957e-09,
@@ -3023,52 +3068,52 @@
    "repeats": 3,
    "per_call": {
     "qoregeo distance(method='haversine')": {
-     "median_us": 2.8226849997281533,
-     "min_us": 2.7153350004027743
+     "median_us": 3.153619999238799,
+     "min_us": 2.9980850001720682
     },
     "qoregeo distance(method='vincenty')": {
-     "median_us": 7.766359999550332,
-     "min_us": 7.686120000016672
+     "median_us": 7.900865000465274,
+     "min_us": 7.585895000374876
     },
     "qoregeo internal _haversine_km": {
-     "median_us": 0.6294699994668917,
-     "min_us": 0.6116650001786184
+     "median_us": 0.6018650003625226,
+     "min_us": 0.594970000520334
     },
     "qoregeo internal _vincenty_km": {
-     "median_us": 5.001709999987725,
-     "min_us": 4.959660000167787
+     "median_us": 4.939299999477953,
+     "min_us": 4.912944999659885
     },
     "geographiclib Geodesic.WGS84.Inverse (distance only)": {
-     "median_us": 75.99529000003713,
-     "min_us": 75.66110999960074
+     "median_us": 78.84937500080014,
+     "min_us": 74.43381000030058
     },
     "geopy geodesic": {
-     "median_us": 115.54591000049186,
-     "min_us": 113.36164499994084
+     "median_us": 131.6367250001349,
+     "min_us": 118.45467500052109
     },
     "geopy great_circle": {
-     "median_us": 6.04020000082528,
-     "min_us": 6.023070000082953
+     "median_us": 6.234955000081754,
+     "min_us": 5.971694999971078
     },
     "haversine package": {
-     "median_us": 0.8363799997823662,
-     "min_us": 0.8220150004945026
+     "median_us": 0.8564999995996914,
+     "min_us": 0.8477699998366006
     },
     "pyproj Geod.inv (scalar call)": {
-     "median_us": 1.4705499995670834,
-     "min_us": 1.363715000479715
+     "median_us": 1.4302750003025722,
+     "min_us": 1.382849999345126
     },
     "qoregeo distance(method='vincenty'), fallback pairs": {
-     "median_us": 153.11764499983838,
-     "min_us": 151.0661399993296
+     "median_us": 147.0730099993034,
+     "min_us": 142.59817499919336
     },
     "geographiclib Inverse, same fallback pairs": {
-     "median_us": 69.22696499941594,
-     "min_us": 66.97954000060236
+     "median_us": 72.8943599995091,
+     "min_us": 70.08324499906848
     },
     "pyproj Geod.inv (numpy arrays, per pair)": {
-     "median_us": 1.3212850001309562,
-     "min_us": 1.1261550002927834
+     "median_us": 1.1899449998509226,
+     "min_us": 1.1210999991817516
     }
    },
    "near_antipodal_fallback_pairs": 200,
@@ -3123,6 +3168,14 @@
      77.31125072473549
     ],
     "position_difference_m": 18.902158368617037
+   },
+   {
+    "claim": "README: bearing() of identical points returns 'North' / 0.0",
+    "same_tuple": 0.0,
+    "same_point_lng_180_vs_minus_180": 90.0,
+    "same_point_lng_180_vs_minus_180_compass": "East",
+    "same_point_north_pole_two_lngs": 28.5,
+    "distance_lng_180_vs_minus_180_m": 0.0
    }
   ]
  }

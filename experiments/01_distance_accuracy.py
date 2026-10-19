@@ -52,6 +52,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
+from matplotlib.lines import Line2D  # noqa: E402
 
 from geographiclib.geodesic import Geodesic  # noqa: E402
 
@@ -275,9 +276,15 @@ def summarize(meas: dict[str, Any], with_bearing: bool = True) -> dict[str, Any]
         },
     }
     if with_bearing:
-        keep = (np.abs(meas["lat_a"]) < 90.0) & (ref > 0)
+        at_pole = np.abs(meas["lat_a"]) == 90.0
+        keep = ~at_pole & (ref > 0)
         summary["bearing_vs_geodesic_azimuth"] = angle_stats(meas["bearing"][keep],
                                                              meas["ref_az"][keep])
+        if at_pole.any():
+            # From an exact pole both libraries measure the azimuth against the
+            # meridian of the pole's own longitude value.
+            pk = at_pole & (ref > 0)
+            summary["bearing_from_exact_pole"] = angle_stats(meas["bearing"][pk], meas["ref_az"][pk])
     return summary
 
 
@@ -293,21 +300,24 @@ def run_uniform(geo: GeoEngine, seed: int, n: int) -> tuple[dict[str, Any], dict
 def run_classes(geo: GeoEngine, seed: int, n: int) -> tuple[dict[str, Any], dict[str, Any], list]:
     """Stratified pairs: random start, random azimuth, log-uniform length per class.
 
-    Pairs are generated with geographiclib Direct and then classified by their
-    Inverse (shortest) distance, which differs from the requested length only
-    for the longest geodesics.
+    Pairs are generated with geographiclib Direct and grouped by the class they
+    were drawn for. The reference is the Inverse (shortest) distance, which
+    differs from the drawn length only for geodesics near 20,000 km.
     """
     rng = _rng(seed, "classes")
     pairs = []
-    for _, lo, hi in CLASSES:
+    cls = []
+    for ci, (_, lo, hi) in enumerate(CLASSES):
         for _ in range(n):
             a = _uniform_point(rng)
             d = W.Direct(a[0], a[1], rng.uniform(0.0, 360.0), _log_uniform(rng, lo, hi))
             pairs.append((a, (d["lat2"], _wrap_lng(d["lon2"]))))
+            cls.append(ci)
     meas = measure_pairs(geo, pairs)
+    meas["cls"] = np.array(cls)
     out: dict[str, Any] = {}
-    for name, lo, hi in CLASSES:
-        sel = (meas["ref"] >= lo) & (meas["ref"] < hi) if hi < 2.0e7 else (meas["ref"] >= lo)
+    for ci, (name, lo, hi) in enumerate(CLASSES):
+        sel = meas["cls"] == ci
         sub = {k: (v[sel] if isinstance(v, np.ndarray) else v) for k, v in meas.items()}
         sub["exceptions"] = {}
         out[name] = summarize(sub)
@@ -470,7 +480,7 @@ def run_poles_antimeridian(geo: GeoEngine, seed: int, n_pole: int, n_am: int) ->
         "Suva to Apia": ((-18.1416, 178.4415), (-13.8333, -171.7667)),
         "89.9 N across antimeridian": ((89.9, 179.0), (89.9, -179.0)),
         "equatorial antipodes": ((0.0, 0.0), (0.0, 180.0)),
-        "near-polar antipodes": ((89.5, 0.0), (-89.5, 180.0)),
+        "exact antipodes near the poles": ((89.5, 0.0), (-89.5, 180.0)),
     }
     cases = {}
     with WarnCounter() as wc:
@@ -507,9 +517,7 @@ def run_poles_antimeridian(geo: GeoEngine, seed: int, n_pole: int, n_am: int) ->
     random_sets = {}
     for label, pairs in sets.items():
         meas = measure_pairs(geo, pairs)
-        s = summarize(meas)
-        # The bearing from an exact pole depends only on the longitude convention.
-        random_sets[label] = s
+        random_sets[label] = summarize(meas)
     return {"named_cases": cases, "random_sets": random_sets}
 
 
@@ -537,13 +545,14 @@ def run_destination(geo: GeoEngine, seed: int, n: int, class_pairs: list, class_
             "position_error_m": _pct(errs_a),
             "position_error_pct_of_distance": _pct(100.0 * errs_a / sv),
             "unrounded_position_error_m": _pct(np.array(errs_raw)),
+            "unrounded_position_error_pct_of_distance": _pct(100.0 * np.array(errs_raw) / sv),
             "sphere_self_consistency_abs_m": _pct(np.array(self_cons)),
         }
 
     # Round trip through the public API: distance + bearing, then destination.
     ref = class_meas["ref"]
-    for name, lo, hi in CLASSES:
-        sel = np.flatnonzero((ref >= lo) & (ref < hi) if hi < 2.0e7 else (ref >= lo))[:n_rt]
+    for ci, (name, lo, hi) in enumerate(CLASSES):
+        sel = np.flatnonzero(class_meas["cls"] == ci)[:n_rt]
         e_pub, e_raw, dist = [], [], []
         for i in sel:
             a, b = class_pairs[i]
@@ -779,6 +788,12 @@ def run_doc_claims(geo: GeoEngine, results: dict[str, Any]) -> list[dict[str, An
         {"claim": "docstring: destination((28.6139, 77.2090), 10, 90) == (28.613861, 77.311444)",
          "qoregeo": d_dest, "geographiclib_direct": (ref_dest["lat2"], ref_dest["lon2"]),
          "position_difference_m": W.Inverse(d_dest[0], d_dest[1], ref_dest["lat2"], ref_dest["lon2"])["s12"]},
+        {"claim": "README: bearing() of identical points returns 'North' / 0.0",
+         "same_tuple": geo.bearing((10.0, 20.0), (10.0, 20.0), as_degrees=True),
+         "same_point_lng_180_vs_minus_180": geo.bearing((10.0, 180.0), (10.0, -180.0), as_degrees=True),
+         "same_point_lng_180_vs_minus_180_compass": geo.bearing((10.0, 180.0), (10.0, -180.0)),
+         "same_point_north_pole_two_lngs": geo.bearing((90.0, 0.0), (90.0, 123.0), as_degrees=True),
+         "distance_lng_180_vs_minus_180_m": geo.distance((10.0, 180.0), (10.0, -180.0), unit="m")},
     ]
 
 
@@ -841,12 +856,12 @@ def fig_relative_error(meas_list: list[dict[str, Any]]) -> str:
                 mx[i] = v.max()
         return med, p95, mx
 
-    fig, ax = plt.subplots(figsize=(8, 4.6))
+    fig, ax = plt.subplots(figsize=(8, 5.4))
     for est, color, label in ((hav, C_HAV, "haversine (sphere, R = 6371.0088 km)"),
                               (vin, C_VIN, "vincenty (WGS-84), public API")):
         med, p95, mx = bands(est)
         ax.fill_between(centers, med, p95, color=color, alpha=0.18, linewidth=0)
-        ax.plot(centers, med, color=color, linewidth=2, label=f"{label}: median")
+        ax.plot(centers, med, color=color, linewidth=2, label=f"{label}: median, shaded to p95")
         ax.plot(centers, mx, color=color, linewidth=1, linestyle=(0, (1, 1.5)),
                 label=f"{label}: max")
     med_raw, _, _ = bands(vraw)
@@ -857,14 +872,17 @@ def fig_relative_error(meas_list: list[dict[str, Any]]) -> str:
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlim(1, 2.1e7)
-    ax.set_ylim(1e-12, 3)
+    ax.set_ylim(1e-11, 3)
     ax.set_xticks([1, 10, 100, 1e3, 1e4, 1e5, 1e6, 1e7])
     ax.set_xticklabels(["1 m", "10 m", "100 m", "1 km", "10 km", "100 km", "1,000 km", "10,000 km"])
     ax.set_xlabel("Geodesic distance (WGS-84, log scale)")
     ax.set_ylabel("|relative error| vs geographiclib (%)")
-    ax.legend(loc="center left", fontsize=8, bbox_to_anchor=(0.0, 0.42))
-    ax.text(1.6e7, 0.25, "near-antipodal\nfallback", fontsize=7.5, color=INK2, ha="right", va="bottom")
-    fig.tight_layout(rect=(0, 0.02, 1, 1))
+    ax.annotate("near-antipodal pairs:\nvincenty falls back to haversine", xy=(1.95e7, 3e-2),
+                xytext=(2.5e6, 1e-3), fontsize=7.5, color=INK2, ha="right",
+                arrowprops={"arrowstyle": "-", "color": INK2, "linewidth": 0.6})
+    fig.legend(*ax.get_legend_handles_labels(), loc="lower center", ncol=2, fontsize=8,
+               bbox_to_anchor=(0.5, 0.02))
+    fig.tight_layout(rect=(0, 0.17, 1, 1))
     _note(fig)
     return _save(fig, "relative-error")
 
@@ -917,7 +935,7 @@ def fig_haversine_latitude(class_meas: dict[str, Any], class_pairs: list, seed: 
 def fig_antipodal(grid_data: dict[str, Any]) -> str:
     grids = grid_data["grids"]
     offs = grid_data["offs_deg"]
-    fig, axes = plt.subplots(1, 2, figsize=(8, 3.9), sharey=True)
+    fig, axes = plt.subplots(1, 2, figsize=(8, 3.7), sharey=True, layout="constrained")
     cmap = matplotlib.colormaps["Blues"]
     norm = LogNorm(vmin=1e-5, vmax=3e4)
     step = offs[1] - offs[0]
@@ -934,8 +952,9 @@ def fig_antipodal(grid_data: dict[str, Any]) -> str:
     axes[0].set_ylabel("B latitude offset from antipode (deg)")
     cb = fig.colorbar(im, ax=list(axes), shrink=0.9, pad=0.02)
     cb.set_label("vincenty |error| vs geographiclib (m)")
-    fig.text(0.01, 0.01, "Orange outline: calls that warned and fell back to haversine.",
-             fontsize=7.5, color=INK2, ha="left", va="bottom")
+    proxy = Line2D([], [], color=C_VIN, linewidth=1.2,
+                   label="boundary of calls that warned and fell back to haversine")
+    fig.legend(handles=[proxy], loc="outside lower center", fontsize=8)
     _note(fig)
     return _save(fig, "antipodal")
 
