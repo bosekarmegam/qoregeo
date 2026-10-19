@@ -810,6 +810,11 @@ class TestFont:
     def test_fallback_glyph(self) -> None:
         assert _glyph("é") == _glyph("?") == _glyph(chr(0x1F600))
 
+    def test_degree_glyph_for_grid_labels(self) -> None:
+        degree = _glyph("°")
+        assert degree != _glyph("?") and degree != _glyph("o") and any(degree)
+        assert all(b < 0x08 for b in degree)           # a small ring at the top
+
     def test_ascii_folding(self) -> None:
         assert _ascii("Zürich") == "Zurich"
         assert _ascii("São Paulo") == "Sao Paulo"
@@ -818,6 +823,417 @@ class TestFont:
         assert _ascii("Delhi — “north”") == 'Delhi - "north"'
         assert _ascii("Łódź · Tromsø · Gießen · Æsir") == "Lodz . Tromso . Giessen . AEsir"
         assert _ascii("40°26′ «x»") == "40?26' \"x\""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Annotations: feature labels, graticule, scale bar
+# ─────────────────────────────────────────────────────────────────────────────
+
+LABEL_INK = (0x33, 0x33, 0x33, 255)
+GRID_LINE = (0xE6, 0xE8, 0xEB, 255)
+GRID_TEXT = (0x8A, 0x8F, 0x98, 255)
+NICE_STEPS = (0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+              1, 2, 5, 10, 15, 30, 45, 60, 90)
+
+DELHI = [point(77.209, 28.6139), point(77.2295, 28.6129), point(77.1855, 28.5245),
+         point(77.241, 28.6562), point(77.1, 28.5562)]
+FIJI = [point(178.0, -17.8), point(178.44, -18.14), point(-179.0, -16.5), point(-178.8, -18.6)]
+WORLD = [point(-74.0, 40.7), point(139.7, 35.7), point(-0.1, 51.5), point(151.2, -33.9)]
+DEGREE_LABEL = re.compile(r"^(?:0°|180°|\d+(?:\.\d+)?°[NSEW])$")
+
+
+def named(lng: float, lat: float, name: Any) -> dict[str, Any]:
+    return feature({"type": "Point", "coordinates": [lng, lat]}, name=name)
+
+
+def svg_texts(root: ET.Element, gid: str) -> list[ET.Element]:
+    group = svg_group(root, gid)
+    return [] if group is None else list(group.iter(f"{SVG_NS}text"))
+
+
+def label_texts(svg: str) -> list[str]:
+    return [t.text or "" for t in svg_texts(parse_svg(svg), "qg-labels")]
+
+
+def grid_segments(root: ET.Element) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+    group = svg_group(root, "qg-grid")
+    if group is None:
+        return []
+    pts = path_points(next(group.iter(f"{SVG_NS}path")).get("d", ""))
+    return list(zip(pts[0::2], pts[1::2], strict=True))
+
+
+def grid_lines(root: ET.Element) -> tuple[list[float], list[float]]:
+    """(x of each meridian, y of each parallel) from the qg-grid path."""
+    segments = grid_segments(root)
+    xs = [a[0] for a, b in segments if a[0] == b[0]]
+    ys = [a[1] for a, b in segments if a[1] == b[1]]
+    return xs, ys
+
+
+def degree_value(text: str) -> float:
+    """'28.6°N' → 28.6, '179°W' → -179, '0°' → 0."""
+    number = float(text.split("°")[0])
+    return -number if text.endswith(("S", "W")) else number
+
+
+def ink_box(img: PNG, color: tuple[int, int, int, int],
+            region: tuple[int, int, int, int]) -> tuple[int, int, int, int] | None:
+    """Bounding box (x0, y0, x1, y1 inclusive) of ``color`` pixels inside ``region``."""
+    x0, y0, x1, y1 = region
+    hits = [(x, y) for y in range(y0, y1) for x in range(x0, x1) if img.px(x, y) == color]
+    if not hits:
+        return None
+    return (min(x for x, _ in hits), min(y for _, y in hits),
+            max(x for x, _ in hits), max(y for _, y in hits))
+
+
+class TestLabels:
+    def test_png_label_has_white_halo_over_the_data(self) -> None:
+        zone = feature({"type": "Polygon", "coordinates": [square(1)]})
+        img = png([zone, named(0, 0, "Delhi")], width=800, height=600, labels="name",
+                  grid=False, scale_bar=False)
+        box = ink_box(img, LABEL_INK, (0, 0, 800, 600))
+        assert box is not None
+        x0, y0, x1, y1 = box
+        assert img.px(x0 - 1, y0) == WHITE and img.px(x1 + 1, y1) == WHITE
+        assert img.px(x0, y0 - 1) == WHITE and img.px(x0, y1 + 1) == WHITE
+        assert close(img.px(x1 + 4, y0), (207, 247, 239, 255), tol=2)   # the fill beyond
+
+    def test_png_label_drawn_right_of_the_point(self) -> None:
+        img = png([named(77.2, 28.6, "Delhi")], width=400, height=300, labels="name",
+                  grid=False, scale_bar=False)
+        assert img.px(200, 150) == TEAL                # the marker, centred
+        box = ink_box(img, LABEL_INK, (0, 0, 400, 300))
+        assert box is not None
+        x0, y0, x1, y1 = box
+        assert 205 < x0 <= 210 and x1 < 240            # 'Delhi' = 5 glyphs, 29 px
+        assert y0 == 147 and y1 == 153                 # 7 rows, centred on the marker
+        # The white halo around the glyphs.
+        assert img.px(x0 - 1, 150) == WHITE and img.px(x0, y0) == LABEL_INK
+
+    def test_no_labels_by_default(self) -> None:
+        feats = [named(77.2, 28.6, "Delhi")]
+        img = png(feats, width=400, height=300, scale_bar=False)
+        assert not img.where(LABEL_INK)
+        assert svg_group(parse_svg(render_svg(feats)), "qg-labels") is None
+
+    def test_missing_or_null_property_gets_no_label(self) -> None:
+        feats = [
+            feature({"type": "Point", "coordinates": [0, 0]}, other="x"),
+            named(1, 1, None),
+            {"type": "Feature", "properties": None,
+             "geometry": {"type": "Point", "coordinates": [2, 2]}},
+            {"type": "Point", "coordinates": [3, 3]},
+            named(4, 4, "   "),                         # blank after trimming
+        ]
+        assert svg_group(parse_svg(render_svg(feats, labels="name")), "qg-labels") is None
+        img = png(feats, width=400, height=300, labels="name", scale_bar=False)
+        assert not img.where(LABEL_INK)
+        assert label_texts(render_svg(feats + [named(5, 5, "Here")], labels="name")) == ["Here"]
+
+    def test_values_are_stringified_and_whitespace_folded(self) -> None:
+        feats = [named(0, 0, 42), named(10, 0, 3.5), named(20, 0, True),
+                 named(30, 0, "  Big\n\tCity  ")]
+        assert label_texts(render_svg(feats, labels="name")) == ["42", "3.5", "True", "Big City"]
+
+    def test_coincident_points_get_one_label(self) -> None:
+        feats = [named(77.2, 28.6, "First"), named(77.2, 28.6, "Second")]
+        assert label_texts(render_svg(feats, labels="name")) == ["First"]
+        img = png(feats, width=400, height=300, labels="name", scale_bar=False)
+        box = ink_box(img, LABEL_INK, (0, 0, 400, 300))
+        assert box is not None and box[2] - box[0] + 1 == 5 * 6 - 1    # just 'First'
+
+    def test_labels_never_overlap_and_some_are_skipped(self) -> None:
+        feats = [named(77.2 + 0.0004 * (i % 6), 28.6 + 0.0003 * (i // 6), f"Store {i}")
+                 for i in range(36)]
+        root = parse_svg(render_svg(feats, labels="name"))
+        boxes = []
+        for t in svg_texts(root, "qg-labels"):
+            width = 6 * len(t.text or "") - 1          # 5x7 cells at scale 1
+            x = float(t.get("x", "nan"))
+            x0 = x - width if t.get("text-anchor") == "end" else x
+            top = float(t.get("y", "nan")) - 7.46
+            boxes.append((x0 - 1, top - 1, x0 + width + 1, top + 8))
+        assert 1 <= len(boxes) < len(feats)
+        for i, a in enumerate(boxes):
+            for b in boxes[i + 1:]:
+                assert a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], (a, b)
+
+    def test_label_goes_left_when_the_right_is_taken(self) -> None:
+        # 'West' to the right of its marker would cover the marker of 'East'.
+        feats = [named(0.0, 0.0, "West"), named(0.0003, 0.0, "East")]
+        texts = svg_texts(parse_svg(render_svg(feats, labels="name")), "qg-labels")
+        assert [(t.text, t.get("text-anchor")) for t in texts] == [("West", "end"),
+                                                                    ("East", None)]
+        cx_west = min(circles(parse_svg(render_svg(feats))))[0]
+        assert float(texts[0].get("x", "nan")) < cx_west < float(texts[1].get("x", "nan"))
+
+    def test_label_that_cannot_fit_is_skipped(self) -> None:
+        feats = [named(0, 0, "W" * 40)]                # 239 px: wider than either side
+        assert label_texts(render_svg(feats, width=200, height=100, labels="name")) == []
+
+    def test_svg_label_is_escaped(self) -> None:
+        nasty = '<b>&"\'</text><script>alert(1)</script>'
+        svg = render_svg([named(0, 0, nasty)], width=800, height=600, labels="name")
+        assert "<script>" not in svg and "<b>" not in svg
+        assert label_texts(svg) == [nasty]             # round-trips through ElementTree
+
+    def test_long_labels_are_truncated(self) -> None:
+        feats = [named(0, 0, "A" * 100)]
+        assert label_texts(render_svg(feats, labels="name")) == ["A" * 39 + "…"]
+        img = png(feats, width=800, height=600, labels="name", grid=False, scale_bar=False)
+        box = ink_box(img, LABEL_INK, (0, 0, 800, 600))
+        assert box is not None
+        assert box[2] - box[0] + 1 <= 40 * 6 - 1       # 37 'A' + '...'
+        assert box[2] - box[0] + 1 > 38 * 6
+
+    def test_png_labels_fold_to_ascii_svg_keeps_unicode(self) -> None:
+        a = render_png([named(8.54, 47.37, "Zürich")], labels="name")
+        b = render_png([named(8.54, 47.37, "Zurich")], labels="name")
+        assert a == b
+        assert label_texts(render_svg([named(8.54, 47.37, "Zürich")], labels="name")) == \
+            ["Zürich"]
+
+    def test_svg_and_png_place_labels_identically(self) -> None:
+        feats = [named(77.2, 28.6, "Delhi"), named(77.3, 28.65, "Noida")]
+        svg_labels = svg_texts(parse_svg(render_svg(feats, labels="name")), "qg-labels")
+        img = png(feats, labels="name", grid=False, scale_bar=False)
+        anchors = set()
+        for t in svg_labels:
+            x, baseline = int(float(t.get("x", "nan"))), float(t.get("y", "nan"))
+            anchors.add(t.get("text-anchor"))
+            width = 6 * len(t.text or "") - 1
+            x0 = x - width if t.get("text-anchor") == "end" else x
+            top = round(baseline - 7.46)
+            box = ink_box(img, LABEL_INK, (x0 - 2, top - 2, min(800, x0 + width + 2), top + 10))
+            assert box is not None and box[:2] == (x0, top), (t.text, box)
+        assert anchors == {None, "end"}                # one label on each side of its point
+
+    def test_multipoint_members_each_labelled(self) -> None:
+        mp = feature({"type": "MultiPoint", "coordinates": [[0, 0], [1, 1], [2, 0]]}, name="M")
+        assert label_texts(render_svg([mp], labels="name")) == ["M", "M", "M"]
+
+    def test_geometry_collection_points_labelled_beside(self) -> None:
+        gc = feature({"type": "GeometryCollection", "geometries": [
+            {"type": "Point", "coordinates": [0, 0]},
+            {"type": "LineString", "coordinates": [[1, 1], [2, 0]]}]}, name="GC")
+        (text,) = svg_texts(parse_svg(render_svg([gc], labels="name")), "qg-labels")
+        assert text.text == "GC" and text.get("text-anchor") is None
+        cx, cy = circles(parse_svg(render_svg([gc])))[0]
+        assert float(text.get("x", "nan")) > cx
+        assert abs(float(text.get("y", "nan")) - 3.96 - cy) <= 1
+
+    def test_polygon_and_line_labels_centred(self) -> None:
+        poly = feature({"type": "Polygon", "coordinates": [square(1, 10, 10)]}, name="Zone")
+        line = feature({"type": "LineString", "coordinates": [[0, 0], [2, 0]]}, name="Road")
+        for feat in (poly, line):
+            (text,) = svg_texts(parse_svg(render_svg([feat], labels="name")), "qg-labels")
+            assert text.get("text-anchor") == "middle"
+            assert abs(float(text.get("x", "nan")) - 400) <= 1
+            assert abs(float(text.get("y", "nan")) - 300 - 3.96) <= 1
+
+    def test_polygon_across_antimeridian_labelled_on_the_shape(self) -> None:
+        poly = feature({"type": "Polygon", "coordinates": [
+            [[179, -1], [-179, -1], [-179, 1], [179, 1], [179, -1]]]}, name="Dateline")
+        (text,) = svg_texts(parse_svg(render_svg([poly], labels="name")), "qg-labels")
+        assert abs(float(text.get("x", "nan")) - 400) <= 1
+
+    def test_at_most_300_labels(self) -> None:
+        feats = [named(i % 30, i // 30, f"P{i}") for i in range(900)]
+        texts = label_texts(render_svg(feats, width=4000, height=4000, labels="name",
+                                       scale_bar=False))
+        assert len(texts) == 300
+        assert texts[:3] == ["P0", "P1", "P2"]         # first come, first placed
+
+    def test_large_images_use_bigger_label_text(self) -> None:
+        feats = [named(77.2, 28.6, "Delhi")]
+        small = svg_group(parse_svg(render_svg(feats, width=800, labels="name")), "qg-labels")
+        large = svg_group(parse_svg(render_svg(feats, width=1200, labels="name")), "qg-labels")
+        assert small is not None and small.get("font-size") == "11"
+        assert large is not None and large.get("font-size") == "13"
+        img = png(feats, width=1200, height=800, labels="name", grid=False, scale_bar=False)
+        box = ink_box(img, LABEL_INK, (0, 0, 1200, 800))
+        assert box is not None and box[3] - box[1] + 1 == 14            # 5x7 font at 2x
+
+    def test_svg_label_halo_style(self) -> None:
+        group = svg_group(parse_svg(render_svg([named(0, 0, "x")], labels="name")), "qg-labels")
+        assert group is not None
+        assert group.get("fill") == "#333333" and group.get("stroke") == "#ffffff"
+        assert group.get("paint-order") == "stroke"
+
+    def test_dark_background_labels_are_light(self) -> None:
+        img = png([named(0, 0, "Night")], width=400, height=300, background="#0f111a",
+                  labels="name", grid=False, scale_bar=False)
+        assert ink_box(img, LIGHT_TEXT, (205, 140, 260, 160)) is not None
+
+
+class TestGrid:
+    def test_png_grid_lines_by_default(self) -> None:
+        assert png(DELHI, width=400, height=300).where(GRID_LINE)
+        assert not png(DELHI, width=400, height=300, grid=False).where(GRID_LINE)
+
+    def test_svg_grid_by_default_and_behind_the_data(self) -> None:
+        root = parse_svg(render_svg(DELHI))
+        ids = [g.get("id") for g in root if g.tag == f"{SVG_NS}g"]
+        assert ids.index("qg-grid") < ids.index("qg-points")
+        assert ids.index("qg-grid-labels") < ids.index("qg-points")
+        group = svg_group(root, "qg-grid")
+        assert group is not None and group.get("stroke") == "#e6e8eb"
+        no_grid = parse_svg(render_svg(DELHI, grid=False))
+        assert svg_group(no_grid, "qg-grid") is None
+        assert svg_group(no_grid, "qg-grid-labels") is None
+
+    def test_svg_grid_labels_around_delhi(self) -> None:
+        texts = [t.text or "" for t in svg_texts(parse_svg(render_svg(DELHI)), "qg-grid-labels")]
+        lats = [t for t in texts if t.endswith("°N")]
+        lngs = [t for t in texts if t.endswith("°E")]
+        assert lats and lngs and len(lats) + len(lngs) == len(texts)
+        assert all(28 <= degree_value(t) <= 29 for t in lats)
+        assert all(77 <= degree_value(t) <= 77.5 for t in lngs)
+        assert all(DEGREE_LABEL.match(t) for t in texts), texts
+
+    @pytest.mark.parametrize(("feats", "size"), [
+        (DELHI, (800, 600)), (DELHI, (1200, 400)), (FIJI, (800, 600)), (WORLD, (800, 600)),
+        ([point(77.2, 28.6)], (640, 480)), ([point(0, 0), point(30, 10)], (300, 900)),
+    ])
+    def test_grid_step_is_nice(self, feats: list[dict[str, Any]],
+                               size: tuple[int, int]) -> None:
+        w, h = size
+        root = parse_svg(render_svg(feats, width=w, height=h))
+        xs, ys = grid_lines(root)
+        assert 2 <= max(len(xs), len(ys)) <= 8         # ~3-7 across the larger extent
+        labels = svg_texts(root, "qg-grid-labels")
+        texts = [t.text or "" for t in labels]
+        assert all(DEGREE_LABEL.match(t) for t in texts), texts
+        lats = sorted(degree_value(t.text or "") for t in labels if t.get("x") == "5")
+        diffs = {round(b - a, 6) for a, b in zip(lats, lats[1:], strict=False)}
+        steps = {round(d / k, 6) for d in diffs for k in range(1, 9)}
+        assert not diffs or steps & set(NICE_STEPS), (texts, diffs)
+        # Decimals follow the step: every label has the same number of them.
+        decimals = {len(t.split("°")[0].partition(".")[2]) for t in texts
+                    if t not in ("0°", "180°")}
+        assert len(decimals) <= 1, texts
+
+    def test_antimeridian_longitudes_read_correctly(self) -> None:
+        root = parse_svg(render_svg(FIJI, width=800, height=600))
+        lngs = [t for t in svg_texts(root, "qg-grid-labels")
+                if (t.text or "").endswith(("E", "W")) or t.text == "180°"]
+        names = [t.text or "" for t in lngs]
+        assert any(n.endswith("E") for n in names) and any(n.endswith("W") for n in names)
+        assert all(abs(degree_value(n)) <= 180 for n in names), names
+        # West to east on the canvas: 178.5°E ... 180° ... 179.5°W.
+        ordered = [n for _, n in sorted((float(t.get("x", "nan")), t.text or "") for t in lngs)]
+        unwrapped = [v + 360 if v < 0 else v for v in map(degree_value, ordered)]
+        assert unwrapped == sorted(unwrapped)
+
+    def test_world_map_grid(self) -> None:
+        texts = [t.text or "" for t in svg_texts(parse_svg(render_svg(WORLD)), "qg-grid-labels")]
+        assert "0°" in texts                           # the equator / prime meridian
+        assert all(abs(degree_value(t)) <= 180 for t in texts)
+
+    def test_grid_labels_clear_of_title_and_credit(self) -> None:
+        w, h = 800, 600
+        root = parse_svg(render_svg(DELHI, width=w, height=h, title="Delhi"))
+        _, ys = grid_lines(root)
+        assert ys and min(ys) >= 28
+        meridians = [(a, b) for a, b in grid_segments(root) if a[0] == b[0]]
+        assert meridians and all(min(a[1], b[1]) == 28 for a, b in meridians)  # below the band
+        for t in svg_texts(root, "qg-grid-labels"):
+            x, baseline = float(t.get("x", "nan")), float(t.get("y", "nan"))
+            right = x + 6 * len(t.text or "") - 1
+            assert baseline - 7 >= 28 + 1
+            assert right < w - 6 - 41 - 1 or baseline < h - 14     # not on the credit
+
+    def test_svg_and_png_grid_on_the_same_pixels(self) -> None:
+        feats = [point(77.2, 28.6)]
+        xs, ys = grid_lines(parse_svg(render_svg(feats, width=640, height=480)))
+        img = png(feats, width=640, height=480)
+        assert xs and ys
+        for x in xs:
+            assert x % 1 == 0.5                        # crisp: the middle of a pixel column
+            if x > 60:                                 # clear of the latitude labels
+                assert img.px(int(x), 60) == GRID_LINE
+        for y in ys:
+            if 60 < y < 440:
+                assert img.px(600, int(y)) == GRID_LINE
+
+    def test_png_grid_labels_drawn(self) -> None:
+        img = png(DELHI, width=800, height=600)
+        assert img.where(GRID_TEXT)
+        assert not png(DELHI, width=800, height=600, grid=False).where(GRID_TEXT)
+
+    def test_dark_background_grid_is_subtle(self) -> None:
+        img = png(DELHI, width=400, height=300, background="#0f111a")
+        assert not img.where(GRID_LINE)
+        group = svg_group(parse_svg(render_svg(DELHI, background="#0f111a")), "qg-grid")
+        assert group is not None and group.get("stroke") not in ("#e6e8eb", "#0f111a")
+
+    def test_no_grid_on_thumbnails(self) -> None:
+        root = parse_svg(render_svg(DELHI, width=80, height=60, padding=4))
+        assert svg_group(root, "qg-grid") is None and svg_group(root, "qg-scale-bar") is None
+
+
+class TestScaleBar:
+    def scale_bar(self, svg: str) -> tuple[str, float]:
+        group = svg_group(parse_svg(svg), "qg-scale-bar")
+        assert group is not None
+        (text,) = group.iter(f"{SVG_NS}text")
+        bar = [r for r in group.iter(f"{SVG_NS}rect") if r.get("height") == "2"]
+        return text.text or "", float(bar[0].get("width", "nan"))
+
+    def test_label_and_length(self) -> None:
+        text, width = self.scale_bar(render_svg(DELHI))
+        assert re.match(r"^\d+ (m|km)$", text)
+        number = int(text.split()[0])
+        assert number / 10 ** (len(str(number)) - 1) in (1, 2, 5)   # 1, 2 or 5 x 10^n
+        assert 60 <= width <= 160
+
+    def test_length_matches_ground_distance(self) -> None:
+        # 0.1° of longitude on the equator = 11,131.95 m on the Web Mercator sphere.
+        feats = [point(0, 0), point(0.1, 0)]
+        svg = render_svg(feats, width=800, height=600)
+        xs = sorted(x for x, _ in circles(parse_svg(svg)))
+        metres_per_px = 6378137 * math.radians(0.1) / (xs[1] - xs[0])
+        text, width = self.scale_bar(svg)
+        number, unit = text.split()
+        metres = int(number) * (1000 if unit == "km" else 1)
+        assert width * metres_per_px == pytest.approx(metres, rel=0.01)
+
+    def test_metres_for_small_areas(self) -> None:
+        text, _ = self.scale_bar(render_svg([point(77.2, 28.6), point(77.201, 28.601)]))
+        assert text.endswith(" m")
+
+    @pytest.mark.parametrize(("feats", "size"), [
+        (WORLD, (800, 600)),                           # wider than 60° of longitude
+        ([point(0, 0), point(10, 70)], (200, 800)),    # taller than 60° of latitude
+        ([], (800, 600)),                              # empty
+    ])
+    def test_no_scale_bar(self, feats: list[dict[str, Any]], size: tuple[int, int]) -> None:
+        root = parse_svg(render_svg(feats, width=size[0], height=size[1]))
+        assert svg_group(root, "qg-scale-bar") is None
+
+    def test_png_scale_bar_bottom_left(self) -> None:
+        img = png(DELHI, width=800, height=600, grid=False)
+        box = ink_box(img, LABEL_INK, (0, 540, 200, 600))
+        assert box is not None
+        assert box[0] == 8 and box[3] == 593            # bar bottom level with the credit text
+        off = png(DELHI, width=800, height=600, grid=False, scale_bar=False)
+        assert ink_box(off, LABEL_INK, (0, 540, 200, 600)) is None
+        assert svg_group(parse_svg(render_svg(DELHI, scale_bar=False)), "qg-scale-bar") is None
+
+
+class TestAnnotationsOnEmptyMaps:
+    def test_empty_input_has_no_grid_or_scale_bar(self) -> None:
+        root = parse_svg(render_svg([], title="Nothing", labels="name"))
+        for gid in ("qg-grid", "qg-grid-labels", "qg-scale-bar", "qg-labels"):
+            assert svg_group(root, gid) is None
+        colors = {c for _, _, c in png([], width=400, height=300).all_pixels()}
+        assert colors <= {WHITE, CREDIT}
+
+    def test_null_geometries_only(self) -> None:
+        root = parse_svg(render_svg([feature(None, name="x")], labels="name"))
+        assert svg_group(root, "qg-grid") is None and svg_group(root, "qg-labels") is None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -900,6 +1316,31 @@ class TestValidation:
         assert exc.value.name.startswith("overlays")
         assert "buffer" in str(exc.value)
 
+    @pytest.mark.parametrize("bad", [42, ["name"], b"name", True, {"name": 1}, 1.5])
+    def test_labels(self, fn: Any, bad: Any) -> None:
+        with pytest.raises(InvalidArgumentError) as exc:
+            fn([point(0, 0)], labels=bad)
+        assert exc.value.name == "labels"
+        assert "property" in str(exc.value) and 'labels="name"' in str(exc.value)
+
+    @pytest.mark.parametrize("ok", ["name", "", "名前"])
+    def test_labels_accepts_any_property_name(self, fn: Any, ok: str) -> None:
+        fn([feature({"type": "Point", "coordinates": [0, 0]}, **{ok: "x"})], labels=ok)
+
+    @pytest.mark.parametrize("name", ["grid", "scale_bar"])
+    @pytest.mark.parametrize("bad", [1, 0, "yes", "False", None, 1.0, [True]])
+    def test_grid_and_scale_bar_flags(self, fn: Any, name: str, bad: Any) -> None:
+        with pytest.raises(InvalidArgumentError) as exc:
+            fn([point(0, 0)], **{name: bad})
+        assert exc.value.name == name
+        assert "True or False" in str(exc.value) and f"{name}=False" in str(exc.value)
+
+    def test_new_options_validated_on_empty_input(self, fn: Any) -> None:
+        with pytest.raises(InvalidArgumentError):
+            fn([], grid="no")
+        with pytest.raises(InvalidArgumentError):
+            fn([], labels=3)
+
     def test_errors_are_value_errors(self, fn: Any) -> None:
         with pytest.raises(ValueError):
             fn([point(0, 0)], width=1)
@@ -920,7 +1361,10 @@ class TestValidation:
         ("point_radius", -(10 ** 400)),
         ("background", "#" + "f" * 100_000),
         ("title", 10 ** 5000),
-    ], ids=["width", "height", "padding", "radius-big", "radius-neg", "background", "title"])
+        ("labels", 10 ** 5000),
+        ("grid", 10 ** 5000),
+    ], ids=["width", "height", "padding", "radius-big", "radius-neg", "background", "title",
+            "labels", "grid"])
     def test_huge_option_values_are_summarised(self, fn: Any, name: str, value: Any) -> None:
         with pytest.raises(InvalidArgumentError) as exc:
             fn([point(0, 0)], **{name: value})
@@ -958,6 +1402,17 @@ class TestPerformance:
         out = tmp_path / "big.png"
         out.write_bytes(data)
         assert PNG(out.read_bytes()).width == 1200
+
+    def test_20k_labelled_points_png_under_3_seconds(self) -> None:
+        feats = [named(77.0 + ((i * 7919) % 10007) / 10007, 28.0 + ((i * 104729) % 10009) / 10009,
+                       f"Store number {i}")
+                 for i in range(20_000)]
+        start = time.perf_counter()
+        data = render_png(feats, width=1200, height=800, title="20k labelled", labels="name")
+        elapsed = time.perf_counter() - start
+        assert elapsed < 3.0, f"render_png took {elapsed:.2f}s"
+        assert PNG(data).width == 1200
+        assert len(label_texts(render_svg(feats, width=1200, height=800, labels="name"))) <= 300
 
     def test_svg_written_to_file(self, tmp_path: Path) -> None:
         out = tmp_path / "map.svg"

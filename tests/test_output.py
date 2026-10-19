@@ -809,3 +809,38 @@ def test_written_page_is_utf8(tmp_path):
     g.map(out)
     page = out.read_bytes().decode("utf-8")
     assert parse_config(page)["data"]["features"][0]["properties"]["name"] == "São Paulo ✓"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Static images — labels, grid and scale bar options
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestImageOptions:
+    def test_labels_drawn_in_svg(self, loaded):
+        svg = loaded.to_svg(labels="name")
+        assert ">Delhi<" in svg and ">Mumbai<" in svg
+
+    def test_no_labels_by_default(self, loaded):
+        assert ">Delhi<" not in loaded.to_svg()
+
+    def test_grid_and_scale_bar_default_on(self, loaded):
+        svg = loaded.to_svg()
+        assert 'id="qg-grid"' in svg and 'id="qg-scale-bar"' in svg
+
+    def test_grid_and_scale_bar_can_be_switched_off(self, loaded):
+        svg = loaded.to_svg(grid=False, scale_bar=False)
+        assert 'id="qg-grid"' not in svg and 'id="qg-scale-bar"' not in svg
+
+    def test_image_passes_options(self, loaded, tmp_path):
+        out = tmp_path / "labelled.svg"
+        loaded.image(out, labels="name", grid=False)
+        text = out.read_text(encoding="utf-8")
+        assert ">Delhi<" in text and 'id="qg-grid"' not in text
+
+    def test_png_options_accepted(self, loaded):
+        assert loaded.to_png(labels="name", grid=False, scale_bar=False)[:8] == b"\x89PNG\r\n\x1a\n"
+
+    @pytest.mark.parametrize("kwargs", [{"labels": 5}, {"grid": "yes"}, {"scale_bar": None}])
+    def test_bad_options_rejected(self, loaded, kwargs):
+        with pytest.raises(InvalidArgumentError):
+            loaded.to_svg(**kwargs)

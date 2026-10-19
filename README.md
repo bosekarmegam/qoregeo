@@ -186,7 +186,7 @@ qoregeo export stores.csv -o near.geojson --near 28.61,77.21,5 --sort revenue --
 qoregeo export stores.csv -o big.csv --where "revenue>=100000" --where 'city in ["Delhi","Pune"]'
 qoregeo map stores.csv -o stores.html --tiles topo --serve # interactive map, opened in the browser
 qoregeo map stores.csv -o heat.html --heatmap --intensity revenue
-qoregeo image stores.csv -o stores.png --within zone.geojson
+qoregeo image stores.csv -o stores.png --within zone.geojson --labels name
 qoregeo serve stores.html                                  # view any saved map
 qoregeo geocode "Gateway of India, Mumbai" --country in
 qoregeo reverse 18.9220,72.8347
@@ -218,7 +218,7 @@ and upcoming clients all work.
 | `buffer`, `contains`, `intersects`, `measure`, `geohash` | zones, geofencing, overlap tests, area / length |
 | `list_files`, `describe_dataset` | find data files; columns, types, bbox, sample rows |
 | `query_features`, `nearest` | filter by radius / bbox / area / attributes, sort, page; k nearest |
-| `preview_map` | renders the data as a PNG **the model can see** |
+| `preview_map` | renders the data as a labelled PNG **the model can see** |
 | `make_map`, `export_features` | write HTML maps, heatmaps, PNG/SVG, CSV or GeoJSON *(write access)* |
 | `geocode`, `reverse_geocode` | OpenStreetMap Nominatim or your own server *(opt-in)* |
 
@@ -804,14 +804,15 @@ always shown. Please respect the [OpenStreetMap tile usage policy](https://opera
 > "API key required" watermark), so QOREgeo 1.1 switched to open, keyless maps. Keyed providers
 > (CARTO, Stadia/Stamen, Thunderforest, MapTiler, Mapbox, Esri) still work as custom `tiles=` URLs.
 
-#### `geo.image(output_path='map.png', title=None, width=1200, height=800, overlays=None, background='#ffffff')` → `self`
+#### `geo.image(output_path='map.png', title=None, width=1200, height=800, overlays=None, background='#ffffff', labels=None, grid=True, scale_bar=True)` → `self`
 
 A static **PNG or SVG** map (by file extension) rendered in pure Python — no browser, no network,
 no matplotlib. Points, lines, polygons (with holes) and overlays use the same colours as the
-HTML maps; data across the antimeridian stays together.
+HTML maps, over a lat/lng grid with a scale bar; `labels="name"` writes a property next to each
+feature (overlapping labels are skipped). Data across the antimeridian stays together.
 
 ```python
-geo.image("cities.png", title="India Cities")
+geo.image("cities.png", title="India Cities", labels="name")
 geo.filter_by_polygon(zone).image("zone.svg", overlays=[zone])
 png_bytes = geo.to_png(width=800, height=600)    # bytes — for e-mail, Slack, PDFs, AI vision models
 svg_text = geo.to_svg()                          # str

@@ -552,7 +552,7 @@ class _Scene:
 
     def __init__(self, fn: str, features: Any, width: Any, height: Any, title: Any,
                  overlays: Any, background: Any, padding: Any, point_radius: Any,
-                 labels: Any = None, grid: Any = False, scale_bar: Any = False) -> None:
+                 labels: Any, grid: Any, scale_bar: Any) -> None:
         self.width = _check_size(fn, "width", width)
         self.height = _check_size(fn, "height", height)
         self.padding = _check_padding(fn, padding, self.width, self.height)
@@ -770,20 +770,18 @@ class _Scene:
     @staticmethod
     def _anchors(view: _View, geometry: dict[str, Any]) -> list[tuple[float, float, bool]]:
         """
-        Where a feature's label goes: ``(x, y, is_point)`` for each Point /
-        MultiPoint member, else one anchor at the geometry's representative
-        point (moved by whole turns onto the shape as drawn on this map).
+        Where a feature's label goes: ``(x, y, is_point)`` for each point
+        (of a Point, a MultiPoint or a GeometryCollection holding points),
+        else one anchor at the geometry's representative point, moved by
+        whole turns onto the shape as it is drawn on this map.
         """
-        gtype = geometry.get("type")
-        if gtype in ("Point", "MultiPoint"):
-            coords = geometry.get("coordinates") or []
-            members = [coords] if gtype == "Point" else coords
-            return [(*view.px(view.point_lng(float(p[0])), float(p[1])), True) for p in members]
-        rep = _representative_point(geometry)
         layer = _Layer()
         _add_geometry(geometry, layer)
+        if layer.points:
+            return [(*view.px(view.point_lng(x), y), True) for x, y in layer.points]
         xs = [p[0] for p in view.unwrap(layer).positions()]
-        if rep is None or not xs:
+        rep = _representative_point(geometry) if xs else None
+        if rep is None:
             return []
         lat, lng = rep
         lo, hi = min(xs), max(xs)

@@ -1875,9 +1875,13 @@ class GeoEngine:
         height: int,
         overlays: Any,
         background: str,
+        labels: str | None,
+        grid: bool,
+        scale_bar: bool,
     ) -> dict[str, Any]:
         return {"title": title, "width": width, "height": height,
-                "overlays": self._overlay_list(overlays), "background": background}
+                "overlays": self._overlay_list(overlays), "background": background,
+                "labels": labels, "grid": grid, "scale_bar": scale_bar}
 
     def to_png(
         self,
@@ -1886,16 +1890,22 @@ class GeoEngine:
         height: int = 800,
         overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
         background: str = "#ffffff",
+        labels: str | None = None,
+        grid: bool = True,
+        scale_bar: bool = True,
     ) -> bytes:
         """
         A static PNG map of the features (no basemap, no browser, no
         dependencies) — for reports, e-mails, notebooks and AI vision models.
+
+        ``labels`` names a property drawn next to each feature (e.g. "name");
+        ``grid`` draws a lat/lng graticule and ``scale_bar`` a distance scale.
         """
         from .render import render_png
 
         self._require_data("to_png")
-        return render_png(self._features(), **self._render_options(title, width, height, overlays,
-                                                                    background))
+        return render_png(self._features(), **self._render_options(
+            title, width, height, overlays, background, labels, grid, scale_bar))
 
     def to_svg(
         self,
@@ -1904,13 +1914,16 @@ class GeoEngine:
         height: int = 800,
         overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
         background: str = "#ffffff",
+        labels: str | None = None,
+        grid: bool = True,
+        scale_bar: bool = True,
     ) -> str:
         """A static SVG map of the features (same options as ``to_png()``)."""
         from .render import render_svg
 
         self._require_data("to_svg")
-        return render_svg(self._features(), **self._render_options(title, width, height, overlays,
-                                                                    background))
+        return render_svg(self._features(), **self._render_options(
+            title, width, height, overlays, background, labels, grid, scale_bar))
 
     def image(
         self,
@@ -1920,26 +1933,31 @@ class GeoEngine:
         height: int = 800,
         overlays: Sequence[dict[str, Any]] | dict[str, Any] | None = None,
         background: str = "#ffffff",
+        labels: str | None = None,
+        grid: bool = True,
+        scale_bar: bool = True,
     ) -> GeoEngine:
         """
         Save a static map image — ``.png`` or ``.svg`` by file extension.
 
         Unlike ``map()`` it needs no browser or internet: points, lines and
-        polygons are drawn on a plain background in the same colours.
+        polygons are drawn on a plain background in the same colours, with a
+        lat/lng grid, a scale bar and optional ``labels`` (a property name).
 
         Examples
         --------
-        >>> geo.load("stores.csv").filter_by_radius(28.61, 77.21, 10).image("stores.png")
+        >>> geo.load("stores.csv").filter_by_radius(28.61, 77.21, 10).image("stores.png", labels="name")
         """
         path = self._output_path(output_path, "geo.image('map.png')")
         ext = os.path.splitext(path)[1].lower()
         if ext not in (".png", ".svg"):
             raise InvalidArgumentError("output_path", path, "a file name ending in .png or .svg",
                                        "geo.image('map.png')")
+        options = (title, width, height, overlays, background, labels, grid, scale_bar)
         if ext == ".png":
-            _atomic_write(path, self.to_png(title, width, height, overlays, background))
+            _atomic_write(path, self.to_png(*options))
         else:
-            _atomic_write(path, self.to_svg(title, width, height, overlays, background))
+            _atomic_write(path, self.to_svg(*options))
         _announce(f"✅  Image saved → {path}  ({_plural(self.count(), 'feature')})", self.verbose)
         return self
 

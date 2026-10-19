@@ -964,3 +964,12 @@ class TestGeocodeCommands:
 
     def test_bad_provider(self, capsys):
         assert run(capsys, "geocode", "x", "--provider", "google")[0] == 2
+
+
+class TestImageLabels:
+    def test_labels_and_switches(self, capsys, cities, tmp_path):
+        code, _, _ = run(capsys, "image", "cities.csv", "-o", "l.svg", "--labels", "name",
+                         "--no-grid", "--no-scale-bar", "-q")
+        text = (tmp_path / "l.svg").read_text(encoding="utf-8")
+        assert code == 0 and ">Delhi<" in text
+        assert 'id="qg-grid"' not in text and 'id="qg-scale-bar"' not in text

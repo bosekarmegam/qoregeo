@@ -241,6 +241,13 @@ _PAGE_PROPS: Json = {
     "offset": {"type": "integer", "minimum": 0, "default": 0,
                "description": "Skip this many results (use next_offset from a truncated page)"},
 }
+_IMAGE_PROPS: Json = {
+    "labels": {"type": "string",
+               "description": "Property drawn next to each feature, e.g. \"name\" (previews of up "
+                              "to 60 features pick a name-like column automatically)"},
+    "grid": {"type": "boolean", "default": True, "description": "Draw a lat/lng grid"},
+    "scale_bar": {"type": "boolean", "default": True, "description": "Draw a distance scale bar"},
+}
 _OVERWRITE: Json = {"overwrite": {"type": "boolean", "default": False,
                                   "description": "Replace 'output' if it already exists"}}
 
@@ -495,9 +502,25 @@ def _nearest(ctx: ToolContext, a: Json) -> ToolResult:
     return ToolResult({"unit": a.get("unit", "km"), **_feature_page(result, ctx, a.get("offset", 0))})
 
 
+# Property names tried, in order, when a preview isn't told which one to label.
+_LABEL_CANDIDATES = ("name", "title", "label", "city", "place", "store", "site", "id")
+_AUTO_LABEL_LIMIT = 60
+
+
+def _auto_label(features: list[Json]) -> str | None:
+    """A name-like property to label a small dataset's preview with (or None)."""
+    if not features or len(features) > _AUTO_LABEL_LIMIT:
+        return None
+    keys: dict[str, str] = {}
+    for f in features:
+        for k in f.get("properties") or {}:
+            keys.setdefault(k.lower(), k)
+    return next((keys[c] for c in _LABEL_CANDIDATES if c in keys), None)
+
+
 def _render_args(a: Json) -> Json:
     out: Json = {}
-    for key in ("width", "height", "title"):
+    for key in ("width", "height", "title", "labels", "grid", "scale_bar"):
         if a.get(key) is not None:
             out[key] = a[key]
     overlays = a.get("overlays")
@@ -511,7 +534,11 @@ def _preview(ctx: ToolContext, a: Json) -> ToolResult:
 
     geo, _ = _load_source(ctx, a)
     geo = _apply_filters(geo, a)
-    png = render_png(geo.get_features(), **{"width": 800, "height": 600, **_render_args(a)})
+    features = geo.get_features()
+    options = {"width": 800, "height": 600, **_render_args(a)}
+    if "labels" not in a:
+        options["labels"] = _auto_label(features)
+    png = render_png(features, **options)
     return ToolResult({"count": geo.count(), "format": "png", "bytes": len(png)},
                       images=[("image/png", png)])
 
@@ -657,7 +684,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                   "overlays": {"type": "array", "items": _GEOJSON,
                                "description": "Extra shapes drawn as dashed outlines"},
                   "width": {"type": "integer", "minimum": 64, "maximum": 2048, "default": 800},
-                  "height": {"type": "integer", "minimum": 64, "maximum": 2048, "default": 600}}),
+                  "height": {"type": "integer", "minimum": 64, "maximum": 2048, "default": 600},
+                  **_IMAGE_PROPS}),
          _preview),
     Tool("make_map", "Create map file", "Write an interactive HTML map or heatmap (OpenStreetMap "
          "basemap, popups) — or a static .png/.svg image — of the (optionally filtered) data."
@@ -671,7 +699,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                                        "description": "Heatmap weight column (kind='heatmap')"},
                   "overlays": {"type": "array", "items": _GEOJSON},
                   "width": {"type": "integer", "minimum": 16, "maximum": 8192},
-                  "height": {"type": "integer", "minimum": 16, "maximum": 8192}, **_OVERWRITE},
+                  "height": {"type": "integer", "minimum": 16, "maximum": 8192},
+                  **_IMAGE_PROPS, **_OVERWRITE},
                  ["output"]),
          _make_map, read_only=False, destructive=True),
     Tool("export_features", "Export features", "Write the (optionally filtered) data to a CSV "

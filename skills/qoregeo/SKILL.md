@@ -45,7 +45,7 @@ qoregeo export stores.csv -o big.csv --where "revenue>=100000" --where "city in 
 qoregeo export stores.csv -o zone.csv --within delivery_zone.geojson
 qoregeo map stores.csv -o stores.html --title "Stores" --serve          # interactive map
 qoregeo map stores.csv -o heat.html --heatmap --intensity revenue
-qoregeo image stores.csv -o stores.png --near 28.61,77.21,25            # static image, offline
+qoregeo image stores.csv -o stores.png --near 28.61,77.21,25 --labels name   # static image, offline
 qoregeo geocode "Connaught Place, New Delhi" --country in
 qoregeo reverse 28.6315,77.2167
 qoregeo tiles                                                            # basemap names
@@ -66,7 +66,7 @@ near = geo.filter_by_polygon(zone).sort_by("revenue", descending=True).head(20)
 near.save("near.geojson")                       # or .csv (csv_safe=True for spreadsheets)
 near.map("near.html", overlays=[zone])          # tiles="light" | osm | dark | humanitarian | topo | satellite | none
 near.show()                                     # serve + open in the browser
-near.image("near.png")                          # static PNG/SVG, no network
+near.image("near.png", labels="name")           # static PNG/SVG with grid + scale bar, no network
 geo.k_nearest((28.61, 77.21), k=3)              # adds a _distance property
 geo.filter("revenue", 100000, op=">=")          # == != > >= < <= in not in contains
 geo.intersects(zone, other_shape)               # any GeoJSON

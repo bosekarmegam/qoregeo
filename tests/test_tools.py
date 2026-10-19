@@ -1216,3 +1216,37 @@ class TestToolResult:
         assert result.to_mcp()["isError"] is True
         assert result.to_anthropic("x")["is_error"] is True
         assert result.images == []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Image options and automatic preview labels
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestImageOptions:
+    def test_auto_label_picks_a_name_like_column(self):
+        from qoregeo.tools import _auto_label
+        feats = [{"type": "Feature", "geometry": None, "properties": {"ID": 1, "City": "x"}}]
+        assert _auto_label(feats) == "City"
+
+    def test_auto_label_none_without_candidates_or_for_big_data(self):
+        from qoregeo.tools import _AUTO_LABEL_LIMIT, _auto_label
+        assert _auto_label([{"type": "Feature", "geometry": None, "properties": {"v": 1}}]) is None
+        many = [{"type": "Feature", "geometry": None, "properties": {"name": str(i)}}
+                for i in range(_AUTO_LABEL_LIMIT + 1)]
+        assert _auto_label(many) is None
+        assert _auto_label([]) is None
+
+    def test_make_map_svg_with_labels(self, ctx, root):
+        ok("make_map", {"path": "cities.csv", "output": "l.svg", "labels": "name",
+                        "grid": False, "scale_bar": False}, ctx)
+        text = (root / "l.svg").read_text(encoding="utf-8")
+        assert ">Delhi<" in text and 'id="qg-grid"' not in text
+
+    def test_preview_accepts_options(self, ctx):
+        result = call_tool("preview_map", {"path": "cities.csv", "labels": "name", "grid": False,
+                                           "width": 200, "height": 150}, ctx)
+        assert not result.is_error and result.images[0][1][:4] == b"\x89PNG"
+
+    @pytest.mark.parametrize("args", [{"labels": 3}, {"grid": "no"}, {"scale_bar": 1}])
+    def test_option_types_checked(self, ctx, args):
+        err("preview_map", {"path": "cities.csv", **args}, ctx)

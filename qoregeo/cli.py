@@ -172,7 +172,8 @@ def _cmd_image(ns: argparse.Namespace) -> int:
     geo = _load(ns)
     geo.verbose = not ns.quiet
     out = ns.output or os.path.splitext(os.path.basename(ns.file))[0] + ".png"
-    geo.image(out, width=ns.width, height=ns.height, title=ns.title)
+    geo.image(out, width=ns.width, height=ns.height, title=ns.title, labels=ns.labels,
+              grid=not ns.no_grid, scale_bar=not ns.no_scale_bar)
     return 0
 
 
@@ -442,6 +443,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--title")
     p.add_argument("--width", type=int, default=1200)
     p.add_argument("--height", type=int, default=800)
+    p.add_argument("--labels", metavar="COLUMN", help="label each feature with this column")
+    p.add_argument("--no-grid", action="store_true", help="leave out the lat/lng grid")
+    p.add_argument("--no-scale-bar", action="store_true", help="leave out the scale bar")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(func=_cmd_image)
 

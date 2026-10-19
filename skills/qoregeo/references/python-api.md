@@ -57,7 +57,7 @@ GeoJSON Points or Point Features. Distance units: `km` (default), `m`, `miles`/`
 | `heatmap(path="heatmap.html", title, intensity_col=None, zoom, center, tiles="light", radius=25, blur=18)` | |
 | `map_html(...)`, `heatmap_html(...)` | same pages as strings (web apps, reports) |
 | `show(heatmap=False, port=0, **options)` | serves the page on 127.0.0.1 and opens the browser; returns the URL |
-| `image(path="map.png", title=None, width=1200, height=800, overlays=None, background="#ffffff")` | static `.png`/`.svg`, offline |
+| `image(path="map.png", title=None, width=1200, height=800, overlays=None, background="#ffffff", labels=None, grid=True, scale_bar=True)` | static `.png`/`.svg`, offline; `labels` = property to write next to features |
 | `to_png(...)`, `to_svg(...)` | bytes / str |
 | Notebook | a `GeoEngine` displays as an interactive map in Jupyter |
 
