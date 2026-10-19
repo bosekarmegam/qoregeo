@@ -30,18 +30,18 @@
    "pole_points": 200
   },
   "boundary_tolerance_deg": 1e-12,
-  "utc_timestamp": "2026-10-19T13:25:24+00:00",
+  "utc_timestamp": "2026-10-19T13:27:39+00:00",
   "command": "python experiments/04_correctness.py --quick",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
   "section_seconds": {
-   "point_in_polygon vs shapely": 0.3515295369998057,
-   "point_in_polygon across 180 deg": 0.06543564799994783,
-   "intersects vs shapely": 0.18755865899993296,
-   "filter_by_radius vs geographiclib": 0.6225324460001502,
-   "antimeridian": 0.043602573000043776,
-   "poles, nulls, empties, ranges": 0.0261296379999294
+   "point_in_polygon vs shapely": 0.430205702999956,
+   "point_in_polygon across 180 deg": 0.07465656300018964,
+   "intersects vs shapely": 0.189543792999757,
+   "filter_by_radius vs geographiclib": 0.7123557119998623,
+   "antimeridian": 0.051570868999988306,
+   "poles, nulls, empties, ranges": 0.018896716000199376
   },
-  "runtime_seconds": 2.1697126659996684,
+  "runtime_seconds": 2.274625236999782,
   "figures": [
    "docs/assets/experiments/correctness-antimeridian.svg",
    "docs/assets/experiments/correctness-antimeridian-naive.svg",
@@ -517,9 +517,9 @@
     "beyond_tolerance_count": 13
    },
    "seconds": {
-    "qoregeo_point_in_polygon": 0.18239619899941317,
-    "qoregeo_filter_by_polygon": 0.04039976200147066,
-    "shapely_contains_and_intersects": 0.003032902000086324
+    "qoregeo_point_in_polygon": 0.22755536100021345,
+    "qoregeo_filter_by_polygon": 0.04612740300080986,
+    "shapely_contains_and_intersects": 0.003746767001302942
    },
    "notes": [
     "Reference: shapely.contains_xy (interior only) and shapely.intersects_xy (interior or boundary). qoregeo's point_in_polygon() is ray casting with straight lng/lat edges, the same planar model as shapely.",
@@ -1607,6 +1607,53 @@
      }
     }
    },
+   "false_positives_beyond_1e-12": {
+    "count": 12,
+    "by_regime": {
+     "near": 12
+    },
+    "max_distance_deg": 8.497413288273226e-10,
+    "max_distance_over_bound": 0.1571354870893199,
+    "count_above_bound": 0,
+    "worst": [
+     {
+      "distance_deg": 8.497413288273226e-10,
+      "contact_edge_deg": 3.05707511079433e-06,
+      "distance_over_bound": 0.0025977230669713084,
+      "regime": "near",
+      "combo": "Point-LineString"
+     },
+     {
+      "distance_deg": 2.5007420301389764e-10,
+      "contact_edge_deg": 4.516248626568833e-05,
+      "distance_over_bound": 0.011293972759018106,
+      "regime": "near",
+      "combo": "Polygon-Polygon"
+     },
+     {
+      "distance_deg": 9.995859683665453e-11,
+      "contact_edge_deg": 0.0008278597364230907,
+      "distance_over_bound": 0.0827516976304148,
+      "regime": "near",
+      "combo": "LineString-LineString"
+     },
+     {
+      "distance_deg": 9.854153973165704e-11,
+      "contact_edge_deg": 0.00011547899304866457,
+      "distance_over_bound": 0.011379477781676728,
+      "regime": "near",
+      "combo": "Point-LineString"
+     },
+     {
+      "distance_deg": 9.286090761764601e-11,
+      "contact_edge_deg": 9.095793531771604e-06,
+      "distance_over_bound": 0.0008446436428630249,
+      "regime": "near",
+      "combo": "LineString-Polygon"
+     }
+    ],
+    "bound": "1e-12 / min(edge length, 1) deg, edge = the edge at the contact"
+   },
    "antimeridian": {
     "counts": {
      "seam_touch (Polygon)": {
@@ -1765,8 +1812,8 @@
     ]
    },
    "seconds": {
-    "qoregeo_intersects": 0.031507887001225754,
-    "shapely_intersects": 0.022350279000420414
+    "qoregeo_intersects": 0.031098706000193488,
+    "shapely_intersects": 0.020119667002290953
    },
    "notes": [
     "Reference: shapely.intersects (GEOS, exact predicates). Touching counts in both.",
@@ -5076,7 +5123,7 @@
       "count": 1
      },
      "warnings": [
-      "QOREgeo: skipped 2 row(s) in '/tmp/tmpglsfpycu/pts.csv' with non-numeric or out-of-range coordinates (lat must be -90..90 and lng -180..180; check whether the columns are swapped): line 3 (lat='95', l"
+      "QOREgeo: skipped 2 row(s) in '/tmp/tmpqpzjqp0a/pts.csv' with non-numeric or out-of-range coordinates (lat must be -90..90 and lng -180..180; check whether the columns are swapped): line 3 (lat='95', l"
      ],
      "pass": true,
      "note": ""

@@ -899,6 +899,7 @@ def run_intersects(seed: int, sz: dict[str, int]) -> dict[str, Any]:
     asym = 0
     examples: dict[str, list[dict[str, Any]]] = {}
     near_rows: list[dict[str, Any]] = []
+    beyond: list[dict[str, Any]] = []
     t_q = t_s = 0.0
     for _ in range(sz["intersects_pairs"]):
         p = _pair(rng)
@@ -927,6 +928,12 @@ def run_intersects(seed: int, sz: dict[str, int]) -> dict[str, Any]:
         if label:
             cell["disagree"] += 1
             disagree[label] += 1
+            if d > TOL and q:
+                edge_len = _contact_edge(p["a"], p["b"], sa, sb)
+                bound = TOL / min(edge_len, 1.0) if edge_len else TOL
+                beyond.append({"distance_deg": d, "contact_edge_deg": edge_len,
+                               "distance_over_bound": d / bound, "regime": p["regime"],
+                               "combo": p["combo"]})
             ex = examples.setdefault(label, [])
             if len(ex) < 3:
                 ex.append({**p, "shapely_distance_deg": d, "qoregeo": q, "shapely": ref})
@@ -951,6 +958,15 @@ def run_intersects(seed: int, sz: dict[str, int]) -> dict[str, Any]:
         "disagreement_examples": examples,
         "asymmetric_answers": asym,
         "near_miss_by_gap_and_scale": near_summary,
+        "false_positives_beyond_1e-12": {
+            "count": len(beyond),
+            "by_regime": dict(Counter(r["regime"] for r in beyond)),
+            "max_distance_deg": max((r["distance_deg"] for r in beyond), default=None),
+            "max_distance_over_bound": max((r["distance_over_bound"] for r in beyond), default=None),
+            "count_above_bound": sum(r["distance_over_bound"] > 1.0 for r in beyond),
+            "worst": sorted(beyond, key=lambda r: -r["distance_deg"])[:5],
+            "bound": "1e-12 / min(edge length, 1) deg, edge = the edge at the contact",
+        },
         "near_rows": near_rows,
         "antimeridian": wrap,
         "seconds": {"qoregeo_intersects": t_q, "shapely_intersects": t_s},
@@ -1803,7 +1819,7 @@ def fig_radius(radius: dict[str, Any]) -> str:
     a1.set_xticks(range(-180, 181, 90))
     a1.set_xlabel("Azimuth from the centre (deg)")
     a1.set_ylabel("haversine / geodesic - 1 (%)")
-    a1.legend(fontsize=7.5, loc="upper left", ncol=2)
+    a1.legend(fontsize=7.5, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=2)
     pooled = radius["near_edge_by_latitude"]
     lats = [float(k) for k in pooled]
     hv = [v["haversine_misclassified_pct"] for v in pooled.values()]
