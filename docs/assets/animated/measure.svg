@@ -3,7 +3,7 @@
 <title id="measure-title">Delhi to Mumbai is 1,148 km</title>
 <desc id="measure-desc">12 Indian cities appear one by one. A line then draws from Delhi to Mumbai and a label shows 1,148 km, the great-circle distance from GeoEngine.distance(). Drawn by qoregeo.</desc>
 <style>
-text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.ui{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
 .mono{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace}
 .a{animation-duration:10s;animation-iteration-count:infinite;animation-timing-function:cubic-bezier(.22,.61,.36,1);transform-box:fill-box;transform-origin:center}
 .cycle{animation:cycle 10s linear infinite}
@@ -38,7 +38,7 @@ text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-
 .k27{animation-name:k27}@keyframes k27{0%,56%{opacity:0;transform:scale(.3)}61%,100%{opacity:1;transform:scale(1)}}
 .k28{animation-name:k28}@keyframes k28{0%,3%{opacity:.3}7%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
 .k29{animation-name:k29}@keyframes k29{0%,33%{opacity:.3}37%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
-.k30{animation-name:k30}@keyframes k30{0%,56%{opacity:0}60%,100%{opacity:1}}
+.k30{animation-name:k30}@keyframes k30{0%,56%{opacity:0;transform:translateY(8px)}60%,100%{opacity:1;transform:translateY(0)}}
 .k31{animation-name:k31}@keyframes k31{0%,56%{opacity:0}61%,100%{opacity:1}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important}}
 </style>
@@ -58,13 +58,15 @@ text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-
 <g fill="#00977a" stroke="#ffffff" stroke-width="1.5"><circle class="a k0" cx="175.66" cy="28.75" r="4"/><circle class="a k1" cx="95.47" cy="222.14" r="4"/><circle class="a k2" cx="182.8" cy="339.8" r="4"/><circle class="a k3" cx="382.2" cy="152.86" r="4"/><circle class="a k4" cx="232.35" cy="337.69" r="4"/><circle class="a k5" cx="113.59" cy="233.01" r="4"/><circle class="a k6" cx="199.32" cy="255.11" r="4"/><circle class="a k7" cx="89.8" cy="143.83" r="4"/><circle class="a k8" cx="94.6" cy="180.84" r="4"/><circle class="a k9" cx="149.34" cy="64.36" r="4"/><circle class="a k10" cx="244.86" cy="65.72" r="4"/><circle class="a k11" cx="158.23" cy="397.25" r="4"/></g>
 <circle class="a k24" cx="175.66" cy="28.75" r="9" fill="none" stroke="#b7791f" stroke-width="2"/>
 <circle class="a k25" cx="95.47" cy="222.14" r="9" fill="none" stroke="#b7791f" stroke-width="2"/>
-<g font-size="11" fill="#333333" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text class="a k12" x="183" y="32.46">Delhi</text><text class="a k13" x="103" y="226.46">Mumbai</text><text class="a k14" x="175" y="343.46" text-anchor="end">Bangalore</text><text class="a k15" x="390" y="156.46">Kolkata</text><text class="a k16" x="240" y="341.46">Chennai</text><text class="a k17" x="121" y="237.46">Pune</text><text class="a k18" x="207" y="259.46">Hyderabad</text><text class="a k19" x="97" y="147.46">Ahmedabad</text><text class="a k20" x="102" y="184.46">Surat</text><text class="a k21" x="157" y="68.46">Jaipur</text><text class="a k22" x="252" y="69.46">Lucknow</text><text class="a k23" x="166" y="401.46">Kochi</text></g>
-<g class="a k27"><rect x="33.89" y="89.74" width="94" height="26" rx="13" fill="#ffffff" stroke="#b7791f" stroke-width="1.5"/><text x="80.89" y="107.74" text-anchor="middle" font-size="15" font-weight="700" fill="#8a5a12">1,148 km</text></g>
+<g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#333333" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text class="a k12" x="183" y="32.46">Delhi</text><text class="a k13" x="103" y="226.46">Mumbai</text><text class="a k14" x="175" y="343.46" text-anchor="end">Bangalore</text><text class="a k15" x="390" y="156.46">Kolkata</text><text class="a k16" x="240" y="341.46">Chennai</text><text class="a k17" x="121" y="237.46">Pune</text><text class="a k18" x="207" y="259.46">Hyderabad</text><text class="a k19" x="97" y="147.46">Ahmedabad</text><text class="a k20" x="102" y="184.46">Surat</text><text class="a k21" x="157" y="68.46">Jaipur</text><text class="a k22" x="252" y="69.46">Lucknow</text><text class="a k23" x="166" y="401.46">Kochi</text></g>
+<g class="a k27"><rect x="92.64" y="100.54" width="94" height="26" rx="13" fill="#ffffff" stroke="#b7791f" stroke-width="1.5"/><text x="139.64" y="118.54" text-anchor="middle" class="ui" font-size="15" font-weight="700" fill="#8a5a12">1,148 km</text></g>
 </g>
 </g>
+<g class="ui">
 <text x="514" y="112.25" font-size="22" font-weight="600" fill="#1f2933">Measure a distance</text>
-<g class="a k28"><circle cx="524" cy="157.75" r="10" fill="#00977a"/><text x="524" y="162.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">1</text><text class="mono" x="544" y="162.25" font-size="13" fill="#1f2933">geo.load("cities.csv")</text><text x="544" y="181.25" font-size="12.5" fill="#57606a">12 cities</text></g>
+<g class="a k28"><circle cx="524" cy="157.75" r="10" fill="#00977a"/><text x="524" y="162.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">1</text><text class="mono" x="544" y="162.25" font-size="13" fill="#1f2933">geo.load(&quot;cities.csv&quot;)</text><text x="544" y="181.25" font-size="12.5" fill="#57606a">12 cities</text></g>
 <g class="a k29"><circle cx="524" cy="215.75" r="10" fill="#00977a"/><text x="524" y="220.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">2</text><text class="mono" x="544" y="220.25" font-size="13" fill="#1f2933">geo.distance(delhi, mumbai)</text><text x="544" y="239.25" font-size="12.5" fill="#57606a">great circle, in km</text></g>
-<g class="cycle"><text class="a k30" x="514" y="303.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#8a5a12">1,148 km</tspan></text><text class="a k31" x="514" y="329.25" font-size="13" fill="#57606a">Delhi to Mumbai, 1148.1 km</text></g>
-<text x="778" y="432" text-anchor="end" font-size="11" fill="#6e7781">made with qoregeo</text>
+<g class="cycle"><text class="a k30" x="514" y="303.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#8a5a12">1,148 km</tspan></text><text class="a k31" x="514" y="329.25" font-size="13" fill="#57606a">Delhi to Mumbai, 1148.0965 km</text></g>
+</g>
+<text class="ui" x="778" y="432" text-anchor="end" font-size="11" fill="#6e7781">made with qoregeo</text>
 </svg>

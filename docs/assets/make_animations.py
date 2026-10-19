@@ -105,7 +105,9 @@ def num(value: float) -> str:
 
 
 def esc(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """Text or an attribute value, escaped for XML."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace('"', "&quot;"))
 
 
 def luminance(color: str) -> float:
@@ -275,7 +277,7 @@ class Motion:
         p = num(self.period)
         end, gone = (num(100 * f) for f in FADE_OUT)
         return "\n".join([
-            f"text{{font-family:{SANS}}}",
+            f".ui{{font-family:{SANS}}}",
             f".mono{{font-family:{MONO}}}",
             f".a{{animation-duration:{p}s;animation-iteration-count:infinite;"
             f"animation-timing-function:{EASE_OUT};transform-box:fill-box;transform-origin:center}}",
@@ -437,10 +439,14 @@ def panel(motion: Motion, title: str, steps: list[tuple[float, str, str]],
     shown = []
     for i, (t, number, rest, color) in enumerate(results):
         nxt = results[i + 1][0] if i + 1 < len(results) else None
-        rise = 0.4 if i == 0 else 0.12
-        frames: Frames = [(t, {"opacity": "0"}), (t + rise, {"opacity": "1"})]
+        rise = 0.4 if i == 0 else 0.15
+        frames: Frames = [(t, {"opacity": "0", "transform": "translateY(8px)"}),
+                          (t + rise, {"opacity": "1", "transform": "translateY(0)"})]
         if nxt is not None:
-            frames += [(nxt, {"opacity": "1"}), (nxt + 0.1, {"opacity": "0"})]
+            # The old value is gone by the time the next one starts: no double image.
+            if nxt - 0.08 < t + rise:
+                raise SystemExit("results follow each other too closely")
+            frames += [(nxt - 0.08, {"opacity": "1"}), (nxt, {"opacity": "0"})]
         hidden = ' opacity="0"' if nxt is not None else ""
         shown.append(
             f'<text class="{motion.keyframes(frames)}"{hidden} x="{TEXT_X}" y="{y(result_y)}" '
@@ -450,7 +456,7 @@ def panel(motion: Motion, title: str, steps: list[tuple[float, str, str]],
     shown.append(f'<text class="{motion.appear(last, 0.5, grow=False)}" x="{TEXT_X}" '
                  f'y="{y(caption_y)}" font-size="13" fill="{MUTED}">{esc(caption)}</text>')
     out.append('<g class="cycle">' + "".join(shown) + "</g>")
-    return "\n".join(out)
+    return '<g class="ui">\n' + "\n".join(out) + "\n</g>"
 
 
 def card(name: str, title: str, desc: str, motion: Motion, qmap: QMap, moving: list[str],
@@ -471,7 +477,7 @@ def card(name: str, title: str, desc: str, motion: Motion, qmap: QMap, moving: l
         '<g class="cycle">', *moving, "</g>",
         "</g>",
         side,
-        f'<text x="{TEXT_R}" y="{HEIGHT - 18}" text-anchor="end" font-size="11" '
+        f'<text class="ui" x="{TEXT_R}" y="{HEIGHT - 18}" text-anchor="end" font-size="11" '
         f'fill="{FOOTER}">made with qoregeo</text>',
         "</svg>",
         "",
@@ -485,9 +491,12 @@ def marker_group(qmap: QMap, fill: str, circles: list[str]) -> str:
 
 
 def label_group(qmap: QMap, texts: list[str]) -> str:
-    group = qmap.labels()
-    keep = "".join(f' {k}="{esc(v)}"' for k, v in group.attrib.items()
-                   if k not in ("id", "font-family"))
+    """
+    The labels in qoregeo's own style. They keep its font too: qoregeo places
+    them with metrics that match Helvetica and Arial, so a wider face could run
+    a label off the edge of the map.
+    """
+    keep = "".join(f' {k}="{esc(v)}"' for k, v in qmap.labels().attrib.items() if k != "id")
     return f"<g{keep}>" + "".join(texts) + "</g>"
 
 
@@ -532,30 +541,28 @@ def measure() -> tuple[str, list[str]]:
     path = (f'<path class="{draw_css}" d="{line_el.get("d")}" fill="none" stroke="{AMBER}" '
             f'stroke-width="3" stroke-linecap="round" stroke-linejoin="round" {dash}/>')
 
-    # The distance label: beside the middle of the line, on a side with room for it.
+    # The distance label sits on the line, like a dimension on a drawing: at the
+    # middle if that is clear of markers and labels, else a little up or down it.
     text = f"{round(km):,} km"
     w, h = text_width(text, 15, bold=True) + 22, 26.0
     space = qmap.taken()
     spots = []
-    for fraction in (0.5, 0.42, 0.58, 0.34, 0.66):
-        (mx, my), (dx, dy) = along(line_px, fraction)
-        for nx, ny in ((-dy, dx), (dy, -dx)):
-            reach = abs(nx) * w / 2 + abs(ny) * h / 2 + 10
-            cx, cy = mx + nx * reach, my + ny * reach
-            spots.append((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2))
+    for fraction in (0.5, 0.44, 0.56, 0.38, 0.62, 0.32, 0.68):
+        (cx, cy), _ = along(line_px, fraction)
+        spots.append((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2))
     x0, y0, x1, y1 = next((box for box in spots if space.free(box)), spots[0])
     pill = (f'<g class="{motion.appear(label_at)}">'
             f'<rect x="{num(x0)}" y="{num(y0)}" width="{num(w)}" height="{num(h)}" rx="{num(h / 2)}" '
             f'fill="{WHITE}" stroke="{AMBER}" stroke-width="1.5"/>'
             f'<text x="{num((x0 + x1) / 2)}" y="{num(y0 + h / 2 + 5)}" text-anchor="middle" '
-            f'font-size="15" font-weight="700" fill="{AMBER_TEXT}">{esc(text)}</text></g>')
+            f'class="ui" font-size="15" font-weight="700" fill="{AMBER_TEXT}">{esc(text)}</text></g>')
 
     moving = [path, marker_group(qmap, TEAL_DARK, circles), *rings,
               label_group(qmap, labels), pill]
     side = panel(motion, "Measure a distance",
                  [(0.3, 'geo.load("cities.csv")', f"{len(names)} cities"),
                   (ring_delhi, "geo.distance(delhi, mumbai)", "great circle, in km")],
-                 [(label_at, text, "", AMBER_TEXT)], f"Delhi to Mumbai, {km:g} km")
+                 [(label_at, text, "", AMBER_TEXT)], f"Delhi to Mumbai, {km} km")
     svg = card("measure", f"Delhi to Mumbai is {text}",
                f"{len(names)} Indian cities appear one by one. A line then draws from Delhi to "
                f"Mumbai and a label shows {text}, the great-circle distance from "
@@ -662,7 +669,7 @@ def geofence() -> tuple[str, list[str]]:
     (ex, ey), box = next((o for o in options if space.free(o[1])), options[0])
     radius = (f'<g class="{motion.appear(radius_at, grow=False)}">'
               f'<path d="M{num(hx)} {num(hy)}L{num(ex)} {num(ey)}" stroke="{AMBER}" '
-              f'stroke-width="1.5"/><text x="{num(box[0])}" y="{num(box[3] - 2)}" font-size="12" '
+              f'stroke-width="1.5"/><text class="ui" x="{num(box[0])}" y="{num(box[3] - 2)}" font-size="12" '
               f'font-weight="700" fill="{AMBER_TEXT}" stroke="{WHITE}" stroke-width="3" '
               f'stroke-linejoin="round" paint-order="stroke">{esc(text)}</text></g>')
 

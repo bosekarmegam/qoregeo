@@ -1350,6 +1350,7 @@ def run_antimeridian(seed: int, sz: dict[str, int]) -> tuple[dict[str, Any], dic
     for c in out["readme_claims"]:
         c["matches"] = c["readme"] == c["actual"]
 
+    out["linestring_across_180"] = _linestring_across_180(geo)
     out["random_clusters"] = run_random_clusters(rng, sz)
     fig_data = {"feats": feats, "xs": xs, "ys": ys, "bbox": q_bbox, "naive": naive,
                 "all_feats": all_feats, "full_bbox": full_bbox, "bbox_poly": bbox_poly}
