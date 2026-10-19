@@ -59,7 +59,7 @@
 <circle class="a k24" cx="175.66" cy="28.75" r="7.5" fill="none" stroke="#b7791f" stroke-width="1.75"/>
 <circle class="a k25" cx="95.47" cy="222.14" r="7.5" fill="none" stroke="#b7791f" stroke-width="1.75"/>
 <g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#333333" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text class="a k12" x="183" y="32.46">Delhi</text><text class="a k13" x="103" y="226.46">Mumbai</text><text class="a k14" x="175" y="343.46" text-anchor="end">Bangalore</text><text class="a k15" x="390" y="156.46">Kolkata</text><text class="a k16" x="240" y="341.46">Chennai</text><text class="a k17" x="121" y="237.46">Pune</text><text class="a k18" x="207" y="259.46">Hyderabad</text><text class="a k19" x="97" y="147.46">Ahmedabad</text><text class="a k20" x="102" y="184.46">Surat</text><text class="a k21" x="157" y="68.46">Jaipur</text><text class="a k22" x="252" y="69.46">Lucknow</text><text class="a k23" x="166" y="401.46">Kochi</text></g>
-<g class="a k27"><rect x="92.64" y="100.54" width="94" height="26" rx="13" fill="#ffffff" stroke="#b7791f" stroke-width="1.5"/><text x="139.64" y="118.54" text-anchor="middle" class="ui" font-size="15" font-weight="700" fill="#8a5a12">1,148 km</text></g>
+<g class="a k27"><rect x="92.64" y="100.54" width="94" height="26" rx="13" fill="#ffffff" stroke="#b7791f" stroke-width="1.5"/><text class="ui" x="139.64" y="118.54" text-anchor="middle" font-size="15" font-weight="700" fill="#8a5a12">1,148 km</text></g>
 </g>
 </g>
 <g class="ui">

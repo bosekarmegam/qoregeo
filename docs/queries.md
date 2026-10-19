@@ -411,7 +411,8 @@ contain Central's centroid, so `filter_by_polygon()` keeps nothing.
 Both methods accept any GeoJSON geometry, a Feature, a FeatureCollection or a `buffer()`
 result. Buffers are tested as exact circles on the sphere, and shapes that meet at 180° and
 -180° touch. For point data, `filter_intersects()` and `filter_by_polygon()` keep the same
-features.
+features except on the boundary: `filter_intersects()` keeps every point that lies exactly on
+an edge, while the ray casting in `filter_by_polygon()` keeps some edge points and not others.
 
 ### How non-point features are located
 
@@ -486,7 +487,8 @@ print(stores.k_nearest(bengaluru, k=100).count())  # 30
 ```
 
 `k_nearest(point, k=5, unit="km", method="haversine")` returns a new engine with the `k`
-closest features, nearest first, each with a `_distance` property. Ties keep file order. `k`
+closest features, nearest first, each with a `_distance` property. Ties keep the engine's
+order. `k`
 must be an integer of 1 or more; a `k` larger than the dataset returns every feature. It takes
 the same point forms as `nearest()`.
 
@@ -577,8 +579,8 @@ print(names(premium_near_cp, "id"))  # ['C034', 'C013', 'C019']
 print(names(premium_near_cp, "_distance"))  # [0.393, 1.7244, 2.7333]
 ```
 
-Filter with the cheap, selective condition first when you can. Every query scans the features it
-is given once, and there is no spatial index, so a smaller input makes each later step faster.
+Put the most selective condition first when you can. Each query looks at every feature it is
+given (there is no spatial index), so a smaller input makes each later step faster.
 See [experiments](experiments.md) for measured timings.
 
 ### What a new engine shares
@@ -795,13 +797,14 @@ You can run a tool from the shell with `qoregeo call`:
 qoregeo call nearest '{"path": "hospitals.csv", "point": {"lat": 28.6139, "lng": 77.209}, "k": 2, "where": [{"column": "emergency", "value": true}]}'
 ```
 
-It prints Karol Bagh Medical Centre at 3.9711 km and Ridge Valley Hospital at 6.1797 km. See
+The JSON it prints lists Karol Bagh Medical Centre (`_distance` 3.9711) and Ridge Valley
+Hospital (6.1797), the two closest hospitals with an emergency department. See
 [AI integration](ai-integration.md) for the full tool list.
 
 ## Errors
 
 Every error is a subclass of `QOREgeoError` and of a built-in exception, so `except ValueError`
-works too. The message names the bad value, what was expected and a call to copy.
+works too. The message says what went wrong and shows a call to copy.
 
 | Error | Built-in base | Raised when | Attributes |
 |---|---|---|---|

@@ -53,6 +53,7 @@ import math
 import re
 import sys
 import xml.etree.ElementTree as ET
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -148,13 +149,13 @@ def place_of(engine: GeoEngine, name: str) -> tuple[float, float]:
 # Geometry in map pixels
 
 def length(points: list[Pt]) -> float:
-    return sum(math.dist(a, b) for a, b in zip(points, points[1:]))
+    return sum(math.dist(a, b) for a, b in pairwise(points))
 
 
 def along(points: list[Pt], fraction: float) -> tuple[Pt, Pt]:
     """The point ``fraction`` of the way along a polyline and the unit direction there."""
     target = fraction * length(points)
-    for a, b in zip(points, points[1:]):
+    for a, b in pairwise(points):
         step = math.dist(a, b)
         if step and target <= step:
             t = target / step
@@ -169,10 +170,11 @@ def along(points: list[Pt], fraction: float) -> tuple[Pt, Pt]:
 def position_on(points: list[Pt], p: Pt) -> float:
     """How far along a polyline (0 to 1) its point nearest to ``p`` lies."""
     best, best_at, travelled = math.inf, 0.0, 0.0
-    for a, b in zip(points, points[1:]):
+    for a, b in pairwise(points):
         dx, dy = b[0] - a[0], b[1] - a[1]
         step2 = dx * dx + dy * dy
-        t = 0.0 if not step2 else max(0.0, min(1.0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / step2))
+        t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / step2 if step2 else 0.0
+        t = max(0.0, min(1.0, t))
         d = math.dist(p, (a[0] + dx * t, a[1] + dy * t))
         if d < best - 1e-9:
             best, best_at = d, travelled + t * math.sqrt(step2)
@@ -188,7 +190,7 @@ def path_points(d: str) -> list[list[Pt]]:
     out = []
     for chunk in d.split("M")[1:]:
         values = [float(v) for v in _NUMBER.findall(chunk)]
-        points = list(zip(values[0::2], values[1::2]))
+        points = list(zip(values[0::2], values[1::2], strict=True))
         if chunk.rstrip().endswith("Z") and points:
             points.append(points[0])
         out.append(points)
@@ -319,9 +321,10 @@ class QMap:
 
     def _check_order(self) -> None:
         """
-        Fit x = a + b * lng and y = c - b * mercator(lat) through every marker.
-        If the markers are in feature order the fit is exact to the 0.01 px that
-        qoregeo rounds to; otherwise stop instead of animating the wrong points.
+        Fit Web Mercator through every marker: x grows with the longitude and y
+        falls with the Mercator latitude, at one shared scale. If the markers are
+        in feature order the fit is exact to the 0.01 px that qoregeo rounds to;
+        otherwise stop instead of animating the wrong points.
         """
         places = [f["geometry"]["coordinates"] for f in self.features]
         if len(places) != len(self.markers):
@@ -332,17 +335,18 @@ class QMap:
         ys = [y for _, y in self.markers]
         n = len(us)
         mu, mv, mx, my = sum(us) / n, sum(vs) / n, sum(xs) / n, sum(ys) / n
-        b = (sum((x - mx) * (u - mu) for x, u in zip(xs, us))
-             - sum((y - my) * (v - mv) for y, v in zip(ys, vs))) / (
+        b = (sum((x - mx) * (u - mu) for x, u in zip(xs, us, strict=True))
+             - sum((y - my) * (v - mv) for y, v in zip(ys, vs, strict=True))) / (
             sum((u - mu) ** 2 for u in us) + sum((v - mv) ** 2 for v in vs))
         a, c = mx - b * mu, my + b * mv
-        worst = max(math.hypot(a + b * u - x, c - b * v - y) for u, v, x, y in zip(us, vs, xs, ys))
+        worst = max(math.hypot(a + b * u - x, c - b * v - y)
+                    for u, v, x, y in zip(us, vs, xs, ys, strict=True))
         if worst > 0.05:
             raise SystemExit(f"markers are not in feature order (fit is off by {worst:.2f} px)")
         self.px_per_radian = b
 
     def px_per_km(self, engine: GeoEngine, lat: float) -> float:
-        """Map pixels per kilometer at latitude ``lat`` (Mercator is the same in every direction)."""
+        """Map pixels per kilometer at latitude ``lat`` (the same in every direction)."""
         km_per_degree = engine.distance((lat, 0.0), (lat, 1.0))
         return self.px_per_radian * math.pi / 180 / km_per_degree
 
@@ -376,7 +380,7 @@ class QMap:
                 anchor = t.get("text-anchor", "start")
                 x0 = x - w if anchor == "end" else x - w / 2 if anchor == "middle" else x
                 space.add((x0, y - size * 0.8, x0 + w, y + size * 0.25))
-        bar = [r for r in self.layer("qg-scale-bar").iter("rect")]
+        bar = list(self.layer("qg-scale-bar").iter("rect"))
         if bar:
             x0 = min(float(r.get("x", "")) for r in bar)
             x1 = max(float(r.get("x", "")) + float(r.get("width", "")) for r in bar)
@@ -426,7 +430,7 @@ def panel(motion: Motion, title: str, steps: list[tuple[float, str, str]],
 
     out = [f'<text x="{TEXT_X}" y="{y(top)}" font-size="{title_size}" font-weight="600" '
            f'fill="{INK}">{esc(title)}</text>']
-    for i, ((t, code, note), row) in enumerate(zip(steps, rows), 1):
+    for i, ((t, code, note), row) in enumerate(zip(steps, rows, strict=True), 1):
         out.append(
             f'<g class="{motion.step(t)}">'
             f'<circle cx="{TEXT_X + 10}" cy="{y(row - 4.5)}" r="10" fill="{TEAL_DARK}"/>'
@@ -529,9 +533,9 @@ def measure() -> tuple[str, list[str]]:
     ring_mumbai, label_at = draw_at + draw_for - 0.2, draw_at + draw_for + 0.1
 
     circles = [f'<circle class="{motion.appear(t)}" cx="{num(x)}" cy="{num(y)}" '
-               f'r="{num(qmap.radius)}"/>' for t, (x, y) in zip(shows, qmap.markers)]
-    labels = [label_text(t, motion.appear(shows[i] + 0.1, grow=False))
-              for i, t in sorted(label_texts(qmap, names).items())]
+               f'r="{num(qmap.radius)}"/>' for t, (x, y) in zip(shows, qmap.markers, strict=True)]
+    labels = [label_text(el, motion.appear(shows[i] + 0.1, grow=False))
+              for i, el in sorted(label_texts(qmap, names).items())]
     rings = []
     for city, t in (("Delhi", ring_delhi), ("Mumbai", ring_mumbai)):
         x, y = qmap.markers[names.index(city)]
@@ -550,12 +554,13 @@ def measure() -> tuple[str, list[str]]:
     for fraction in (0.5, 0.44, 0.56, 0.38, 0.62, 0.32, 0.68):
         (cx, cy), _ = along(line_px, fraction)
         spots.append((cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2))
-    x0, y0, x1, y1 = next((box for box in spots if space.free(box)), spots[0])
+    x0, y0, x1, _ = next((box for box in spots if space.free(box)), spots[0])
     pill = (f'<g class="{motion.appear(label_at)}">'
-            f'<rect x="{num(x0)}" y="{num(y0)}" width="{num(w)}" height="{num(h)}" rx="{num(h / 2)}" '
-            f'fill="{WHITE}" stroke="{AMBER}" stroke-width="1.5"/>'
-            f'<text x="{num((x0 + x1) / 2)}" y="{num(y0 + h / 2 + 5)}" text-anchor="middle" '
-            f'class="ui" font-size="15" font-weight="700" fill="{AMBER_TEXT}">{esc(text)}</text></g>')
+            f'<rect x="{num(x0)}" y="{num(y0)}" width="{num(w)}" height="{num(h)}" '
+            f'rx="{num(h / 2)}" fill="{WHITE}" stroke="{AMBER}" stroke-width="1.5"/>'
+            f'<text class="ui" x="{num((x0 + x1) / 2)}" y="{num(y0 + h / 2 + 5)}" '
+            f'text-anchor="middle" font-size="15" font-weight="700" fill="{AMBER_TEXT}">'
+            f"{esc(text)}</text></g>")
 
     moving = [path, marker_group(qmap, TEAL_DARK, circles), *rings,
               label_group(qmap, labels), pill]
@@ -629,14 +634,14 @@ def geofence() -> tuple[str, list[str]]:
     ink = qmap.labels().get("fill", INK)
     labels = []
     areas = [f["properties"]["area"] for f in shown.get_features()]
-    for i, t in sorted(label_texts(qmap, areas).items()):
+    for i, el in sorted(label_texts(qmap, areas).items()):
         if i in lights:
             css = motion.keyframes([(shows[i] + 0.1, {"opacity": "0", "fill": GRAY}),
                                     (shows[i] + 0.6, {"opacity": "1"}),
                                     (lights[i], {"fill": GRAY}), (lights[i] + 0.4, {"fill": ink})])
-            labels.append(label_text(t, css))
+            labels.append(label_text(el, css))
         else:
-            labels.append(label_text(t, motion.appear(shows[i] + 0.1, grow=False), GRAY))
+            labels.append(label_text(el, motion.appear(shows[i] + 0.1, grow=False), GRAY))
 
     # The zone: qoregeo's dashed outline, uncovered by a mask whose solid stroke
     # draws itself, so the dashes stay put while the circle closes. An unmasked
@@ -650,8 +655,8 @@ def geofence() -> tuple[str, list[str]]:
                  f'd="{zone_el.get("d")}" fill="{AMBER}" fill-opacity=".08"/>')
     outline = (f'd="{zone_el.get("d")}" fill="none" stroke="{AMBER}" stroke-width="2" '
                f'stroke-dasharray="{dashes}" stroke-linejoin="round"')
-    zone_line = (f'<path {outline} mask="url(#zone-trace)"/>'
-                 f'<path class="{motion.appear(trace_at + trace_for, 0.3, grow=False)}" {outline}/>')
+    settle = motion.appear(trace_at + trace_for, 0.3, grow=False)
+    zone_line = f'<path {outline} mask="url(#zone-trace)"/><path class="{settle}" {outline}/>'
     hub_mark = (f'<g class="{motion.appear(hub_at)}"><circle cx="{num(hx)}" cy="{num(hy)}" r="7" '
                 f'fill="none" stroke="{INK}" stroke-width="1.5"/><circle cx="{num(hx)}" '
                 f'cy="{num(hy)}" r="2.5" fill="{INK}"/></g>')
@@ -673,9 +678,10 @@ def geofence() -> tuple[str, list[str]]:
     (ex, ey), box = next((o for o in options if space.free(o[1])), options[0])
     radius = (f'<g class="{motion.appear(radius_at, grow=False)}">'
               f'<path d="M{num(hx)} {num(hy)}L{num(ex)} {num(ey)}" stroke="{AMBER}" '
-              f'stroke-width="1.5"/><text class="ui" x="{num(box[0])}" y="{num(box[3] - 2)}" font-size="12" '
-              f'font-weight="700" fill="{AMBER_TEXT}" stroke="{WHITE}" stroke-width="3" '
-              f'stroke-linejoin="round" paint-order="stroke">{esc(text)}</text></g>')
+              f'stroke-width="1.5"/><text class="ui" x="{num(box[0])}" y="{num(box[3] - 2)}" '
+              f'font-size="12" font-weight="700" fill="{AMBER_TEXT}" stroke="{WHITE}" '
+              f'stroke-width="3" stroke-linejoin="round" paint-order="stroke">'
+              f"{esc(text)}</text></g>")
 
     moving = [zone_fill, zone_line, radius, hub_mark,
               f'<g fill="{TEAL}" fill-opacity=".35">' + "".join(halos) + "</g>",
@@ -684,11 +690,12 @@ def geofence() -> tuple[str, list[str]]:
     counts = [(count_at, "0", f" of {total}", TEAL_DARK)]
     counts += [(lights[names.index(n)], str(k), f" of {total}", TEAL_DARK)
                for k, n in enumerate(nearest, 1)]
-    side = panel(motion, "Filter by a zone",
-                 [(0.3, 'geo.load("stores.csv")', f"{total} of the {stores.count()} stores are in Delhi"),
-                  (hub_at, f"zone = geo.buffer(center, {RADIUS_KM})", f"{RADIUS_KM} km around central Delhi"),
-                  (count_at, ".filter_by_polygon(zone)", "keeps the stores inside it")],
-                 counts, f"Delhi stores within {RADIUS_KM} km")
+    steps = [(0.3, 'geo.load("stores.csv")',
+              f"{total} of the {stores.count()} stores are in Delhi"),
+             (hub_at, f"zone = geo.buffer(center, {RADIUS_KM})",
+              f"{RADIUS_KM} km around central Delhi"),
+             (count_at, ".filter_by_polygon(zone)", "keeps the stores inside it")]
+    side = panel(motion, "Filter by a zone", steps, counts, f"Delhi stores within {RADIUS_KM} km")
     found = len(nearest)
     svg = card("geofence", f"{found} of {total} Delhi stores are within {RADIUS_KM} km",
                f"{total} stores in Delhi appear. A {RADIUS_KM} km zone from GeoEngine.buffer() "
@@ -744,14 +751,14 @@ def corridor() -> tuple[str, list[str]]:
                            f'cy="{num(y)}" r="{num(qmap.radius)}"/>')
     ink = qmap.labels().get("fill", INK)
     labels = []
-    for i, t in sorted(label_texts(qmap, names).items()):
+    for i, el in sorted(label_texts(qmap, names).items()):
         if i in lights:
             css = motion.keyframes([(shows[i] + 0.1, {"opacity": "0", "fill": GRAY}),
                                     (shows[i] + 0.6, {"opacity": "1"}),
                                     (lights[i], {"fill": GRAY}), (lights[i] + 0.4, {"fill": ink})])
-            labels.append(label_text(t, css))
+            labels.append(label_text(el, css))
         else:
-            labels.append(label_text(t, motion.appear(shows[i] + 0.1, grow=False), GRAY))
+            labels.append(label_text(el, motion.appear(shows[i] + 0.1, grow=False), GRAY))
 
     draw_css, dash = motion.draw(draw_at, draw_for, length(route_px))
     path = (f'<path class="{draw_css}" d="{route_el.get("d")}" fill="none" stroke="{AMBER}" '
@@ -769,11 +776,12 @@ def corridor() -> tuple[str, list[str]]:
     total = len(names)
     counts = [(count_at, "0", f" of {total}", TEAL_DARK)]
     counts += [(lights[i], str(k), f" of {total}", TEAL_DARK) for k, i in enumerate(order, 1)]
-    side = panel(motion, "Search along a route",
-                 [(0.3, 'geo.load("cities.csv")', f"{total} cities"),
-                  (draw_at, 'geo.load("route.geojson")', f"Delhi to Mumbai, {round(route_km):,} km"),
-                  (band_at, f".filter_by_line(route, {CORRIDOR_KM})", f"within {CORRIDOR_KM} km of the route")],
-                 counts, f"cities within {CORRIDOR_KM} km of the route")
+    steps = [(0.3, 'geo.load("cities.csv")', f"{total} cities"),
+             (draw_at, 'geo.load("route.geojson")', f"Delhi to Mumbai, {round(route_km):,} km"),
+             (band_at, f".filter_by_line(route, {CORRIDOR_KM})",
+              f"within {CORRIDOR_KM} km of the route")]
+    side = panel(motion, "Search along a route", steps, counts,
+                 f"cities within {CORRIDOR_KM} km of the route")
     found = len(near)
     svg = card("corridor", f"{found} of {total} cities are within {CORRIDOR_KM} km of the route",
                f"The Delhi to Mumbai route draws itself, a {CORRIDOR_KM} km corridor opens around "

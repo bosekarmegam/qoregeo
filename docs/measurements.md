@@ -140,8 +140,9 @@ Fix it:
     Example: (28.6139, 77.2090)  ← Delhi
 ```
 
-Swapped coordinates are only caught when they fall out of range. For India, a swapped point is
-still valid, because 77.2 is a possible latitude. It lands in the Arctic, north of Norway:
+Swapped coordinates are only caught when they fall out of range. For a point in Delhi, the
+swapped pair is still valid, because 77.2 is a possible latitude. It lands in the Barents Sea,
+north of Norway:
 
 ```python
 print(geo.distance((77.2090, 28.6139), mumbai))  # 6900.7153  not 1148.0965
@@ -160,7 +161,7 @@ print(geo.distance(delhi, mumbai, unit="Kilometres"))  # 1148.0965
 ```
 
 `distance()` returns the great-circle distance as a `float`, rounded to 4 decimals of the unit:
-0.1 m in `km`, 0.1 mm in `m`. The order of the two points does not change the result.
+0.1 m in `km`, 0.1 mm in `m`.
 
 Distance units are the same for every method that takes one (`distance()`, `destination()`,
 `buffer()`, `length()`, `distance_to_line()`, and the query methods such as `nearest()` and
@@ -223,10 +224,11 @@ print(sphere_minus_ellipsoid((0, 0), (0, 1)))  # (-124.4, -0.112)  1 degree east
 
 The name ignores case and surrounding spaces. Anything else raises `InvalidArgumentError`.
 
-The Earth is flatter at the poles than a sphere, so the haversine result is too long for
-north-south steps near the equator and too short for most steps far from it. The examples above
-show the range: from 0.561 % too long to 0.363 % too short. The error is a share of the
-distance, so 0.3 % is 5 m across central Delhi and 3.6 km from Delhi to Mumbai.
+The Earth is flatter at the poles than a sphere, so the sphere gets some directions too long
+and others too short. In the examples above it is 0.561 % too long for a north-south step at the
+equator, 0.112 % too short for an east-west step there, and 0.363 % too short between Oslo and
+Helsinki, at 60° north. The error is a share of the distance: 0.2 % is 5 m across central Delhi,
+and 0.3 % is 3.6 km from Delhi to Mumbai.
 
 | Use the default `haversine` when | Use `vincenty` when |
 |---|---|
@@ -318,8 +320,9 @@ print(geo.distance(delhi, east, method="vincenty"))  # 10.0189  19 m too far
 print(geo.distance(delhi, north, method="vincenty"))  # 9.9672  33 m short
 ```
 
-That is the same fraction of a percent as the haversine distance error, so the points line up
-with `distance()` and `buffer()` exactly.
+That is the same fraction of a percent as the haversine distance error. `distance()`,
+`destination()` and `buffer()` share one sphere, so they agree with each other:
+`geo.distance(delhi, east)` is 10.0.
 
 ## Find the midpoint
 
@@ -340,7 +343,8 @@ the average of the coordinates. The shortest path from London to New York bends 
 midpoint lies north of both cities. Averaging Suva and Tubou, which sit on either side of 180°,
 would give a longitude near 0, on the other side of the world; `midpoint()` stays in Fiji.
 
-For the center of many points, use the engine's `centroid()`; see [Queries](queries.md).
+For the center of a whole dataset, call `centroid()` on a loaded engine; see the
+[API reference](api-reference.md).
 
 ## Draw a circle with buffer
 
@@ -463,7 +467,7 @@ def zone_of(point):
 print(zone_of(lajpat_nagar), zone_of(india_gate), zone_of(rashtrapati_bhavan))  # South Central None
 ```
 
-Polygon edges are straight lines in longitude and latitude, as GeoJSON draws them. For a polygon
+Polygon edges are straight lines in longitude and latitude, as RFC 7946 defines them. For a polygon
 that crosses 180°, write its longitudes continuously (177 to 182) or split it into a
 MultiPolygon at 180°. Anything that is not a polygon, such as a LineString, raises
 `InvalidBufferError`.
@@ -714,23 +718,31 @@ toward the poles (at Delhi's latitude, about 12 % narrower).
 |---|---|---|
 | `distance()`, `length()` | sphere, radius 6371.0088 km | off from WGS84 by up to about 0.56 %, depending on direction and latitude ([examples](#haversine-or-vincenty)) |
 | `distance()`, `length()` with `method="vincenty"` | WGS84 ellipsoid | under 1 mm from GeographicLib where it converges; [falls back](#nearly-antipodal-points) to haversine where it does not |
-| `bearing()` | sphere | the initial great-circle bearing, which differs a little from the WGS84 azimuth |
+| `bearing()` | sphere | the initial great-circle bearing on the sphere, not the WGS84 azimuth |
 | `destination()`, `midpoint()` | sphere | consistent with `distance()`; off from WGS84 by the same fraction of a percent |
 | `buffer()` | sphere | vertices exactly `radius` from the center on the sphere |
 | `distance_to_line()` | sphere | segments are great-circle arcs |
-| `area()` | sphere | off from WGS84 by a fraction of a percent that grows with latitude |
+| `area()` | sphere | off from WGS84 by less than 1 % in the experiments, by an amount that depends on latitude |
 | `point_in_polygon()`, `intersects()` | straight edges in lng/lat | exact for edges as GeoJSON defines them; buffers are exact circles on the sphere |
 | `geohash()`, `geohash_decode()` | lng/lat grid | exact cell; decoding returns the center |
 
-Two notes on shapes:
+`point_in_polygon()` and `intersects()` read a polygon edge as a straight line in longitude and
+latitude, while `distance_to_line()` and `length()` read a segment as a great-circle arc. For
+short segments the two paths are almost the same. For a long east-west segment far from the
+equator they part, because the great circle bends toward the pole:
 
-- `point_in_polygon()` and `intersects()` read a polygon edge as a straight line in longitude
-  and latitude, while `distance_to_line()` and `length()` read a segment as a great-circle arc.
-  For segments a few kilometers long the two paths are the same for practical purposes. For a
-  long east-west segment far from the equator they part: the great circle bends toward the pole.
-  Add vertices to long edges if that matters.
-- The coordinates themselves are usually the largest error. Four decimals of a degree are about
-  11 m of latitude.
+```python
+a, b = (60.0, 10.0), (60.0, 12.0)
+print(geo.distance(a, b))  # 111.1908
+print(geo.midpoint(a, b))  # (60.003779, 11.0)
+print(geo.distance((60.0, 11.0), geo.midpoint(a, b), unit="m"))  # 420.2062
+```
+
+Along this 111 km edge at 60° north, the great circle passes 420 m north of the straight line at
+the middle. If that matters, add vertices to long polygon edges.
+
+The coordinates themselves are often the largest error: four decimals of a degree are about
+11 m of latitude.
 
 [Experiments](experiments.md) measures these methods against GeographicLib and other libraries
 on many random points and shapes, with the scripts to rerun them.
@@ -752,7 +764,7 @@ qoregeo distance -18.1416,178.4419 -18.2333,-178.8 --json
   "distance": 291.5408,
   "unit": "km",
   "method": "haversine",
-  "bearing": 91.43,
+  "bearing": 92.43,
   "compass": "East"
 }
 ```
@@ -827,7 +839,7 @@ print(problems)  # ['InvalidUnitError', 'InvalidArgumentError', 'InvalidRadiusEr
 |---|---|---|
 | `InvalidCoordinateError` | a point is out of range, not a number or not a point | `lat`, `lng`, `context` |
 | `InvalidUnitError` | a unit name is unknown, or an area unit is given for a distance (or the reverse) | `unit`, `valid` |
-| `InvalidArgumentError` | an unknown `method`; a `distance` or `bearing` that is not finite; `num_points` below 3; a `radius` over 20015 km; a `precision` outside 1 to 12; a bad geohash character; a `line` that is not a path, or has no points; an `intersects()` argument that is not GeoJSON | `name`, `value`, `expected` |
+| `InvalidArgumentError` | an unknown `method`; a `destination()` distance or bearing that is not a finite number; `num_points` below 3; a `buffer()` radius over 20015 km; a `precision` outside 1 to 12; an empty geohash or one with a bad character; a `line` that is not a list of points or a LineString; a `distance_to_line()` line with no points; an `intersects()` argument that is not GeoJSON | `name`, `value`, `expected` |
 | `InvalidRadiusError` | a `buffer()` radius that is zero, negative or not a number | `radius` |
 | `InvalidBufferError` | a `point_in_polygon()` or `area()` shape that is not a polygon, has a ring of fewer than 3 positions, or has a position out of range | `reason` |
 
