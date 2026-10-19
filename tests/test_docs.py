@@ -2,25 +2,39 @@
 tests/test_docs.py
 ==================
 The documentation must match the code: README.md (which is also the PyPI
-project page), the Agent Skill and its references, AGENTS.md, llms.txt and
-the CHANGELOG. Examples are executed where that is cheap and offline;
-everything else is checked against the real signatures and presets.
+project page), the Agent Skill and its references, AGENTS.md, llms.txt, the
+CHANGELOG and the guide in docs/. Examples are executed where that is cheap
+and offline; everything else is checked against the real signatures and
+presets. The last two sections run every example on the docs/*.md pages
+and check the writing style of all Markdown files.
 """
 
 from __future__ import annotations
 
 import ast
 import builtins
+import importlib
 import inspect
+import io
+import json
 import re
+import shlex
+import shutil
+import sys
+import urllib.request
+import webbrowser
 import zlib
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import pytest
 
 import qoregeo
 from qoregeo import GeoEngine
+from qoregeo.geocode import Geocoder
 from qoregeo.map_builder import _TILES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,11 +49,16 @@ TESTS_WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 
 GITHUB_BLOB = "https://github.com/bosekarmegam/qoregeo/blob/main/"
-FENCE_RE = re.compile(r"^```(\w*)[^\n]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
+# A fenced block, also one indented inside a list item.
+FENCE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<lang>[\w+-]*)[^\n]*\n"
+    r"(?P<body>.*?)^[ \t]*(?P=fence)[ \t]*$",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def read(path: Path) -> str:
-    """The file's text, or skip — an sdist ships only some of these files."""
+    """The file's text, or skip: an sdist ships only some of these files."""
     if not path.is_file():
         pytest.skip(f"{path.relative_to(ROOT)} is not part of this checkout")
     return path.read_text(encoding="utf-8")
@@ -47,10 +66,16 @@ def read(path: Path) -> str:
 
 def code_blocks(text: str, lang: str) -> list[tuple[int, str]]:
     """(first line number, source) of every fenced block in language ``lang``."""
-    return [
-        (text.count("\n", 0, m.start()) + 2, m.group(2))
-        for m in FENCE_RE.finditer(text) if m.group(1) == lang
-    ]
+    blocks = []
+    for m in FENCE_RE.finditer(text):
+        if m.group("lang") != lang:
+            continue
+        body, indent = m.group("body"), m.group("indent")
+        if indent:   # a block inside a list item: take off the item's indentation
+            body = "".join(line[len(indent):] if line.startswith(indent) else line.lstrip(" \t")
+                           for line in body.splitlines(keepends=True))
+        blocks.append((text.count("\n", 0, m.start()) + 2, body))
+    return blocks
 
 
 def prose(text: str) -> str:
@@ -238,7 +263,7 @@ def test_api_reference_signatures_match_the_code() -> None:
     problems = []
     for name, call in _documented_calls(read(API_REF)):
         if any(isinstance(a, ast.Constant) and a.value is Ellipsis for a in call.args):
-            continue   # `map_html(...)` — "same options as"
+            continue   # `map_html(...)` means "same options as"
         params = list(inspect.signature(getattr(GeoEngine, name)).parameters.values())[1:]
         named = [p for p in params if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)]
         covered = {p.name for p in named[:len(call.args)]}
@@ -402,7 +427,9 @@ def test_agents_md_describes_ci_accurately() -> None:
     versions = re.search(r'python-version: \[([^\]]+)\]', workflow)
     assert versions
     matrix = [v.strip().strip('"') for v in versions.group(1).split(",")]
-    assert f"Python {matrix[0]}–{matrix[-1]}" in agents
+    # "Python 3.10 to 3.15"; older text used an en dash, which the style rules now ban.
+    assert (f"Python {matrix[0]} to {matrix[-1]}" in agents
+            or f"Python {matrix[0]}–{matrix[-1]}" in agents)
     lint_job = workflow.split("\n  test:")[0]
     assert "ruff" in lint_job and "mypy" in lint_job and "ubuntu-latest" in lint_job
     lint_python = re.search(r'python-version: "([\d.]+)"', lint_job)

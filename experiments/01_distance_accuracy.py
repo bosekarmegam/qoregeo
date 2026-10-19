@@ -265,6 +265,7 @@ def summarize(meas: dict[str, Any], with_bearing: bool = True) -> dict[str, Any]
         "vincenty": err_stats(vin, ref),
         "vincenty_converged_only": err_stats(vin[~warned], ref[~warned]),
         "vincenty_unrounded": err_stats(meas["vin_raw"], ref),
+        "vincenty_unrounded_converged_only": err_stats(meas["vin_raw"][~warned], ref[~warned]),
         "haversine_unrounded": err_stats(meas["hav_raw"], ref),
         "vincenty_outcomes": {
             "converged": int((~warned & np.isfinite(vin)).sum()),
@@ -929,8 +930,8 @@ def fig_haversine_latitude(class_meas: dict[str, Any], class_pairs: list, seed: 
     ref = class_meas["ref"]
     sel = np.flatnonzero((ref >= 1e3) & (ref < 1e5))
     rng = np.random.default_rng(seed)
-    if sel.size > 6000:
-        sel = rng.choice(sel, 6000, replace=False)
+    if sel.size > 4000:
+        sel = rng.choice(sel, 4000, replace=False)
     lat = np.array([(class_pairs[i][0][0] + class_pairs[i][1][0]) / 2 for i in sel])
     az = np.radians(class_meas["ref_az"][sel])
     rel = (class_meas["hav"][sel] - ref[sel]) / ref[sel] * 100.0
@@ -981,7 +982,7 @@ def fig_antipodal(grid_data: dict[str, Any]) -> str:
     im = None
     for ax, (lat0, (err, fbm)) in zip(axes, grids.items(), strict=True):
         im = ax.imshow(np.clip(err, 1e-5, None), origin="lower", extent=ext, cmap=cmap, norm=norm,
-                       interpolation="nearest", aspect="equal")
+                       interpolation="none", aspect="equal")
         if fbm.any() and not fbm.all():
             ax.contour(offs, offs, fbm.astype(float), levels=[0.5], colors=[C_VIN], linewidths=1.2)
         ax.set_title(f"A = ({lat0:g}, 0)", fontsize=9.5, color=INK)

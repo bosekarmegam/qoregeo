@@ -55,6 +55,7 @@ from geographiclib.geodesic import Geodesic  # noqa: E402
 
 import qoregeo  # noqa: E402
 from qoregeo import GeoEngine  # noqa: E402
+from qoregeo.tools import call_tool  # noqa: E402
 from qoregeo.utils import EARTH_RADIUS_M  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
@@ -487,6 +488,20 @@ def run_edge_cases() -> dict[str, Any]:
         "point_in_polygon_89.9N_coordinates": GEO.point_in_polygon((89.9, 0.0), plain),
         "geographiclib_area_of_its_vertices_km2": abs(gl_area([(p[1], p[0]) for p in zone["coordinates"][0][:-1]])) / 1e6,
     }
+    tool_zone = call_tool("buffer", {"center": {"lat": 85.0, "lng": 10.0}, "radius": 1000}).data["geometry"]
+    out["ai_tools_buffer_covering_north_pole"] = {
+        "calls": "buffer(center=85 N 10 E, radius=1000), then contains and measure on its geometry",
+        "distance_89.9N_0E_from_center_km": GEO.distance((85.0, 10.0), (89.9, 0.0)),
+        "contains_89.9N_0E": call_tool("contains", {"point": {"lat": 89.9, "lng": 0.0},
+                                                    "area": tool_zone}).data["inside"],
+        "measure_km2": call_tool("measure", {"geometry": tool_zone}).data["area"],
+        "engine_area_of_buffer_km2": GEO.area(GEO.buffer((85.0, 10.0), 1000)),
+    }
+    tool_zone = call_tool("buffer", {"center": {"lat": 28.61, "lng": 77.2}, "radius": 10}).data["geometry"]
+    out["ai_tools_buffer_10km"] = {
+        "measure_km2": call_tool("measure", {"geometry": tool_zone}).data["area"],
+        "engine_area_of_buffer_km2": GEO.area(GEO.buffer((28.61, 77.2), 10)),
+    }
     zone = GEO.buffer((28.61, 77.20), 10)
     fc = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": zone}]}
     out["buffer_inside_feature_collection"] = {
@@ -648,7 +663,7 @@ def fig_area(squares: list[dict[str, Any]], circles: list[dict[str, Any]], rando
     _size_lines(axes[1], circles, "error_pct", sizes, size_key="radius_km")
     rr = random_res["rows"]
     axes[2].scatter([abs(r["lat"]) for r in rr], [r["error_pct"] for r in rr], s=9, color=C_SIZE[0],
-                    alpha=0.55, linewidths=0, zorder=3, label="random polygon")
+                    alpha=0.55, linewidths=0, zorder=3, label="random polygon", rasterized=True)
     axes[0].set_ylabel("Area error vs WGS84 (%)")
     axes[0].set_ylim(-1.0, 0.6)
     for ax in axes[:2]:
