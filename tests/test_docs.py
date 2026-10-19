@@ -450,8 +450,8 @@ def test_agents_md_describes_ci_accurately() -> None:
 #   temporary directory holding a copy of every file in docs/data/, so
 #   examples load the samples by bare name ("stores.csv").
 # * A top-level line ``print(expr)  # expected`` is a check: str(expr) must
-#   equal the comment up to its first run of two spaces. Any top-level print
-#   with a trailing comment is checked, so put notes on their own line.
+#   equal the comment up to its first run of two spaces (the rest is a note).
+#   Every top-level print with a trailing comment is checked.
 # * A python block whose first line is ``# needs network`` is compiled, not run.
 # * GeoEngine.show() is a stub; a blocking show() must end its block.
 # * In ```bash (also sh, shell, console) blocks, each line that starts with
