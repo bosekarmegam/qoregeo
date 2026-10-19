@@ -535,8 +535,7 @@ def _needs_network(source: str) -> bool:
 
 
 @pytest.mark.parametrize("page", DOC_PAGES, ids=_page_id)
-def test_doc_python_examples_run(page: Path, doc_sandbox: DocSandbox,
-                                 capsys: pytest.CaptureFixture[str]) -> None:
+def test_doc_python_examples_run(page: Path, doc_sandbox: DocSandbox) -> None:
     name, filename = _doc_name(page), str(page)
     expected: dict[int, str] = {}
     wrong: list[str] = []
@@ -549,10 +548,10 @@ def test_doc_python_examples_run(page: Path, doc_sandbox: DocSandbox,
 
     namespace: dict[str, Any] = {"__name__": "__main__", "_check": check}
     for start, source in code_blocks(read(page), "python"):
-        # Padding with blank lines makes tracebacks and checks use page line numbers.
+        # Padding with blank lines gives tracebacks and checks the page's line numbers.
         padded = "\n" * (start - 1) + source
-        blocking = _blocking_show_calls(padded)
-        assert not blocking, (f"{name}:{blocking}: show() serves until Ctrl+C in a script; "
+        blocking = [f"{name}:{line}" for line in _blocking_show_calls(padded)]
+        assert not blocking, (f"{', '.join(blocking)}: show() serves until Ctrl+C in a script; "
                               f"make it the block's last statement or pass block=False")
         if _needs_network(source):
             compile(padded, filename, "exec")
@@ -562,9 +561,8 @@ def test_doc_python_examples_run(page: Path, doc_sandbox: DocSandbox,
         try:
             exec(compile(checked, filename, "exec"), namespace)
         except BaseException:
-            if wrong:
-                with capsys.disabled():
-                    print("\nprint checks that failed before the error:\n" + "\n".join(wrong))
+            if wrong:   # shown under "Captured stdout call"
+                print("\nprint checks that failed before the error:\n" + "\n".join(wrong))
             raise
     assert doc_sandbox.network == []
     assert not wrong, "\n".join(wrong)
@@ -656,21 +654,20 @@ def test_doc_json_and_toml_blocks_parse(page: Path) -> None:
         except ValueError as exc:
             line = start + getattr(exc, "lineno", 1) - 1
             problems.append(f"{name}:{line}: not valid JSON: {getattr(exc, 'msg', exc)}")
-    assert not problems, "\n".join(problems)
 
     toml_blocks = code_blocks(text, "toml")
-    if not toml_blocks:
-        return
     try:
-        tomllib = importlib.import_module("tomllib")
-    except ModuleNotFoundError:
-        pytest.skip("tomllib needs Python 3.11+")
-    for start, source in toml_blocks:
+        tomllib: Any = importlib.import_module("tomllib")
+    except ModuleNotFoundError:   # Python 3.10
+        tomllib = None
+    for start, source in toml_blocks if tomllib else []:
         try:
             tomllib.loads(source)
         except tomllib.TOMLDecodeError as exc:
-            problems.append(f"{name}:{start}: not valid TOML: {exc}")
+            problems.append(f"{name}:{start}: not valid TOML (block line numbers): {exc}")
     assert not problems, "\n".join(problems)
+    if toml_blocks and tomllib is None:
+        pytest.skip("JSON checked; checking TOML needs tomllib (Python 3.11+)")
 
 
 def github_slug(heading: str) -> str:
