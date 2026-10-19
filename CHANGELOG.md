@@ -16,11 +16,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Spatial index for large files
 - QORE OS integration (v2.0)
 
-## [1.1.0] — 2026-10-19
+## [1.1.0] (2026-10-19)
 
-### ⚠️ Compatibility notes
+### Compatibility notes
 - **Python 3.10+ is now required** (3.8 and 3.9 are end-of-life; current pytest, mypy
-  and hatchling no longer run on them). Python 3.10 – 3.15 are tested. Older Pythons
+  and hatchling no longer run on them). Python 3.10 to 3.15 are tested. Older Pythons
   keep installing 1.0.3 automatically.
 - `point_in_polygon()` / `area()` on a `buffer()` result now use the exact circle
   (great-circle distance test, spherical-cap area) instead of the inscribed 64-gon, so
@@ -94,7 +94,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `load_data()` kept a stale source path and aliased the caller's geometries and
   property dicts; the GeoJSON skip warning pointed at QOREgeo instead of your code.
 - `load()` on a directory raised `IsADirectoryError`; invalid JSON was reported as an
-  "unsupported format"; "No data loaded" was reported after a filter that simply
+  "unsupported format"; "No data loaded" was reported after a filter that
   matched nothing; `ColumnNotFoundError` from `load()` suggested a `geo.filter(...)` fix.
 - QOREgeo exceptions could not be pickled (breaking `multiprocessing` workers);
   `GeoFileNotFoundError` lacked `errno` / `strerror`.
@@ -103,7 +103,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Added
 - **GeoJSON geometry support**: Polygons, MultiPolygons, LineStrings, Multi*, null
   geometries and bare Geometry objects load, filter, save and render on maps.
-- `distance(method="vincenty")` — WGS-84 ellipsoidal distance (~0.5 mm).
+- `distance(method="vincenty")`: WGS-84 ellipsoidal distance (~0.5 mm).
 - Units `yd` and `nmi`, plus spelled-out aliases (`kilometres`, `feet`, …).
 - `destination()`, `midpoint()`, `area()`, `length()`, `distance_to_line()`.
 - `filter_by_line()` (line buffers), `filter_by_polygon()` (also a whole
@@ -122,7 +122,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (Feature dicts with a missing or mis-cased `"type"` are still accepted, as in 1.0).
 - Maps: all geometry types, `overlays=` (e.g. draw a buffer), canvas-rendered markers,
   heatmap `radius` / `blur`.
-- **Open, keyless basemaps** — `tiles=` `light` (default: OpenStreetMap with muted
+- **Open, keyless basemaps**: `tiles=` `light` (default: OpenStreetMap with muted
   colours), `osm`, `dark`, `humanitarian`, `cyclosm`, `osm-fr`, `osm-de`, `topo`
   (OpenTopoMap), `satellite` (NASA Blue Marble) and `none`, or a custom URL template with
   `attribution=`; `tile_presets()` lists them. CARTO basemaps were dropped because they
@@ -135,10 +135,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Static PNG / SVG maps** in pure Python: `geo.image("map.png" | "map.svg")`,
   `to_png()`, `to_svg()`, `qoregeo.render_png()` / `render_svg()`.
 - **Geocoding**: `qoregeo.Geocoder` for OpenStreetMap Nominatim, Photon or a self-hosted
-  server — at most 1 request/second per public server across all processes (a shared SQLite
-  file in the user cache folder, which also keeps answers for 30 days; `cache_dir=` /
-  `QOREGEO_CACHE_DIR`), identifying User-Agent, in-memory LRU cache, `GeocodingError` with
-  actionable hints.
+  server. It makes at most 1 request/second per public server across all processes (a shared
+  SQLite file in the user cache folder, which also keeps answers for 30 days; `cache_dir=` /
+  `QOREGEO_CACHE_DIR`), sends an identifying User-Agent, keeps an in-memory LRU cache and
+  raises `GeocodingError` with actionable hints.
 - **`intersects()`** and **`filter_intersects()`** for any GeoJSON (exact for buffers).
 - `save(csv_safe=True)` escapes spreadsheet formulas (CSV injection).
 - **Command line**: `qoregeo info | distance | map | image | export | serve | geocode |
@@ -157,7 +157,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   built-in.
 - Points can be `(lat, lng)` / `(lat, lng, alt)` sequences, `{"lat": …, "lng": …}` dicts,
   GeoJSON Points or Point Features everywhere a method takes a point.
-- `py.typed` marker and a public `PointLike` type — the inline type hints are now
+- `py.typed` marker and a public `PointLike` type, so the inline type hints are now
   visible to type checkers (the package passes `mypy --strict`; `bearing()` has
   precise overloads).
 - Thousands of offline tests (geometry, I/O, dataset operations, maps, rendering,
@@ -167,7 +167,7 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Version is single-sourced from `qoregeo/_version.py`.
 - Packaging: PEP 639 license metadata, hatchling ≥ 1.27, PEP 735 dependency groups
   (`pip install -e . --group dev`), ruff `lint` table.
-- CI: Python 3.10 – 3.15 on Linux / Windows / macOS, ruff + strict mypy job, build +
+- CI: Python 3.10 to 3.15 on Linux / Windows / macOS, ruff + strict mypy job, build +
   `twine check`; actions bumped to current majors (checkout v7, setup-python v7,
   codecov v7, upload/download-artifact v7/v8).
 - Release: runs the full lint / type / test matrix, then separate build and publish
@@ -175,54 +175,54 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   publishing; Dependabot for actions. It can also be run by hand on `main` with a version,
   and then creates the `vX.Y.Z` tag and GitHub Release (with the CHANGELOG notes) itself.
 
-## [1.0.3] — 2026-03-02
+## [1.0.3] (2026-03-02)
 
 ### Fixed
 - fix map loading error
 
-## [1.0.2] — 2026-03-02
+## [1.0.2] (2026-03-02)
 
 ### Fixed
 - Skip auto-detection when lat_col/lng_col are manually provided
 - Fix southern hemisphere distance test range
 
-## [1.0.0] — 2026-03-02
+## [1.0.0] (2026-03-02)
 
-### 🎉 Initial Release
+### Initial release
 
 **Core GeoEngine features:**
 
-- `load()` — CSV and GeoJSON loading with auto-column detection  
-- `load_data()` — Load raw GeoJSON Feature dicts in-memory  
-- `save()` — Export to GeoJSON or CSV  
-- `distance()` — Haversine great-circle distance (km, miles, m, ft)  
-- `bearing()` — Compass direction (16-point + degrees)  
-- `buffer()` — Circular geofence polygon creation  
-- `point_in_polygon()` — Ray-casting geofencing  
-- `nearest()` — Find the closest feature to any point  
-- `filter()` — Filter by property value  
-- `filter_by_radius()` — Filter by distance, sorted nearest-first  
-- `map()` — Interactive Leaflet.js HTML map export  
-- `heatmap()` — Density heatmap HTML export with optional intensity  
-- `bounds()` — Bounding box of all features  
-- `count()`, `get_features()`, `get_geojson()` — Data access  
-- Full method chaining (`load().filter().save().map()`)  
-- `len(geo)` and `repr(geo)` support  
+- `load()`: CSV and GeoJSON loading with auto-column detection
+- `load_data()`: Load raw GeoJSON Feature dicts in-memory
+- `save()`: Export to GeoJSON or CSV
+- `distance()`: Haversine great-circle distance (km, miles, m, ft)
+- `bearing()`: Compass direction (16-point + degrees)
+- `buffer()`: Circular geofence polygon creation
+- `point_in_polygon()`: Ray-casting geofencing
+- `nearest()`: Find the closest feature to any point
+- `filter()`: Filter by property value
+- `filter_by_radius()`: Filter by distance, sorted nearest-first
+- `map()`: Interactive Leaflet.js HTML map export
+- `heatmap()`: Density heatmap HTML export with optional intensity
+- `bounds()`: Bounding box of all features
+- `count()`, `get_features()`, `get_geojson()`: Data access
+- Full method chaining (`load().filter().save().map()`)
+- `len(geo)` and `repr(geo)` support
 
 **9 custom exceptions** with clear, actionable error messages:
-- `NoDataError`  
-- `InvalidCoordinateError`  
-- `InvalidUnitError`  
-- `ColumnNotFoundError`  
-- `FileNotFoundError`  
-- `UnsupportedFormatError`  
-- `EmptyDatasetError`  
-- `InvalidRadiusError`  
-- `InvalidBufferError`  
+- `NoDataError`
+- `InvalidCoordinateError`
+- `InvalidUnitError`
+- `ColumnNotFoundError`
+- `FileNotFoundError`
+- `UnsupportedFormatError`
+- `EmptyDatasetError`
+- `InvalidRadiusError`
+- `InvalidBufferError`
 
 **Quality:**
-- 130+ tests, 100% passing  
-- Zero external runtime dependencies  
-- Python 3.8–3.12 compatible  
-- Fully typed (PEP 484)  
-- MIT licensed  
+- 130+ tests, 100% passing
+- Zero external runtime dependencies
+- Compatible with Python 3.8 to 3.12
+- Fully typed (PEP 484)
+- MIT licensed

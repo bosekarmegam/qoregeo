@@ -8,27 +8,27 @@ metadata:
   homepage: https://github.com/bosekarmegam/qoregeo
 ---
 
-# qoregeo — geospatial work without GDAL
+# qoregeo: geospatial work without GDAL
 
 `qoregeo` is a pure-Python (stdlib only) GIS toolkit. Pick the first surface available:
 
-1. **MCP tools** named `distance`, `nearest`, `query_features`, `preview_map`, `make_map`, … (the `qoregeo` MCP server) — call them directly.
-2. **CLI** — `qoregeo <command>` (or `uvx qoregeo <command>` / `python -m qoregeo <command>` if not installed).
-3. **Python** — `from qoregeo import GeoEngine`.
+1. **MCP tools** named `distance`, `nearest`, `query_features`, `preview_map`, `make_map`, … (the `qoregeo` MCP server). Call them directly.
+2. **CLI**: `qoregeo <command>` (or `uvx qoregeo <command>` / `python -m qoregeo <command>` if not installed).
+3. **Python**: `from qoregeo import GeoEngine`.
 
 **No pip or no internet** (e.g. Claude's code-execution sandbox): if this skill folder has a
 `scripts/qoregeo/` package (bundles made with `qoregeo skill zip` do), use it directly:
 
 ```python
 import sys; sys.path.insert(0, "<this skill's folder>/scripts")
-from qoregeo import GeoEngine          # pure standard library — no install needed
+from qoregeo import GeoEngine          # pure standard library, no install needed
 ```
 
 The CLI works too: `cd <skill folder>/scripts && python -m qoregeo …`.
 
 ## Golden rules
 
-- **Coordinate order.** Python API and CLI take `(lat, lng)` / `LAT,LNG`. GeoJSON stores `[lng, lat]`. MCP tools take `{"lat": …, "lng": …}` objects. Double-check before every call: India is lat ≈ 8–37, lng ≈ 68–97.
+- **Coordinate order.** Python API and CLI take `(lat, lng)` / `LAT,LNG`. GeoJSON stores `[lng, lat]`. MCP tools take `{"lat": …, "lng": …}` objects. Double-check before every call: India is lat ≈ 8 to 37, lng ≈ 68 to 97.
 - **Look before you report.** After filtering, render `preview_map` (MCP) or `qoregeo image data.csv -o check.png` and inspect the image: points in the sea or on the wrong continent mean swapped or bad coordinates.
 - **Viewing HTML maps.** The default basemap is OpenStreetMap, whose servers only serve web pages: open maps with `qoregeo serve map.html` or `geo.show()`, never by double-clicking. Only `tiles="satellite"`, `"topo"`, `"osm-de"` (non-commercial use) and `"none"` (no network at all) work when the file is opened from disk.
 - **`show()` and `serve` block.** In a script, `geo.show()` and `qoregeo serve` keep serving until Ctrl+C, so put `show()` last (or pass `block=False` in a long-running process). With no browser to look at (a sandbox, CI), render `image()` / `preview_map` instead.

@@ -1,0 +1,5113 @@
+{
+ "meta": {
+  "experiment": "correctness",
+  "mode": "quick",
+  "qoregeo_version": "1.1.0",
+  "python_version": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+  "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+  "cpu_count": 4,
+  "reference_libraries": {
+   "shapely": "2.2.0",
+   "geos": "3.14.1",
+   "geographiclib": "2.1",
+   "numpy": "2.5.4",
+   "matplotlib": "3.11.2"
+  },
+  "seed": 20261019,
+  "sizes": {
+   "pip_polygons_per_kind": 8,
+   "pip_points_total": 4000,
+   "pip_intersects_per_polygon": 5,
+   "wrap_polygons": 6,
+   "wrap_points_per_polygon": 100,
+   "intersects_pairs": 300,
+   "intersects_wrap_pairs": 60,
+   "radius_points": 150,
+   "am_scatter": 60,
+   "am_random_sets": 30,
+   "am_points_per_set": 30,
+   "am_render_sets": 5,
+   "pole_points": 200
+  },
+  "boundary_tolerance_deg": 1e-12,
+  "utc_timestamp": "2026-10-19T13:19:42+00:00",
+  "command": "python experiments/04_correctness.py --quick",
+  "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
+  "section_seconds": {
+   "point_in_polygon vs shapely": 0.2944461719998799,
+   "point_in_polygon across 180 deg": 0.04961895900032687,
+   "intersects vs shapely": 0.22043251399963992,
+   "filter_by_radius vs geographiclib": 0.8606355860001713,
+   "antimeridian": 0.05515217899983327,
+   "poles, nulls, empties, ranges": 0.025442384000143647
+  },
+  "runtime_seconds": 2.4988471530000425,
+  "figures": [
+   "docs/assets/experiments/correctness-antimeridian.svg",
+   "docs/assets/experiments/correctness-antimeridian-naive.svg",
+   "docs/assets/experiments/correctness-radius-band.svg",
+   "docs/assets/experiments/correctness-intersects-tolerance.svg"
+  ],
+  "notes": [
+   "Timings are incidental to this experiment and only indicative (shared 4-CPU machine)."
+  ]
+ },
+ "results": {
+  "point_in_polygon": {
+   "points_per_polygon": 100,
+   "totals": {
+    "n": 4000,
+    "on_boundary_geos": 458,
+    "vs_contains": {
+     "boundary": 200,
+     "vertex": 122
+    },
+    "vs_covers": {
+     "boundary": 189,
+     "vertex": 145
+    },
+    "public_vs_filter": 0,
+    "qoregeo_true_on_boundary": 223
+   },
+   "by_kind": {
+    "convex": {
+     "n": 800,
+     "vs_contains": {
+      "boundary": 26,
+      "vertex": 13
+     },
+     "vs_covers": {
+      "boundary": 26,
+      "vertex": 19
+     },
+     "public_vs_filter": 0,
+     "on_boundary_geos": 32,
+     "n_polygons": 8,
+     "vertices_median": 34.5,
+     "vertices_max": 37,
+     "scale_deg_min": 0.00020204267379545133,
+     "scale_deg_max": 11.70101887095375
+    },
+    "concave": {
+     "n": 800,
+     "vs_contains": {
+      "boundary": 29,
+      "vertex": 10
+     },
+     "vs_covers": {
+      "boundary": 29,
+      "vertex": 22
+     },
+     "public_vs_filter": 0,
+     "on_boundary_geos": 32,
+     "n_polygons": 8,
+     "vertices_median": 138.0,
+     "vertices_max": 197,
+     "scale_deg_min": 0.00021842373399489598,
+     "scale_deg_max": 0.6528740350317095
+    },
+    "holes": {
+     "n": 800,
+     "vs_contains": {
+      "boundary": 23,
+      "vertex": 19
+     },
+     "vs_covers": {
+      "boundary": 23,
+      "vertex": 13
+     },
+     "public_vs_filter": 0,
+     "on_boundary_geos": 32,
+     "n_polygons": 8,
+     "vertices_median": 107.5,
+     "vertices_max": 169,
+     "scale_deg_min": 0.00046586281244584475,
+     "scale_deg_max": 0.2330613606320073
+    },
+    "multipolygon": {
+     "n": 800,
+     "vs_contains": {
+      "boundary": 21,
+      "vertex": 14
+     },
+     "vs_covers": {
+      "boundary": 21,
+      "vertex": 18
+     },
+     "public_vs_filter": 0,
+     "on_boundary_geos": 32,
+     "n_polygons": 8,
+     "vertices_median": 305.0,
+     "vertices_max": 512,
+     "scale_deg_min": 0.00012176921536948229,
+     "scale_deg_max": 0.3235276913947019
+    },
+    "grid": {
+     "n": 800,
+     "vs_contains": {
+      "vertex": 66,
+      "boundary": 101
+     },
+     "vs_covers": {
+      "boundary": 90,
+      "vertex": 73
+     },
+     "public_vs_filter": 0,
+     "on_boundary_geos": 330,
+     "n_polygons": 8,
+     "vertices_median": 17.0,
+     "vertices_max": 23,
+     "scale_deg_min": 0.001027028104825097,
+     "scale_deg_max": 5.362789864920417
+    }
+   },
+   "by_category": {
+    "uniform": {
+     "n": 2800,
+     "on_boundary_geos": 198,
+     "qoregeo_true_on_boundary": 100,
+     "vs_contains": {
+      "vertex": 50,
+      "boundary": 50
+     },
+     "vs_covers": {
+      "boundary": 41,
+      "vertex": 57
+     }
+    },
+    "edge": {
+     "n": 320,
+     "on_boundary_geos": 64,
+     "qoregeo_true_on_boundary": 32,
+     "vs_contains": {
+      "boundary": 131
+     },
+     "vs_covers": {
+      "boundary": 131
+     }
+    },
+    "vertex": {
+     "n": 160,
+     "on_boundary_geos": 160,
+     "qoregeo_true_on_boundary": 72,
+     "vs_contains": {
+      "vertex": 72
+     },
+     "vs_covers": {
+      "vertex": 88
+     }
+    },
+    "vertex_lat": {
+     "n": 320,
+     "on_boundary_geos": 36,
+     "qoregeo_true_on_boundary": 19,
+     "vs_contains": {
+      "boundary": 19
+     },
+     "vs_covers": {
+      "boundary": 17
+     }
+    },
+    "near_edge": {
+     "n": 400,
+     "on_boundary_geos": 0,
+     "qoregeo_true_on_boundary": 0,
+     "vs_contains": {},
+     "vs_covers": {}
+    }
+   },
+   "by_kind_and_category": {
+    "convex": {
+     "uniform": {
+      "n": 560,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "edge": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {
+       "boundary": 26
+      },
+      "vs_covers": {
+       "boundary": 26
+      },
+      "public_vs_filter": 0
+     },
+     "vertex": {
+      "n": 32,
+      "on_boundary_geos": 32,
+      "qoregeo_true_on_boundary": 13,
+      "vs_contains": {
+       "vertex": 13
+      },
+      "vs_covers": {
+       "vertex": 19
+      },
+      "public_vs_filter": 0
+     },
+     "vertex_lat": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "near_edge": {
+      "n": 80,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     }
+    },
+    "concave": {
+     "uniform": {
+      "n": 560,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "edge": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {
+       "boundary": 29
+      },
+      "vs_covers": {
+       "boundary": 29
+      },
+      "public_vs_filter": 0
+     },
+     "vertex": {
+      "n": 32,
+      "on_boundary_geos": 32,
+      "qoregeo_true_on_boundary": 10,
+      "vs_contains": {
+       "vertex": 10
+      },
+      "vs_covers": {
+       "vertex": 22
+      },
+      "public_vs_filter": 0
+     },
+     "vertex_lat": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "near_edge": {
+      "n": 80,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     }
+    },
+    "holes": {
+     "uniform": {
+      "n": 560,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "edge": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {
+       "boundary": 23
+      },
+      "vs_covers": {
+       "boundary": 23
+      },
+      "public_vs_filter": 0
+     },
+     "vertex": {
+      "n": 32,
+      "on_boundary_geos": 32,
+      "qoregeo_true_on_boundary": 19,
+      "vs_contains": {
+       "vertex": 19
+      },
+      "vs_covers": {
+       "vertex": 13
+      },
+      "public_vs_filter": 0
+     },
+     "vertex_lat": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "near_edge": {
+      "n": 80,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     }
+    },
+    "multipolygon": {
+     "uniform": {
+      "n": 560,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "edge": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {
+       "boundary": 21
+      },
+      "vs_covers": {
+       "boundary": 21
+      },
+      "public_vs_filter": 0
+     },
+     "vertex": {
+      "n": 32,
+      "on_boundary_geos": 32,
+      "qoregeo_true_on_boundary": 14,
+      "vs_contains": {
+       "vertex": 14
+      },
+      "vs_covers": {
+       "vertex": 18
+      },
+      "public_vs_filter": 0
+     },
+     "vertex_lat": {
+      "n": 64,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     },
+     "near_edge": {
+      "n": 80,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     }
+    },
+    "grid": {
+     "uniform": {
+      "n": 560,
+      "on_boundary_geos": 198,
+      "qoregeo_true_on_boundary": 100,
+      "vs_contains": {
+       "vertex": 50,
+       "boundary": 50
+      },
+      "vs_covers": {
+       "boundary": 41,
+       "vertex": 57
+      },
+      "public_vs_filter": 0
+     },
+     "edge": {
+      "n": 64,
+      "on_boundary_geos": 64,
+      "qoregeo_true_on_boundary": 32,
+      "vs_contains": {
+       "boundary": 32
+      },
+      "vs_covers": {
+       "boundary": 32
+      },
+      "public_vs_filter": 0
+     },
+     "vertex": {
+      "n": 32,
+      "on_boundary_geos": 32,
+      "qoregeo_true_on_boundary": 16,
+      "vs_contains": {
+       "vertex": 16
+      },
+      "vs_covers": {
+       "vertex": 16
+      },
+      "public_vs_filter": 0
+     },
+     "vertex_lat": {
+      "n": 64,
+      "on_boundary_geos": 36,
+      "qoregeo_true_on_boundary": 19,
+      "vs_contains": {
+       "boundary": 19
+      },
+      "vs_covers": {
+       "boundary": 17
+      },
+      "public_vs_filter": 0
+     },
+     "near_edge": {
+      "n": 80,
+      "on_boundary_geos": 0,
+      "qoregeo_true_on_boundary": 0,
+      "vs_contains": {},
+      "vs_covers": {},
+      "public_vs_filter": 0
+     }
+    }
+   },
+   "numerical_disagreement_max_distance_deg": 0.0,
+   "numerical_examples": [],
+   "intersects_point_vs_polygon": {
+    "n": 200,
+    "disagree": {
+     "qoregeo True, > 1e-12 deg away": 13,
+     "boundary (<= 1e-12 deg)": 5
+    },
+    "beyond_tolerance_max_distance_deg": 7.1063353119229386e-09,
+    "beyond_tolerance_examples": [
+     {
+      "distance_deg": 7.1063353119229386e-09,
+      "polygon_scale_deg": 0.0005651556511999836,
+      "nearest_edge_length_deg": 5.1479117198203466e-05
+     },
+     {
+      "distance_deg": 2.014997299005325e-09,
+      "polygon_scale_deg": 0.00021842373399489598,
+      "nearest_edge_length_deg": 9.360849786285172e-06
+     },
+     {
+      "distance_deg": 4.5673454853245895e-10,
+      "polygon_scale_deg": 0.001050137267351617,
+      "nearest_edge_length_deg": 3.326394067116212e-05
+     },
+     {
+      "distance_deg": 3.562153157480264e-10,
+      "polygon_scale_deg": 0.00046586281244584475,
+      "nearest_edge_length_deg": 3.0735094081099556e-06
+     },
+     {
+      "distance_deg": 2.7975772764505246e-10,
+      "polygon_scale_deg": 0.005579655840768286,
+      "nearest_edge_length_deg": 7.971922006727242e-05
+     }
+    ],
+    "beyond_tolerance_count": 13
+   },
+   "seconds": {
+    "qoregeo_point_in_polygon": 0.1578049759982605,
+    "qoregeo_filter_by_polygon": 0.03242948199977036,
+    "shapely_contains_and_intersects": 0.002714873001423257
+   },
+   "notes": [
+    "Reference: shapely.contains_xy (interior only) and shapely.intersects_xy (interior or boundary). qoregeo's point_in_polygon() is ray casting with straight lng/lat edges, the same planar model as shapely.",
+    "A point counts as 'vertex' within 1e-12 deg of a vertex, as 'boundary' within 1e-12 deg of an edge, else 'numerical'.",
+    "public_vs_filter counts points where point_in_polygon() and filter_by_polygon() (an indexed implementation) give different answers."
+   ]
+  },
+  "point_in_polygon_antimeridian": {
+   "counts": {
+    "continuous": {
+     "n": 600,
+     "vs_contains": {
+      "vertex": 8
+     },
+     "vs_covers": {
+      "vertex": 3
+     },
+     "public_vs_filter": 0
+    },
+    "split": {
+     "n": 600,
+     "vs_contains": {
+      "vertex": 8
+     },
+     "vs_covers": {
+      "vertex": 3
+     },
+     "public_vs_filter": 0
+    }
+   },
+   "seam_points_inside_the_shape": {
+    "continuous": {
+     "lng +180: qoregeo inside": 24,
+     "lng -180: qoregeo inside": 25
+    },
+    "split": {
+     "lng +180: qoregeo inside": 24,
+     "lng -180: qoregeo inside": 25
+    }
+   },
+   "notes": [
+    "Reference: the point is inside if (lng + k * 360, lat) is inside the continuous polygon for some k in -1, 0, 1 (shapely). qoregeo receives the point with its longitude in -180..180.",
+    "'continuous' rings use longitudes beyond +-180 (as buffer() does); 'split' is the same shape cut at 180 deg into a MultiPolygon (RFC 7946 section 3.1.9).",
+    "Seam points lie exactly on lng +-180 inside the physical shape. In the split form that meridian is a planar boundary of both parts."
+   ]
+  },
+  "intersects": {
+   "n_pairs": 300,
+   "table": {
+    "LineString-Polygon": {
+     "near": {
+      "n": 18,
+      "shapely_true": 2,
+      "qoregeo_true": 8,
+      "disagree": 6
+     },
+     "random": {
+      "n": 24,
+      "shapely_true": 7,
+      "qoregeo_true": 7
+     },
+     "nested": {
+      "n": 9,
+      "shapely_true": 9,
+      "qoregeo_true": 9
+     },
+     "touch": {
+      "n": 11,
+      "shapely_true": 8,
+      "qoregeo_true": 11,
+      "disagree": 3
+     }
+    },
+    "LineString-LineString": {
+     "random": {
+      "n": 17,
+      "shapely_true": 1,
+      "qoregeo_true": 1
+     },
+     "touch": {
+      "n": 15,
+      "shapely_true": 12,
+      "qoregeo_true": 15,
+      "disagree": 3
+     },
+     "near": {
+      "n": 12,
+      "shapely_true": 3,
+      "qoregeo_true": 8,
+      "disagree": 5
+     }
+    },
+    "Polygon-Polygon": {
+     "nested": {
+      "n": 11,
+      "shapely_true": 9,
+      "qoregeo_true": 9
+     },
+     "touch": {
+      "n": 15,
+      "shapely_true": 11,
+      "qoregeo_true": 15,
+      "disagree": 4
+     },
+     "near": {
+      "n": 8,
+      "shapely_true": 0,
+      "qoregeo_true": 4,
+      "disagree": 4
+     },
+     "random": {
+      "n": 17,
+      "shapely_true": 11,
+      "qoregeo_true": 11
+     }
+    },
+    "Point-LineString": {
+     "near": {
+      "n": 14,
+      "shapely_true": 0,
+      "qoregeo_true": 5,
+      "disagree": 5
+     },
+     "random": {
+      "n": 24,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     },
+     "touch": {
+      "n": 18,
+      "shapely_true": 8,
+      "qoregeo_true": 18,
+      "disagree": 10
+     }
+    },
+    "Point-Point": {
+     "touch": {
+      "n": 18,
+      "shapely_true": 18,
+      "qoregeo_true": 18
+     },
+     "near": {
+      "n": 3,
+      "shapely_true": 0,
+      "qoregeo_true": 1,
+      "disagree": 1
+     },
+     "random": {
+      "n": 15,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "Point-Polygon": {
+     "random": {
+      "n": 27,
+      "shapely_true": 3,
+      "qoregeo_true": 3
+     },
+     "near": {
+      "n": 11,
+      "shapely_true": 0,
+      "qoregeo_true": 4,
+      "disagree": 4
+     },
+     "touch": {
+      "n": 7,
+      "shapely_true": 6,
+      "qoregeo_true": 7,
+      "disagree": 1
+     },
+     "nested": {
+      "n": 6,
+      "shapely_true": 6,
+      "qoregeo_true": 6
+     }
+    }
+   },
+   "disagreements": {
+    "qoregeo True, shapely False, distance > 1e-12 deg": 12,
+    "qoregeo True, shapely False, distance <= 1e-12 deg": 34
+   },
+   "disagreement_examples": {
+    "qoregeo True, shapely False, distance > 1e-12 deg": [
+     {
+      "a": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -100.03343482675957,
+          0.39935846579719997
+         ],
+         [
+          -100.03090645915043,
+          0.39162513634451684
+         ],
+         [
+          -100.03084409902495,
+          0.391540431508431
+         ],
+         [
+          -100.03017278765455,
+          0.39068719835367116
+         ],
+         [
+          -100.01667613763611,
+          0.38204719866083714
+         ],
+         [
+          -100.00979097406399,
+          0.3805999116871593
+         ],
+         [
+          -100.00025671662013,
+          0.38169929565819805
+         ],
+         [
+          -99.99470301715984,
+          0.3872130289633933
+         ],
+         [
+          -99.9976853834257,
+          0.39714193768980555
+         ],
+         [
+          -100.00630981124216,
+          0.4037850710589316
+         ],
+         [
+          -100.01399125896766,
+          0.40658706203203226
+         ],
+         [
+          -100.01593430963477,
+          0.40697586233088073
+         ],
+         [
+          -100.01897552215162,
+          0.4073265948900481
+         ],
+         [
+          -100.01932594524513,
+          0.407345861329363
+         ],
+         [
+          -100.03203476593703,
+          0.40293793435504893
+         ],
+         [
+          -100.03343482675957,
+          0.39935846579719997
+         ]
+        ],
+        [
+         [
+          -100.02256324561942,
+          0.39736406412129677
+         ],
+         [
+          -100.02217271369223,
+          0.39592842185070903
+         ],
+         [
+          -100.0210139542636,
+          0.3949281273397311
+         ],
+         [
+          -100.01951581430846,
+          0.39432625079251876
+         ],
+         [
+          -100.01771217409666,
+          0.3942796016828884
+         ],
+         [
+          -100.01645589111408,
+          0.39532637464767595
+         ],
+         [
+          -100.01656496786912,
+          0.3962311663259675
+         ],
+         [
+          -100.01751023489467,
+          0.39737861475471165
+         ],
+         [
+          -100.02025716038595,
+          0.3984406400909583
+         ],
+         [
+          -100.0212739683891,
+          0.39838132590803244
+         ],
+         [
+          -100.02256324561942,
+          0.39736406412129677
+         ]
+        ]
+       ]
+      },
+      "b": {
+       "type": "LineString",
+       "coordinates": [
+        [
+         -100.01926728501644,
+         0.4073426361693449
+        ],
+        [
+         -100.00982921255503,
+         0.41246347147840207
+        ],
+        [
+         -100.01098351433683,
+         0.422245604924299
+        ]
+       ]
+      },
+      "combo": "LineString-Polygon",
+      "regime": "near",
+      "how": "interpolated on an edge",
+      "gap_deg": 1e-11,
+      "scale_deg": 0.03378316229967698,
+      "shapely_distance_deg": 9.077099209151705e-12,
+      "qoregeo": true,
+      "shapely": false
+     },
+     {
+      "a": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -34.65051620790666,
+          13.293396000341012
+         ],
+         [
+          -34.65050907528125,
+          13.293298058601037
+         ],
+         [
+          -34.65064646330334,
+          13.293391412480183
+         ],
+         [
+          -34.6506233976354,
+          13.293341996216679
+         ],
+         [
+          -34.65051494269767,
+          13.293274390082807
+         ],
+         [
+          -34.65059627499671,
+          13.293198546510542
+         ],
+         [
+          -34.650474386242884,
+          13.293181146394017
+         ],
+         [
+          -34.65046634043222,
+          13.293167624295124
+         ],
+         [
+          -34.65052988022033,
+          13.293135239320577
+         ],
+         [
+          -34.65045637555988,
+          13.293151260291634
+         ],
+         [
+          -34.65045380206698,
+          13.293147341382069
+         ],
+         [
+          -34.65053991066491,
+          13.293068792286093
+         ],
+         [
+          -34.65042710988675,
+          13.293123563799183
+         ],
+         [
+          -34.65042953439929,
+          13.293109548350612
+         ],
+         [
+          -34.65044444668651,
+          13.293092427003977
+         ],
+         [
+          -34.65044556893899,
+          13.292960626502692
+         ],
+         [
+          -34.650261057053676,
+          13.29295225932359
+         ],
+         [
+          -34.65020676288389,
+          13.292823788297813
+         ],
+         [
+          -34.650204665184575,
+          13.2929249695198
+         ],
+         [
+          -34.6501730955845,
+          13.292892673846456
+         ],
+         [
+          -34.65010663435733,
+          13.292891083610453
+         ],
+         [
+          -34.650157601867676,
+          13.292999627635178
+         ],
+         [
+          -34.65011591471299,
+          13.292971285524711
+         ],
+         [
+          -34.65015705817552,
+          13.293025942465384
+         ],
+         [
+          -34.65019497993339,
+          13.293120182715128
+         ],
+         [
+          -34.650188451988406,
+          13.293301820735136
+         ],
+         [
+          -34.65027723144724,
+          13.293410615379106
+         ],
+         [
+          -34.65038864584321,
+          13.293463131088995
+         ],
+         [
+          -34.65047149107821,
+          13.293467160252762
+         ],
+         [
+          -34.65051943070859,
+          13.293475461994252
+         ],
+         [
+          -34.65051620790666,
+          13.293396000341012
+         ]
+        ],
+        [
+         [
+          -34.65038600152725,
+          13.29315691994813
+         ],
+         [
+          -34.65039582898858,
+          13.293139817086974
+         ],
+         [
+          -34.65039341707642,
+          13.29312231062599
+         ],
+         [
+          -34.65038677349328,
+          13.29310534647663
+         ],
+         [
+          -34.65037602806548,
+          13.293087429918025
+         ],
+         [
+          -34.65035961133423,
+          13.293068455643192
+         ],
+         [
+          -34.65033223120562,
+          13.293051296348704
+         ],
+         [
+          -34.65031842593008,
+          13.29305157049977
+         ],
+         [
+          -34.65031319457673,
+          13.293055645316182
+         ],
+         [
+          -34.65030910127593,
+          13.293070744475896
+         ],
+         [
+          -34.65031639619891,
+          13.293099112225258
+         ],
+         [
+          -34.650323757463845,
+          13.293112999473507
+         ],
+         [
+          -34.6503406562774,
+          13.293135120749465
+         ],
+         [
+          -34.65036248002463,
+          13.293152657614682
+         ],
+         [
+          -34.65037194010737,
+          13.29315674412097
+         ],
+         [
+          -34.65038600152725,
+          13.29315691994813
+         ]
+        ]
+       ]
+      },
+      "b": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -34.65020466468659,
+          13.292924968652615
+         ],
+         [
+          -34.65007860921048,
+          13.292748216792043
+         ],
+         [
+          -34.650122961821715,
+          13.292739933645333
+         ],
+         [
+          -34.65020466468659,
+          13.292924968652615
+         ]
+        ]
+       ]
+      },
+      "combo": "Polygon-Polygon",
+      "regime": "near",
+      "how": "exact vertex",
+      "gap_deg": 1e-09,
+      "scale_deg": 0.000604007239332047,
+      "shapely_distance_deg": 2.5007420301389764e-10,
+      "qoregeo": true,
+      "shapely": false
+     },
+     {
+      "a": {
+       "type": "LineString",
+       "coordinates": [
+        [
+         -90.5562836507324,
+         -18.79371580611863
+        ],
+        [
+         -90.55619450216977,
+         -18.793789208650043
+        ]
+       ]
+      },
+      "b": {
+       "type": "Point",
+       "coordinates": [
+        -90.55621769691909,
+        -18.793770110588955
+       ]
+      },
+      "combo": "Point-LineString",
+      "regime": "near",
+      "how": "interpolated on a segment",
+      "gap_deg": 1e-10,
+      "scale_deg": 0.0012317046014056411,
+      "shapely_distance_deg": 9.854153973165704e-11,
+      "qoregeo": true,
+      "shapely": false
+     }
+    ],
+    "qoregeo True, shapely False, distance <= 1e-12 deg": [
+     {
+      "a": {
+       "type": "LineString",
+       "coordinates": [
+        [
+         -70.28732486718691,
+         38.98675090899098
+        ],
+        [
+         -70.46662512490188,
+         39.03637395485236
+        ]
+       ]
+      },
+      "b": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -70.26473789346194,
+          39.00791950579715
+         ],
+         [
+          -70.3257265118879,
+          38.950760743009724
+         ],
+         [
+          -70.10516151072044,
+          38.82887401399056
+         ],
+         [
+          -70.02059726977771,
+          38.738538056392464
+         ],
+         [
+          -69.96300242692598,
+          38.803937416546894
+         ],
+         [
+          -69.91991813537587,
+          38.65456458863519
+         ],
+         [
+          -69.87180177638942,
+          38.686740464798746
+         ],
+         [
+          -69.89242575497397,
+          38.80884841479417
+         ],
+         [
+          -69.68132385541128,
+          38.91182157335471
+         ],
+         [
+          -69.7097628057424,
+          38.94308414903555
+         ],
+         [
+          -69.78235969213657,
+          38.97349006294861
+         ],
+         [
+          -69.68703981448633,
+          39.0823522267589
+         ],
+         [
+          -70.05012436312627,
+          39.08616515976177
+         ],
+         [
+          -70.13534151187905,
+          39.076191130715365
+         ],
+         [
+          -70.14451795302568,
+          39.05123899625138
+         ],
+         [
+          -70.26338346176603,
+          39.118156814611574
+         ],
+         [
+          -70.26473789346194,
+          39.00791950579715
+         ]
+        ],
+        [
+         [
+          -69.90699918167465,
+          38.95112883407625
+         ],
+         [
+          -69.90828064367989,
+          38.93983090463327
+         ],
+         [
+          -69.90073064335311,
+          38.92602819721069
+         ],
+         [
+          -69.88853137767904,
+          38.91715283137864
+         ],
+         [
+          -69.87283789910573,
+          38.9122471495328
+         ],
+         [
+          -69.85991564860977,
+          38.91217017390952
+         ],
+         [
+          -69.84668230337118,
+          38.916886932605976
+         ],
+         [
+          -69.84236121047886,
+          38.920500759314535
+         ],
+         [
+          -69.83756374515266,
+          38.93012758885936
+         ],
+         [
+          -69.84187618843042,
+          38.946547589129004
+         ],
+         [
+          -69.84800017601029,
+          38.95329943593024
+         ],
+         [
+          -69.86063380257697,
+          38.96100126193917
+         ],
+         [
+          -69.87684561945831,
+          38.9648307036723
+         ],
+         [
+          -69.89216584804234,
+          38.96312790643832
+         ],
+         [
+          -69.90182952573583,
+          38.95788595873117
+         ],
+         [
+          -69.90699918167465,
+          38.95112883407625
+         ]
+        ]
+       ]
+      },
+      "combo": "LineString-Polygon",
+      "regime": "near",
+      "how": "interpolated on an edge",
+      "gap_deg": 1e-13,
+      "scale_deg": 0.5877532909947298,
+      "shapely_distance_deg": 8.332823204449435e-14,
+      "qoregeo": true,
+      "shapely": false
+     },
+     {
+      "a": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -33.02500760005444,
+          9.984776230468146
+         ],
+         [
+          -33.02503297529816,
+          9.984777102447852
+         ],
+         [
+          -33.02503546874154,
+          9.984792407881281
+         ],
+         [
+          -33.02500760005444,
+          9.984776230468146
+         ]
+        ]
+       ]
+      },
+      "b": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -33.02499159571942,
+          9.984780781106906
+         ],
+         [
+          -33.025044915918635,
+          9.984807840830342
+         ],
+         [
+          -33.0249964262598,
+          9.984781431316218
+         ],
+         [
+          -33.025006906297094,
+          9.984776399161175
+         ],
+         [
+          -33.02501525094359,
+          9.98477437008903
+         ],
+         [
+          -33.02503524227547,
+          9.984771590716823
+         ],
+         [
+          -33.02499999167452,
+          9.984751818808077
+         ],
+         [
+          -33.02500530139314,
+          9.984750409406784
+         ],
+         [
+          -33.02500635686891,
+          9.98472585378484
+         ],
+         [
+          -33.02495815522746,
+          9.984733454877187
+         ],
+         [
+          -33.02496492171768,
+          9.984696808541361
+         ],
+         [
+          -33.02494298284354,
+          9.984713732337076
+         ],
+         [
+          -33.02493157266453,
+          9.984714527417557
+         ],
+         [
+          -33.02490447037466,
+          9.984720514438095
+         ],
+         [
+          -33.024829501733464,
+          9.984686027607578
+         ],
+         [
+          -33.024833990768954,
+          9.984712030685387
+         ],
+         [
+          -33.024817910721,
+          9.98470993259738
+         ],
+         [
+          -33.02489818994082,
+          9.984740841422607
+         ],
+         [
+          -33.0248714534217,
+          9.984748640180875
+         ],
+         [
+          -33.02484327119551,
+          9.984760660701028
+         ],
+         [
+          -33.02487905626718,
+          9.984767454810836
+         ],
+         [
+          -33.02491465720814,
+          9.984764936701557
+         ],
+         [
+          -33.024883612602885,
+          9.984786329985878
+         ],
+         [
+          -33.02491588731344,
+          9.984769475599313
+         ],
+         [
+          -33.024924434881115,
+          9.984812724081399
+         ],
+         [
+          -33.02493423757426,
+          9.98477684747026
+         ],
+         [
+          -33.024928265393356,
+          9.984809006386644
+         ],
+         [
+          -33.02493444780747,
+          9.984797874207223
+         ],
+         [
+          -33.02496952729427,
+          9.984790467216811
+         ],
+         [
+          -33.025001847477824,
+          9.984813126391142
+         ],
+         [
+          -33.02498557638462,
+          9.984781728121195
+         ],
+         [
+          -33.02501059142471,
+          9.984794336564242
+         ],
+         [
+          -33.02499159571942,
+          9.984780781106906
+         ]
+        ]
+       ]
+      },
+      "combo": "Polygon-Polygon",
+      "regime": "touch",
+      "how": "interpolated on an edge",
+      "gap_deg": null,
+      "scale_deg": 0.00018949385769910252,
+      "shapely_distance_deg": 5.773758867287367e-16,
+      "qoregeo": true,
+      "shapely": false
+     },
+     {
+      "a": {
+       "type": "Point",
+       "coordinates": [
+        113.42121373419697,
+        -56.560723969361604
+       ]
+      },
+      "b": {
+       "type": "LineString",
+       "coordinates": [
+        [
+         113.41706695356791,
+         -56.56286384807828
+        ],
+        [
+         113.41150288640395,
+         -56.559200653157724
+        ],
+        [
+         113.41526728044394,
+         -56.567912948197375
+        ],
+        [
+         113.41226525367247,
+         -56.56771724965385
+        ],
+        [
+         113.41498510668201,
+         -56.56403554132885
+        ],
+        [
+         113.4216595030127,
+         -56.56386354303612
+        ],
+        [
+         113.42071506566721,
+         -56.55721182016432
+        ],
+        [
+         113.42151092295526,
+         -56.55845320605624
+        ]
+       ]
+      },
+      "combo": "Point-LineString",
+      "regime": "touch",
+      "how": "interpolated on a segment",
+      "gap_deg": null,
+      "scale_deg": 0.014245325991760845,
+      "shapely_distance_deg": 4.131886018046009e-15,
+      "qoregeo": true,
+      "shapely": false
+     }
+    ]
+   },
+   "asymmetric_answers": 0,
+   "near_miss_by_gap_and_scale": {
+    "gap 1e-05 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 9,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 3,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 1,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "gap 1e-07 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 1,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 3,
+      "shapely_true": 1,
+      "qoregeo_true": 1
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 3,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "gap 1e-09 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 2,
+      "shapely_true": 0,
+      "qoregeo_true": 2
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 3,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 4,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "gap 1e-10 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 6,
+      "shapely_true": 0,
+      "qoregeo_true": 3
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 5,
+      "shapely_true": 1,
+      "qoregeo_true": 5
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 2,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "gap 1e-11 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 2,
+      "shapely_true": 0,
+      "qoregeo_true": 1
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 6,
+      "shapely_true": 1,
+      "qoregeo_true": 3
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 1,
+      "shapely_true": 0,
+      "qoregeo_true": 0
+     }
+    },
+    "gap 1e-13 deg": {
+     "scale 1e-5 to 1e-3 deg": {
+      "n": 5,
+      "shapely_true": 2,
+      "qoregeo_true": 5
+     },
+     "scale 1e-3 to 0.1 deg": {
+      "n": 5,
+      "shapely_true": 0,
+      "qoregeo_true": 5
+     },
+     "scale 0.1 to 10 deg": {
+      "n": 5,
+      "shapely_true": 0,
+      "qoregeo_true": 5
+     }
+    }
+   },
+   "antimeridian": {
+    "counts": {
+     "seam_touch (Polygon)": {
+      "n": 6,
+      "reference_true": 6,
+      "qoregeo_true": 6
+     },
+     "seam_gap (Point)": {
+      "n": 8,
+      "reference_true": 0,
+      "qoregeo_true": 0
+     },
+     "random (Point)": {
+      "n": 12,
+      "reference_true": 1,
+      "qoregeo_true": 1
+     },
+     "seam_touch (Point)": {
+      "n": 9,
+      "reference_true": 9,
+      "qoregeo_true": 9
+     },
+     "random (LineString)": {
+      "n": 12,
+      "reference_true": 5,
+      "qoregeo_true": 5
+     },
+     "seam_gap (LineString)": {
+      "n": 4,
+      "reference_true": 0,
+      "qoregeo_true": 1,
+      "disagree": 1,
+      "disagree_within_1e-12": 1
+     },
+     "seam_touch (LineString)": {
+      "n": 8,
+      "reference_true": 8,
+      "qoregeo_true": 8
+     },
+     "seam_gap (Polygon)": {
+      "n": 1,
+      "reference_true": 0,
+      "qoregeo_true": 1,
+      "disagree": 1,
+      "disagree_within_1e-12": 1
+     }
+    },
+    "disagreement_examples": [
+     {
+      "a": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          179.9995098617615,
+          -54.94753590878014
+         ],
+         [
+          180.0,
+          -54.94753590878014
+         ],
+         [
+          180.0,
+          -54.94426164650102
+         ],
+         [
+          179.9995098617615,
+          -54.94426164650102
+         ],
+         [
+          179.9995098617615,
+          -54.94753590878014
+         ]
+        ]
+       ]
+      },
+      "b": {
+       "type": "LineString",
+       "coordinates": [
+        [
+         -179.9999999999999,
+         -54.94731847573182
+        ],
+        [
+         -179.99954849950637,
+         -54.943938726950236
+        ]
+       ]
+      },
+      "qoregeo": true,
+      "reference": false,
+      "distance_deg": 1.1368683772161603e-13
+     },
+     {
+      "a": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          179.51618631977402,
+          -1.462157398175805
+         ],
+         [
+          180.0,
+          -1.462157398175805
+         ],
+         [
+          180.0,
+          1.9249641718704142
+         ],
+         [
+          179.51618631977402,
+          1.9249641718704142
+         ],
+         [
+          179.51618631977402,
+          -1.462157398175805
+         ]
+        ]
+       ]
+      },
+      "b": {
+       "type": "Polygon",
+       "coordinates": [
+        [
+         [
+          -179.9999999999999,
+          -0.19923615902775804
+         ],
+         [
+          -179.65383805404284,
+          -0.19923615902775804
+         ],
+         [
+          -179.65383805404284,
+          1.816668462833697
+         ],
+         [
+          -179.9999999999999,
+          1.816668462833697
+         ],
+         [
+          -179.9999999999999,
+          -0.19923615902775804
+         ]
+        ]
+       ]
+      },
+      "qoregeo": true,
+      "reference": false,
+      "distance_deg": 1.1368683772161603e-13
+     }
+    ],
+    "notes": [
+     "Shape A ends at or crosses lng 180 (continuous longitudes); shape B starts at or just east of lng -180. Reference: shapely after moving B by -360, 0 or +360 deg; distance is the smallest of the three."
+    ]
+   },
+   "seconds": {
+    "qoregeo_intersects": 0.03322635899439774,
+    "shapely_intersects": 0.02407003900361815
+   },
+   "notes": [
+    "Reference: shapely.intersects (GEOS, exact predicates). Touching counts in both.",
+    "Regimes: random (both shapes in one window), touch (constructed contact at a vertex, on an edge, a shared edge or a collinear overlap), nested (inside a polygon or inside its hole), near (a touch pair moved apart by a gap of 1e-13 to 1e-5 deg).",
+    "Shape sizes (scale) are log-uniform from 1e-5 deg (about 1 m) to 10 deg."
+   ],
+   "near_pairs": 66
+  },
+  "filter_by_radius": {
+   "rows": [
+    {
+     "latitude": 0.0,
+     "radius_km": 1.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 78,
+     "haversine": {
+      "included_but_outside": 1,
+      "excluded_but_inside": 19,
+      "misclassified_pct": 13.333333333333334,
+      "mismatches_explained_by_sphere_model": 20,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11175449524579494,
+      "max": 0.560934232692394
+     },
+     "risk_band_m": {
+      "from": 994.4219468825297,
+      "to": 1001.1187952564496,
+      "width": 6.696848373920039
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 1.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 32,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11165566928065575,
+      "max": 0.5613315371281399
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 10.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 81,
+     "haversine": {
+      "included_but_outside": 2,
+      "excluded_but_inside": 16,
+      "misclassified_pct": 12.0,
+      "mismatches_explained_by_sphere_model": 18,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11174192555129403,
+      "max": 0.5614344420815711
+     },
+     "risk_band_m": {
+      "from": 9944.170004614947,
+      "to": 10011.186692781048,
+      "width": 67.01668816610163
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 10.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 40,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11175006219416883,
+      "max": 0.5611168608430637
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 100.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 71,
+     "haversine": {
+      "included_but_outside": 2,
+      "excluded_but_inside": 13,
+      "misclassified_pct": 10.0,
+      "mismatches_explained_by_sphere_model": 15,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11139356076593301,
+      "max": 0.5612835565959804
+     },
+     "risk_band_m": {
+      "from": 99441.84925177484,
+      "to": 100111.51778439687,
+      "width": 669.6685326220253
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 100.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 37,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11175016803051847,
+      "max": 0.5612033224408004
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 1000.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 67,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 19,
+      "misclassified_pct": 12.666666666666668,
+      "mismatches_explained_by_sphere_model": 19,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11171972490439382,
+      "max": 0.5529685951905524
+     },
+     "risk_band_m": {
+      "from": 994500.7233210914,
+      "to": 1001118.4467747038,
+      "width": 6617.723453612445
+     }
+    },
+    {
+     "latitude": 0.0,
+     "radius_km": 1000.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 29,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.11173362854975481,
+      "max": 0.552774865177773
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 1.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 72,
+     "haversine": {
+      "included_but_outside": 3,
+      "excluded_but_inside": 10,
+      "misclassified_pct": 8.666666666666668,
+      "mismatches_explained_by_sphere_model": 13,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.19537206030087706,
+      "max": 0.308539619151741
+     },
+     "risk_band_m": {
+      "from": 996.9240941965342,
+      "to": 1001.9575450992004,
+      "width": 5.033450902666381
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 1.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 48,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.19534236085290432,
+      "max": 0.3091457175487039
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 10.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 75,
+     "haversine": {
+      "included_but_outside": 1,
+      "excluded_but_inside": 9,
+      "misclassified_pct": 6.666666666666667,
+      "mismatches_explained_by_sphere_model": 10,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.19537624907825205,
+      "max": 0.3097582605938557
+     },
+     "risk_band_m": {
+      "from": 9969.119827824814,
+      "to": 10019.575871511308,
+      "width": 50.45604368649536
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 10.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 40,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 1,
+      "misclassified_pct": 0.6666666666666667,
+      "mismatches_explained_by_sphere_model": 1,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.19467290505023932,
+      "max": 0.3099895007208489
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 100.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 78,
+     "haversine": {
+      "included_but_outside": 5,
+      "excluded_but_inside": 9,
+      "misclassified_pct": 9.333333333333334,
+      "mismatches_explained_by_sphere_model": 14,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.19533061982658884,
+      "max": 0.315948251131325
+     },
+     "risk_band_m": {
+      "from": 99685.04683787629,
+      "to": 100195.71290706102,
+      "width": 510.66606918472866
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 100.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 37,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.1953640481862864,
+      "max": 0.3220343785876038
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 1000.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 73,
+     "haversine": {
+      "included_but_outside": 2,
+      "excluded_but_inside": 8,
+      "misclassified_pct": 6.666666666666667,
+      "mismatches_explained_by_sphere_model": 10,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.1956365702387582,
+      "max": 0.37310266708623646
+     },
+     "risk_band_m": {
+      "from": 996282.8421442374,
+      "to": 1001960.2005715555,
+      "width": 5677.358427318202
+     }
+    },
+    {
+     "latitude": 30.0,
+     "radius_km": 1000.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 31,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.1953966123160451,
+      "max": 0.41968039666777074
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 1.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 78,
+     "haversine": {
+      "included_but_outside": 18,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 12.0,
+      "mismatches_explained_by_sphere_model": 18,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3628099733321345,
+      "max": -0.19489158211197224
+     },
+     "risk_band_m": {
+      "from": 1001.9527215109666,
+      "to": 1003.641310771962,
+      "width": 1.6885892609952435
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 1.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 38,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3627914155518175,
+      "max": -0.19483903268812092
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 10.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 83,
+     "haversine": {
+      "included_but_outside": 21,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 14.000000000000002,
+      "mismatches_explained_by_sphere_model": 21,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3628285433414162,
+      "max": -0.1943130949527242
+     },
+     "risk_band_m": {
+      "from": 10019.469140584904,
+      "to": 10036.414978269355,
+      "width": 16.945837684450016
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 10.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 33,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3628064944543747,
+      "max": -0.1941847961195091
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 100.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 74,
+     "haversine": {
+      "included_but_outside": 18,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 12.0,
+      "mismatches_explained_by_sphere_model": 18,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.362785192967995,
+      "max": -0.18803729028798166
+     },
+     "risk_band_m": {
+      "from": 100188.39153662858,
+      "to": 100364.1061160437,
+      "width": 175.71457941509829
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 100.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 52,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3628586611847593,
+      "max": -0.18234578728973538
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 1000.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 74,
+     "haversine": {
+      "included_but_outside": 16,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 10.666666666666668,
+      "mismatches_explained_by_sphere_model": 16,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.36335935172559614,
+      "max": -0.12329966788811467
+     },
+     "risk_band_m": {
+      "from": 1001234.5188365065,
+      "to": 1003646.8446684015,
+      "width": 2412.3258318948792
+     }
+    },
+    {
+     "latitude": 60.0,
+     "radius_km": 1000.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 35,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.3655303055814107,
+      "max": -0.060413828421255686
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 1.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 80,
+     "haversine": {
+      "included_but_outside": 25,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 16.666666666666664,
+      "mismatches_explained_by_sphere_model": 25,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.4441176726441022,
+      "max": -0.43900758858478933
+     },
+     "risk_band_m": {
+      "from": 1004.4094336341153,
+      "to": 1004.4609887659252,
+      "width": 0.05155513180987725
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 1.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 34,
+     "haversine": {
+      "included_but_outside": 1,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.6666666666666667,
+      "mismatches_explained_by_sphere_model": 1,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.44411778878601327,
+      "max": -0.438998576244143
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 10.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 74,
+     "haversine": {
+      "included_but_outside": 32,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 21.333333333333336,
+      "mismatches_explained_by_sphere_model": 32,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.44411812680189255,
+      "max": -0.4388842930035059
+     },
+     "risk_band_m": {
+      "from": 10044.081897825967,
+      "to": 10044.609933481133,
+      "width": 0.5280356551673471
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 10.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 38,
+     "haversine": {
+      "included_but_outside": 1,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.6666666666666667,
+      "mismatches_explained_by_sphere_model": 1,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.44411799578319333,
+      "max": -0.4388727886801055
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 100.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 70,
+     "haversine": {
+      "included_but_outside": 32,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 21.333333333333336,
+      "mismatches_explained_by_sphere_model": 32,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.4441271376044263,
+      "max": -0.4375646410004304
+     },
+     "risk_band_m": {
+      "from": 100439.48768370588,
+      "to": 100446.10842618826,
+      "width": 6.620742482388309
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 100.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 42,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.44415450066239637,
+      "max": -0.43624150997290756
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 1000.0,
+     "points": "near_edge",
+     "n": 150,
+     "truly_inside": 68,
+     "haversine": {
+      "included_but_outside": 34,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 22.666666666666664,
+      "mismatches_explained_by_sphere_model": 34,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.4445477819152695,
+      "max": -0.4172541190632063
+     },
+     "risk_band_m": {
+      "from": 1004190.0242393605,
+      "to": 1004465.3283372311,
+      "width": 275.30409787068777
+     }
+    },
+    {
+     "latitude": 85.0,
+     "radius_km": 1000.0,
+     "points": "area_uniform",
+     "n": 150,
+     "truly_inside": 34,
+     "haversine": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "mismatches_explained_by_sphere_model": 0,
+      "mismatches_not_explained": 0
+     },
+     "vincenty": {
+      "included_but_outside": 0,
+      "excluded_but_inside": 0,
+      "misclassified_pct": 0.0,
+      "max_abs_margin_m_of_mismatches": null
+     },
+     "haversine_rel_error_pct": {
+      "min": -0.44472144691702414,
+      "max": -0.38192503728525984
+     }
+    }
+   ],
+   "curves_r100km": {
+    "0": {
+     "azimuth": [
+      -175.52485436244484,
+      -173.66532247632824,
+      -169.14095728638273,
+      -166.0063456856727,
+      -163.98807944748185,
+      -160.72534362832084,
+      -158.10364627971546,
+      -155.61439112537414,
+      -147.33320029281265,
+      -145.09440394253758,
+      -138.34916637257274,
+      -134.56515850330356,
+      -128.0425483466907,
+      -127.30587598436651,
+      -126.29546904088822,
+      -124.23256058847744,
+      -118.87597888689797,
+      -116.76996689708639,
+      -110.54205710746285,
+      -106.24562601699995,
+      -104.93410001444056,
+      -102.97654283787324,
+      -102.2725293989416,
+      -96.48294358724925,
+      -95.58677383392134,
+      -95.08200111347375,
+      -80.59046184088243,
+      -78.7127981971009,
+      -77.38073327934984,
+      -76.49688696202097,
+      -76.42833265710398,
+      -76.0621416272262,
+      -75.56271637612906,
+      -69.59029080410632,
+      -66.69948735110327,
+      -63.62895210356211,
+      -62.92435016060484,
+      -59.17582600309536,
+      -58.99682710989872,
+      -57.67808780165379,
+      -57.28400949470052,
+      -54.90904395391284,
+      -52.70081628222909,
+      -52.28933675666024,
+      -47.99728626007673,
+      -46.828232689923134,
+      -45.153645139885505,
+      -42.61231661850557,
+      -41.00873911176183,
+      -36.08661312498616,
+      -35.79236283417332,
+      -34.81527315464923,
+      -30.082577641926154,
+      -29.836303218764762,
+      -28.284535110247663,
+      -26.046011592569556,
+      -23.22736330455613,
+      -20.02842522383865,
+      -18.744795105541257,
+      -13.359244776502123,
+      -8.869867867515472,
+      -8.0201446198874,
+      -6.4341150625087735,
+      -6.348172034143088,
+      -3.264838371009255,
+      -2.6660440038785307,
+      -1.0003593782434521,
+      2.1341593613178778,
+      5.9549274580565426,
+      9.88392581672568,
+      11.577137327571682,
+      11.931128127515233,
+      12.163503168871468,
+      14.084028150015666,
+      15.031622897178595,
+      16.180258655588716,
+      20.236894172769592,
+      20.58184460193239,
+      21.967802341507365,
+      26.937550792324604,
+      32.24373951867798,
+      33.727428202152886,
+      34.02948084742224,
+      35.112206070363875,
+      40.676232341909305,
+      41.82607172479195,
+      42.53348653961992,
+      43.675054840656074,
+      48.37041012019965,
+      49.259790801637614,
+      53.04298453017486,
+      53.22309964335153,
+      62.24837613597805,
+      62.49432995330687,
+      63.83435703949836,
+      64.04355730594065,
+      70.49622715520374,
+      73.42889340271633,
+      76.16707299885255,
+      76.55234923847144,
+      78.17988608724656,
+      79.99784692367155,
+      85.98174774040078,
+      86.41403374547396,
+      86.93989982578249,
+      87.71829582822056,
+      88.32747283805078,
+      88.38982625637277,
+      88.66545452835437,
+      93.42525005117783,
+      93.53944369776579,
+      94.9232446436775,
+      95.94672840173,
+      98.87142007391249,
+      103.16896395203807,
+      103.5537204863606,
+      104.15839528542791,
+      104.26780328851193,
+      106.30455430178957,
+      107.00658395300746,
+      107.51820746117829,
+      111.21086797535303,
+      112.83315820981521,
+      114.08279304763369,
+      115.75862173452799,
+      118.69472031344009,
+      120.11626266125751,
+      120.80109754622488,
+      122.40625486029026,
+      122.80940939086702,
+      123.31977380423132,
+      129.23477681768313,
+      132.65810959827738,
+      136.9332057360326,
+      138.9334280687251,
+      141.84493721488124,
+      141.85369085827756,
+      142.8007217017526,
+      149.82714708410305,
+      151.66641894415974,
+      152.00924899303078,
+      152.27650065394653,
+      152.70883576437498,
+      155.4835131131199,
+      157.00729251673954,
+      160.62440614208492,
+      161.83345250501836,
+      178.6843985296418,
+      179.054547330404,
+      179.41695362485697
+     ],
+     "rel_pct": [
+      0.5572692295315729,
+      0.5531860799723043,
+      0.5375389097173366,
+      0.522116648913906,
+      0.5102958101845081,
+      0.48822598180404436,
+      0.46800844365088967,
+      0.44692766012900137,
+      0.3657195864223301,
+      0.3414441774317753,
+      0.2646101182089835,
+      0.2202530152277653,
+      0.14439375608800809,
+      0.13601492125770182,
+      0.12461709583436138,
+      0.10174754103070603,
+      0.04562008638960586,
+      0.02516007535247292,
+      -0.02863660013684079,
+      -0.05891623886869653,
+      -0.06691562926282273,
+      -0.07771050381183937,
+      -0.08124905451900273,
+      -0.10315044641427491,
+      -0.10535907700928741,
+      -0.10646056208956287,
+      -0.09370926428375503,
+      -0.08589003894573648,
+      -0.07952939478310057,
+      -0.07494395338154267,
+      -0.07457622153054216,
+      -0.07258335225753038,
+      -0.06978668101813257,
+      -0.029658530260671803,
+      -0.00614359541188963,
+      0.021402640187282853,
+      0.02806542769160165,
+      0.0654105583121021,
+      0.06726682629284013,
+      0.08113070002808588,
+      0.08533306648416561,
+      0.11119258239873292,
+      0.1359390249487557,
+      0.14061190131493645,
+      0.19020744470422762,
+      0.2038953286915796,
+      0.22355607591420068,
+      0.2533764504122437,
+      0.2720878533835638,
+      0.32834093113809765,
+      0.3316234822281531,
+      0.34243761118939936,
+      0.3926585639947867,
+      0.39515771458927373,
+      0.4106077983001038,
+      0.43192543520387416,
+      0.45695450591016423,
+      0.4826320029562314,
+      0.4920505007039617,
+      0.5255308593745126,
+      0.5454004887337579,
+      0.5482942180246624,
+      0.5529274260204452,
+      0.5531503197986956,
+      0.5591769761362253,
+      0.559901579950731,
+      0.5611489125222818,
+      0.5604231088646361,
+      0.5541321957399942,
+      0.5415853524148034,
+      0.534329691995497,
+      0.5326775463952561,
+      0.5315642232494353,
+      0.5216185357348377,
+      0.5162195840681273,
+      0.5092444410537128,
+      0.48105453594518177,
+      0.478411692235954,
+      0.4674299200573065,
+      0.42358130462462507,
+      0.37021467574952527,
+      0.3543169512574297,
+      0.3510367181227427,
+      0.3391647988653923,
+      0.27595171561509546,
+      0.262566100838679,
+      0.2542985771271041,
+      0.2409199325003841,
+      0.18584913337762357,
+      0.1754898407537589,
+      0.13206573979012134,
+      0.13003273117794936,
+      0.03456900235742861,
+      0.03219058540942796,
+      0.01948355689331154,
+      0.017539887053976744,
+      -0.036504547979995125,
+      -0.05683829146338505,
+      -0.07315934052534383,
+      -0.07524006134571518,
+      -0.08342544813961504,
+      -0.09138806013389002,
+      -0.10844357002687147,
+      -0.1091178429863557,
+      -0.10983522949327054,
+      -0.1106893964269659,
+      -0.11118456500843533,
+      -0.11122665277030032,
+      -0.11139356076593301,
+      -0.10934908688117843,
+      -0.10918586685847928,
+      -0.1067856702921803,
+      -0.10451079924038,
+      -0.09569857781740537,
+      -0.07671130197344132,
+      -0.07467260556763944,
+      -0.07135955204267762,
+      -0.07074586834165174,
+      -0.05854279001251057,
+      -0.0540007652326133,
+      -0.05058491231477183,
+      -0.023391362986181122,
+      -0.0101112200685286,
+      0.000634832905569958,
+      0.015711675622370185,
+      0.04381956949856258,
+      0.05812883038217323,
+      0.06517151248098622,
+      0.08202738444282967,
+      0.08633419065736107,
+      0.09182381689839296,
+      0.1580660325395958,
+      0.19787560275583949,
+      0.24805313230951637,
+      0.2714152047402615,
+      0.304980337349926,
+      0.30508116510035227,
+      0.3158353540446709,
+      0.3917398443262129,
+      0.4101292441394483,
+      0.4134747824441586,
+      0.41606225175412614,
+      0.4202170746037997,
+      0.4457720968989364,
+      0.4589413135255213,
+      0.48748878211863184,
+      0.4961198411550251,
+      0.560997663131619,
+      0.5611698034761291,
+      0.5612835565959804
+     ]
+    },
+    "30": {
+     "azimuth": [
+      -177.61557545597822,
+      -175.4909049288973,
+      -175.2907728006091,
+      -172.56586278048346,
+      -172.26050914472125,
+      -169.21397782214686,
+      -169.1752804479379,
+      -168.88684038898157,
+      -167.97168212752092,
+      -162.0730778822631,
+      -160.24746091374834,
+      -156.2825034752489,
+      -153.9587174272884,
+      -146.33354242774783,
+      -145.6145868697525,
+      -142.80560279676874,
+      -137.78330321973394,
+      -132.93043981166892,
+      -131.05505108139346,
+      -129.9068932286154,
+      -128.87391869591414,
+      -123.41360799154685,
+      -118.79740659323734,
+      -117.03947338028512,
+      -115.9080111666919,
+      -115.55783700070836,
+      -109.31415191111604,
+      -100.65046983027084,
+      -97.90747411415737,
+      -96.70374175726597,
+      -96.48576932244444,
+      -87.59008662518588,
+      -82.20827661430994,
+      -81.58295653576255,
+      -78.22923243331557,
+      -77.81152412094387,
+      -77.44770438465176,
+      -76.98590677852002,
+      -72.17846878370449,
+      -70.31063350377786,
+      -67.06340530286982,
+      -63.106441051572645,
+      -59.747130735727126,
+      -59.688537554895646,
+      -59.353037461140346,
+      -57.220083055625594,
+      -51.076367556122634,
+      -50.68143204139308,
+      -50.24521371925551,
+      -49.38652802114114,
+      -47.47262688787447,
+      -46.32004196240644,
+      -44.489017587925694,
+      -42.99937301023361,
+      -42.9743677150244,
+      -39.110069708593386,
+      -36.09288328782452,
+      -35.486580426857856,
+      -32.24724167891269,
+      -31.944460794025456,
+      -27.03333238002069,
+      -26.906989026972166,
+      -25.191194443047976,
+      -24.36498587897145,
+      -23.442920811135238,
+      -22.76858954699483,
+      -19.53952996452191,
+      -14.845688310594548,
+      -14.58307332897637,
+      -0.31196579374558336,
+      1.3479314993322788,
+      3.715964154501343,
+      8.633095672033999,
+      10.686706625148066,
+      11.601421114153105,
+      20.822410931916824,
+      33.23016348170059,
+      39.15274803574615,
+      43.59133718542732,
+      45.09823151375619,
+      45.767095341675834,
+      46.91194364659541,
+      47.1989331528062,
+      47.24575662824819,
+      49.73465842004993,
+      50.400585343605066,
+      50.61042265088795,
+      51.28260465720867,
+      52.56968600928113,
+      53.17902060851562,
+      54.372565798825256,
+      54.489781049541165,
+      59.52438472594669,
+      61.345272915897525,
+      61.868801928755545,
+      62.26093999617379,
+      66.1198653138941,
+      66.16775626074735,
+      68.83090286850947,
+      71.52687896102069,
+      74.40766359679881,
+      75.48172235600015,
+      77.9348550748939,
+      80.70866589581732,
+      81.17185877602138,
+      83.25955800561641,
+      86.86149154296507,
+      87.26618080792052,
+      89.02392314427844,
+      93.01015941227999,
+      93.12798397971211,
+      93.57560847325998,
+      96.47249814723043,
+      98.81462728871456,
+      98.8148678278027,
+      99.49572426542122,
+      99.90580341142436,
+      103.82917924470344,
+      106.03663843860576,
+      106.89629158661701,
+      106.9447725933529,
+      110.41778103575234,
+      116.25492032534522,
+      118.90889251666596,
+      124.56688918233016,
+      125.30048429714437,
+      126.31566674691518,
+      131.34526508626706,
+      134.81518063059556,
+      134.89740216982486,
+      135.61066482889984,
+      142.7697865089923,
+      151.6592056455811,
+      152.676426525799,
+      153.8312127801666,
+      154.50463874229817,
+      155.91853808437617,
+      157.4020785103926,
+      158.39952138375682,
+      160.71243491248867,
+      163.4770242559086,
+      163.62922989291843,
+      165.19439311372292,
+      166.6015881331616,
+      170.39189040674793,
+      171.50613173203539,
+      173.9213720168325,
+      177.3068866948657,
+      178.96531793621887,
+      179.5946764480787
+     ],
+     "rel_pct": [
+      0.3150413531366268,
+      0.31275859433371583,
+      0.31246569544720276,
+      0.30740515553246667,
+      0.30670004110812793,
+      0.2982205145724289,
+      0.29801639557029797,
+      0.2971452551177499,
+      0.29391271514155004,
+      0.26794644378277566,
+      0.25809777667394673,
+      0.23386784795184556,
+      0.2181490690062709,
+      0.1600753880783978,
+      0.1541026330560516,
+      0.13049547026803943,
+      0.08670551695029918,
+      0.0436466531633269,
+      0.02705534531025401,
+      0.016994398607361957,
+      0.007918620268511532,
+      -0.038345011551486306,
+      -0.07475988816135823,
+      -0.08777383818217743,
+      -0.09588786440012013,
+      -0.09830061547333703,
+      -0.13777648341317011,
+      -0.17682901294435563,
+      -0.18485545404855439,
+      -0.18767452611227453,
+      -0.18812708056049893,
+      -0.19475367758889456,
+      -0.18700240043403837,
+      -0.1855389824568772,
+      -0.17570806258675992,
+      -0.17425905293234115,
+      -0.17297251701294927,
+      -0.17125519738068054,
+      -0.15010840081615834,
+      -0.14030400371427737,
+      -0.12127405353821094,
+      -0.09505180314911482,
+      -0.07056987895560554,
+      -0.07009727484300791,
+      -0.06752621459394913,
+      -0.050927406410197905,
+      -0.0002520265716240698,
+      0.0030929662725462962,
+      0.006868652200202672,
+      0.014191976899690366,
+      0.030805167779353434,
+      0.040830424186656195,
+      0.05680240329222509,
+      0.06970542247291557,
+      0.06999996022493273,
+      0.10334502113227581,
+      0.12868885468243352,
+      0.1338095140449164,
+      0.15985484975923864,
+      0.1623034144224337,
+      0.19891156397283857,
+      0.1998029110096866,
+      0.21163711753592462,
+      0.21706167718890976,
+      0.22306647267769322,
+      0.2273315550107904,
+      0.24629261193433236,
+      0.2693102833809089,
+      0.27052820569163394,
+      0.30222323110860166,
+      0.3018346031631869,
+      0.3001426080436311,
+      0.2909200078914533,
+      0.28504963518848014,
+      0.28196136686542966,
+      0.23903495035297154,
+      0.15208901966458888,
+      0.10291701470082149,
+      0.0645682424512451,
+      0.05142938458904865,
+      0.04560215806015326,
+      0.0356092418630526,
+      0.03313889692993425,
+      0.032753979603725766,
+      0.011230625109619384,
+      0.005533553924808998,
+      0.0037368926480459666,
+      -0.0020287507516137094,
+      -0.012895580905209793,
+      -0.017976881124881935,
+      -0.027954769984136298,
+      -0.0288625245270308,
+      -0.06883491378780933,
+      -0.08244530076321317,
+      -0.08622831394062816,
+      -0.08909227899172825,
+      -0.11530493307906979,
+      -0.11559049474790586,
+      -0.13189589563793525,
+      -0.14676862980418454,
+      -0.16066945945948727,
+      -0.1652983985394955,
+      -0.1747023114695619,
+      -0.18328013317602077,
+      -0.18450474315063303,
+      -0.18920164156152064,
+      -0.19422313190826165,
+      -0.19453504843347472,
+      -0.19533061982658884,
+      -0.1936060165192911,
+      -0.19348446595392957,
+      -0.19296948996945293,
+      -0.18815662341306488,
+      -0.1824384913216409,
+      -0.18242550531390728,
+      -0.18047439490996864,
+      -0.1792238818534793,
+      -0.16482897710449104,
+      -0.15489796013481627,
+      -0.15064593822534977,
+      -0.15040407885488163,
+      -0.13144096646158893,
+      -0.09340266917084479,
+      -0.07392616718450053,
+      -0.028789094751662945,
+      -0.02268270267274982,
+      -0.01411232033440813,
+      0.029624649787791668,
+      0.060348243058457846,
+      0.06110175785809514,
+      0.06744299892034349,
+      0.13017403810716843,
+      0.20161543231091197,
+      0.2091292916768078,
+      0.2173018225967366,
+      0.22198886466081005,
+      0.2315340130644684,
+      0.24101615100724735,
+      0.24718164890740205,
+      0.260660822332488,
+      0.2749451693675568,
+      0.2757175369990308,
+      0.2827853016326992,
+      0.2886731377656929,
+      0.3017694835445014,
+      0.30493920932201635,
+      0.310287175048698,
+      0.314786121930877,
+      0.3158011825612046,
+      0.315948251131325
+     ]
+    },
+    "60": {
+     "azimuth": [
+      -177.5626380205015,
+      -173.51922463173437,
+      -170.33604163694895,
+      -169.95274338137472,
+      -165.05252151084318,
+      -164.95902477128627,
+      -163.99552139890926,
+      -163.84877757890902,
+      -160.39319372294892,
+      -154.60971779432958,
+      -154.15142501068317,
+      -150.733676879194,
+      -149.98544846996197,
+      -144.9211909958708,
+      -140.11859575635228,
+      -139.40624738053657,
+      -138.6985070146464,
+      -135.55108648565755,
+      -132.94810399387563,
+      -130.10541077798905,
+      -129.10930747840018,
+      -125.46954116441026,
+      -120.94050696713022,
+      -120.22979664486562,
+      -120.2295807962439,
+      -119.71012942030438,
+      -118.71117647317669,
+      -117.06628170891999,
+      -115.71515638686336,
+      -114.32069301365203,
+      -108.99254694995835,
+      -106.16633340001698,
+      -103.07904686675744,
+      -102.91458590622969,
+      -101.36447699478865,
+      -101.1520483078263,
+      -100.49928952009121,
+      -99.18573625555608,
+      -96.16808783488226,
+      -94.95721833935657,
+      -92.00428225037797,
+      -87.57716188465456,
+      -86.57024531429458,
+      -84.9107065820124,
+      -84.83571467897042,
+      -61.26298705351603,
+      -60.435666797706524,
+      -59.55461863008705,
+      -55.4033451419286,
+      -54.79314165302736,
+      -54.11814701551041,
+      -44.44972994371837,
+      -43.302950916343626,
+      -38.55165244029596,
+      -32.457174167692735,
+      -28.482308709675607,
+      -27.0734207203311,
+      -26.910074776031873,
+      -19.286653150329172,
+      -18.412721402130455,
+      -17.103204754087002,
+      -15.748625215307518,
+      -15.699060980030106,
+      -13.279297863242782,
+      -11.889869205425244,
+      -7.33323616696908,
+      -6.42778138568185,
+      -5.928653086400325,
+      -2.421598311705531,
+      -1.7945399379789246,
+      -1.7192489097638588,
+      -0.565532985651819,
+      3.97670693054608,
+      6.500577024586751,
+      7.659031445539744,
+      13.664860471545545,
+      13.725138619641031,
+      22.329009485942432,
+      24.6233687934006,
+      25.73872959170427,
+      27.05839398063466,
+      27.39017141442048,
+      27.490701384554782,
+      28.760897714258853,
+      32.606181364845256,
+      36.63788138696645,
+      37.260681760450545,
+      44.193054725154056,
+      48.517007206039416,
+      49.57692697060256,
+      51.2792410285455,
+      53.647319465037874,
+      54.52635343018904,
+      57.215721960236074,
+      61.361716686316484,
+      62.38452868307114,
+      66.4825595279161,
+      66.88435122015264,
+      67.2986622666882,
+      67.44855559478407,
+      70.7377062601405,
+      70.96012790201695,
+      73.54133423834908,
+      76.6787768621348,
+      78.63548279661902,
+      80.78113201583001,
+      81.62051603671439,
+      84.56806542307152,
+      85.28885108860835,
+      85.53749365074117,
+      85.66027197186692,
+      85.94435931604626,
+      87.17550063520183,
+      87.7784872105168,
+      95.36827493824609,
+      105.03063243562447,
+      107.540863540929,
+      107.66632207510712,
+      109.0748004419147,
+      110.6015088520167,
+      119.68428851151374,
+      120.46575685313015,
+      121.28855887529384,
+      124.60815006553588,
+      125.32358316661055,
+      126.3998677515601,
+      127.47050952442218,
+      128.43334714459382,
+      131.3730474311054,
+      132.5044450214236,
+      132.6843966841716,
+      134.71562119054008,
+      135.602015626406,
+      136.22321853806838,
+      138.69975886993635,
+      140.13668548347908,
+      141.32685963853615,
+      147.90313949233126,
+      149.14038741973667,
+      152.92653311927705,
+      154.18509399953084,
+      154.9069849691029,
+      155.65820898267606,
+      158.68407042457795,
+      161.3932270272785,
+      171.30306883919246,
+      175.11818707879777,
+      175.33854705368373,
+      175.7825017530917,
+      179.3782319519032
+     ],
+     "rel_pct": [
+      -0.18846270235889723,
+      -0.1902315694802757,
+      -0.19290459451536654,
+      -0.19332654347530193,
+      -0.19944255587659304,
+      -0.19963753356780595,
+      -0.2010554856536716,
+      -0.20139591023674036,
+      -0.20732701569284082,
+      -0.21957136883018571,
+      -0.22064019907010968,
+      -0.2290913622752443,
+      -0.23097668850234335,
+      -0.2447655237920513,
+      -0.25865193658017327,
+      -0.2607537211042234,
+      -0.2629086998791658,
+      -0.2723582432358823,
+      -0.2802016137933515,
+      -0.2887259311402285,
+      -0.291599918989609,
+      -0.3022780063351183,
+      -0.31484728455699895,
+      -0.3167388494830842,
+      -0.31675758360175216,
+      -0.31815504928056615,
+      -0.32069889465000817,
+      -0.324897186848671,
+      -0.32818260597490095,
+      -0.3314984771130614,
+      -0.3427815614093874,
+      -0.34785441425100344,
+      -0.3526103512647735,
+      -0.35284199771096086,
+      -0.3548922456961056,
+      -0.35516861454786125,
+      -0.3559551232393905,
+      -0.357413415011244,
+      -0.3601030408368519,
+      -0.360922430735367,
+      -0.3623305731254294,
+      -0.3627621794170234,
+      -0.36257928475309137,
+      -0.3620516113948524,
+      -0.3620230940036521,
+      -0.3272567648860489,
+      -0.3252506410825173,
+      -0.3230967862073742,
+      -0.31247572272222696,
+      -0.3108496744095568,
+      -0.30905155483534286,
+      -0.28203532699562733,
+      -0.2788411429609384,
+      -0.2654470743472269,
+      -0.24900383253616218,
+      -0.23903502639550503,
+      -0.235700324063579,
+      -0.2353410557699659,
+      -0.21960891884396372,
+      -0.21810774247814887,
+      -0.21594596059908092,
+      -0.2138773679627628,
+      -0.21376175182579757,
+      -0.2104678988826592,
+      -0.20870256732698345,
+      -0.20437538750480705,
+      -0.20380373249720335,
+      -0.20355506558891942,
+      -0.2020312206768664,
+      -0.20197161659919147,
+      -0.20193927065406062,
+      -0.20180643161316447,
+      -0.20252198427613746,
+      -0.20391773712102645,
+      -0.20461469905582894,
+      -0.21087440757835982,
+      -0.2110159731131529,
+      -0.22546107475739327,
+      -0.2302550667412963,
+      -0.23267513662859926,
+      -0.2356597415664969,
+      -0.23645970640871478,
+      -0.23674886732713987,
+      -0.23973913316129666,
+      -0.2493903320349861,
+      -0.26016847173698954,
+      -0.2618089919430287,
+      -0.2812945267576144,
+      -0.29357598997525375,
+      -0.2965881893834269,
+      -0.3012954044461104,
+      -0.30781030055399616,
+      -0.3101998401832933,
+      -0.31720541182448286,
+      -0.3274769928919364,
+      -0.3298557681039257,
+      -0.33875888347846456,
+      -0.3395743781857936,
+      -0.3403997143966406,
+      -0.3406612681123067,
+      -0.3467543877691306,
+      -0.3471180935151714,
+      -0.3512066097156759,
+      -0.35541381379178794,
+      -0.3575855026780833,
+      -0.3595444353943208,
+      -0.36020586608536187,
+      -0.3619085167203948,
+      -0.3622027991512624,
+      -0.3622830770217411,
+      -0.3623268836005787,
+      -0.36241841524962415,
+      -0.36270243392418594,
+      -0.362785192967995,
+      -0.36066076104134986,
+      -0.3496908576526709,
+      -0.34545221538595744,
+      -0.34525027968082256,
+      -0.34261039065104537,
+      -0.33959144825308285,
+      -0.3182146015175833,
+      -0.3161153099278723,
+      -0.31395738954254354,
+      -0.3047124714093516,
+      -0.30271589056844916,
+      -0.29954127111598133,
+      -0.29649247901482634,
+      -0.2936379369169965,
+      -0.2848767480796868,
+      -0.2814635568326184,
+      -0.2809579129624526,
+      -0.2748754540115916,
+      -0.2721850284183901,
+      -0.2702664131082787,
+      -0.2628665500380261,
+      -0.2585899574911798,
+      -0.25508504044676683,
+      -0.2364888905197427,
+      -0.23315828229240199,
+      -0.2235589566719304,
+      -0.22052930528713924,
+      -0.21886623528487412,
+      -0.2171654449990331,
+      -0.21066047179164613,
+      -0.2054644577098853,
+      -0.19196783218456714,
+      -0.1892942349237561,
+      -0.18917502779592638,
+      -0.18895568821591366,
+      -0.18803729028798166
+     ]
+    },
+    "85": {
+     "azimuth": [
+      -178.58274790882876,
+      -178.5737579090313,
+      -173.1179277700559,
+      -167.51380525246677,
+      -164.25254819052904,
+      -163.45777063977349,
+      -163.09987095765047,
+      -159.86739695285928,
+      -159.06867085588786,
+      -158.4502801969323,
+      -157.71064548306992,
+      -154.1292295146767,
+      -153.22000456036724,
+      -145.2017648359954,
+      -144.78931049933033,
+      -144.311316816008,
+      -141.40301489736194,
+      -140.50157723888245,
+      -139.44832051873396,
+      -138.63544458774007,
+      -138.5035201192366,
+      -132.72759412116818,
+      -131.74016143801555,
+      -128.8586069801522,
+      -127.52081092932147,
+      -122.74024128587916,
+      -120.47631898912492,
+      -118.93157509794511,
+      -118.65472585596679,
+      -118.54543914273633,
+      -115.39314951535229,
+      -112.25331044134629,
+      -107.36387566430125,
+      -101.05908097856897,
+      -101.04993701686091,
+      -99.9392103167312,
+      -98.20986559235358,
+      -97.53773965626998,
+      -96.52051176137438,
+      -95.5793599707582,
+      -90.71790031561498,
+      -88.2684572511504,
+      -88.25014046212851,
+      -87.58144034044739,
+      -87.48233189808724,
+      -86.40448161896646,
+      -85.74982819819314,
+      -85.4433873031625,
+      -84.8246179764878,
+      -83.30271006135193,
+      -81.41704160480964,
+      -78.87502178555317,
+      -78.42711188185397,
+      -76.93420987343151,
+      -76.19702548005591,
+      -66.77565161287498,
+      -66.474975818402,
+      -64.83589254989286,
+      -62.65035102124577,
+      -62.18419866101921,
+      -62.08052150562478,
+      -59.46978882980337,
+      -56.30059668455442,
+      -55.661327269629325,
+      -53.11939212455782,
+      -46.48760325206552,
+      -40.30991357310773,
+      -38.435922444444635,
+      -37.40240908185638,
+      -28.51069493581595,
+      -27.268515159733838,
+      -25.624470688025365,
+      -24.181492876664404,
+      -17.753699035131547,
+      -17.684342672251677,
+      -13.392742898800211,
+      -12.508269193223011,
+      -9.486814361407994,
+      -8.005932964516141,
+      -7.602125352062406,
+      -7.4255183021184985,
+      -7.126974317924849,
+      -5.211016504572814,
+      1.0358733622370708,
+      1.90828306339931,
+      2.7306913898040595,
+      3.07160485694523,
+      6.202009985364605,
+      6.526060686830698,
+      8.661612173424489,
+      9.592464947905407,
+      9.633172346407857,
+      10.470143447773529,
+      11.122048017170519,
+      12.688068381880724,
+      12.898486659010864,
+      17.061006060767106,
+      22.28135685264947,
+      24.000698008634483,
+      25.978042076935086,
+      27.590041412177133,
+      37.33824118649523,
+      39.645184400609295,
+      41.34227636745534,
+      44.859346544477994,
+      49.31737079932487,
+      56.321501461971614,
+      57.61985242118991,
+      58.92485394168487,
+      59.66238262448688,
+      60.105259109063766,
+      61.670591341933445,
+      65.18217964297398,
+      68.08910706802573,
+      68.51971651578364,
+      77.1331708301545,
+      78.0897284034553,
+      79.56714038303495,
+      83.50665099834994,
+      90.42824129219292,
+      96.3419314017148,
+      97.94009935779498,
+      101.08304694200346,
+      107.28436385023983,
+      111.73016475466619,
+      114.10951157680057,
+      115.07748551026785,
+      119.35445699626406,
+      121.48548909409769,
+      121.94900289109513,
+      126.98624305221493,
+      126.9980259201636,
+      137.8360837674632,
+      141.0668804840486,
+      143.82288530779033,
+      143.98254406455334,
+      145.88753557534127,
+      147.19229267087633,
+      153.38101212797136,
+      153.40815239712725,
+      153.71577612265133,
+      154.95820761879997,
+      155.450795043446,
+      166.59664297341783,
+      169.26066288244766,
+      174.24362491525807,
+      175.3156415879951,
+      177.33761252800784,
+      178.77504259760371,
+      179.93513985475838
+     ],
+     "rel_pct": [
+      -0.4375646410004304,
+      -0.437593357517352,
+      -0.43766822032675295,
+      -0.4378437936681843,
+      -0.4379901019125879,
+      -0.4380353730926237,
+      -0.4380763513118821,
+      -0.4382567107957671,
+      -0.43832884660488686,
+      -0.4383520240905937,
+      -0.43839932997339637,
+      -0.4386914014767952,
+      -0.4387653654515442,
+      -0.43948029902012037,
+      -0.43952673188709007,
+      -0.43957793676283,
+      -0.43984811138535107,
+      -0.4399505358312365,
+      -0.44004693693401864,
+      -0.44012967248164514,
+      -0.4401624815865168,
+      -0.44076644533365605,
+      -0.44086569951559235,
+      -0.4411675426147373,
+      -0.44131386662780286,
+      -0.44179899556280366,
+      -0.44203905400882054,
+      -0.44217687389396704,
+      -0.4422046185865754,
+      -0.4422228858770443,
+      -0.44251079048688796,
+      -0.4427865657547084,
+      -0.4431785003359097,
+      -0.44358894490021905,
+      -0.4435915824313673,
+      -0.4436499702948451,
+      -0.4437386350011693,
+      -0.44377041745416024,
+      -0.4438151241883991,
+      -0.44385314318547586,
+      -0.444017487143701,
+      -0.44407256046686444,
+      -0.44407435568843245,
+      -0.4440856276853621,
+      -0.44408718041976947,
+      -0.4441018631376962,
+      -0.4441105094453164,
+      -0.4441133906920831,
+      -0.44411815333268284,
+      -0.4441266576261445,
+      -0.4441271376044263,
+      -0.44411048716964124,
+      -0.44410620638246573,
+      -0.4440850433203008,
+      -0.44407119380494575,
+      -0.4437834905758096,
+      -0.44377104549610014,
+      -0.4436918630689869,
+      -0.44359197874334355,
+      -0.44356833582444133,
+      -0.44356225881035016,
+      -0.44341310110552545,
+      -0.4432266905484875,
+      -0.44318387869247583,
+      -0.4430251062036633,
+      -0.4425681572401255,
+      -0.44210767297380393,
+      -0.4419804243523739,
+      -0.44189824559687335,
+      -0.4412944407548278,
+      -0.44121827252945267,
+      -0.4411173725497019,
+      -0.44104013113249013,
+      -0.4407198317114607,
+      -0.4407088032824325,
+      -0.4405308953533639,
+      -0.44052236721774324,
+      -0.44041693178018726,
+      -0.44038642303645276,
+      -0.44038013852855096,
+      -0.4403807487372276,
+      -0.44038457400342873,
+      -0.4403318946360627,
+      -0.4403074383737336,
+      -0.44030118478598074,
+      -0.44032289889978277,
+      -0.44031249260561456,
+      -0.44035722500654045,
+      -0.4403687494510237,
+      -0.44039646870301,
+      -0.4404360417239295,
+      -0.44043760621656874,
+      -0.44045265058980065,
+      -0.44046970205250974,
+      -0.4405175741718679,
+      -0.44053609704986757,
+      -0.4406825523427661,
+      -0.4409445724627429,
+      -0.4410388616192171,
+      -0.44115124879533063,
+      -0.44125313678010913,
+      -0.44189531543611443,
+      -0.4420623456406405,
+      -0.4421916707111392,
+      -0.4424484046846998,
+      -0.4427673604601455,
+      -0.44322749932247196,
+      -0.4433103924213853,
+      -0.44338857116651387,
+      -0.4434263753548518,
+      -0.4434499144818649,
+      -0.44353250738731337,
+      -0.4437131861233381,
+      -0.44383834595539745,
+      -0.4438560759414763,
+      -0.4440868188620154,
+      -0.44410128615837213,
+      -0.44411680033737505,
+      -0.44412604094889807,
+      -0.44402682024046686,
+      -0.44382239922823463,
+      -0.44375108729296403,
+      -0.4435851641583075,
+      -0.44317825329284893,
+      -0.44283779306459603,
+      -0.44262461917103857,
+      -0.44254184671758107,
+      -0.44213964516296295,
+      -0.44192748060177905,
+      -0.4418821891886745,
+      -0.44136933505055054,
+      -0.44137701120685413,
+      -0.4402176347604345,
+      -0.43990147288008785,
+      -0.4396095277198944,
+      -0.4396072288844764,
+      -0.43941967891631317,
+      -0.4392845880739187,
+      -0.43873927153499526,
+      -0.43873296638879167,
+      -0.4387246868595927,
+      -0.43862921272676036,
+      -0.43857538006190666,
+      -0.4378917836019973,
+      -0.43778107961225127,
+      -0.4376392460356576,
+      -0.43760635965123085,
+      -0.4375801909952402,
+      -0.43757141958452705,
+      -0.4375651049529753
+     ]
+    }
+   },
+   "near_edge_by_latitude": {
+    "0": {
+     "n": 600,
+     "haversine_misclassified": 72,
+     "haversine_misclassified_pct": 12.0,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 5,
+     "haversine_excluded_but_inside": 67
+    },
+    "30": {
+     "n": 600,
+     "haversine_misclassified": 47,
+     "haversine_misclassified_pct": 7.833333333333333,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 11,
+     "haversine_excluded_but_inside": 36
+    },
+    "60": {
+     "n": 600,
+     "haversine_misclassified": 73,
+     "haversine_misclassified_pct": 12.166666666666666,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 73,
+     "haversine_excluded_but_inside": 0
+    },
+    "85": {
+     "n": 600,
+     "haversine_misclassified": 123,
+     "haversine_misclassified_pct": 20.5,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 123,
+     "haversine_excluded_but_inside": 0
+    }
+   },
+   "area_uniform_by_latitude": {
+    "0": {
+     "n": 600,
+     "haversine_misclassified": 0,
+     "haversine_misclassified_pct": 0.0,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 0,
+     "haversine_excluded_but_inside": 0
+    },
+    "30": {
+     "n": 600,
+     "haversine_misclassified": 1,
+     "haversine_misclassified_pct": 0.16666666666666666,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 0,
+     "haversine_excluded_but_inside": 1
+    },
+    "60": {
+     "n": 600,
+     "haversine_misclassified": 0,
+     "haversine_misclassified_pct": 0.0,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 0,
+     "haversine_excluded_but_inside": 0
+    },
+    "85": {
+     "n": 600,
+     "haversine_misclassified": 2,
+     "haversine_misclassified_pct": 0.3333333333333333,
+     "vincenty_misclassified": 0,
+     "vincenty_misclassified_pct": 0.0,
+     "haversine_included_but_outside": 2,
+     "haversine_excluded_but_inside": 0
+    }
+   },
+   "notes": [
+    "Truth: geographiclib geodesic distance on WGS-84 <= radius. Test points come from Geodesic.Direct; their distance is recomputed with Geodesic.Inverse.",
+    "near_edge: geodesic distance uniform within +-1 % of the radius. area_uniform: uniform by area in a disk of twice the radius.",
+    "A haversine mismatch is 'explained by the sphere model' when an independent numpy haversine with R = 6371.0088 km gives the same in/out answer as qoregeo."
+   ]
+  },
+  "antimeridian": {
+   "bbox": {
+    "qoregeo_bbox": [
+     176.5761142699899,
+     -21.35,
+     -173.66696518888773,
+     -12.5
+    ],
+    "qoregeo_width_deg": 9.756920541122383,
+    "brute_force_west": 176.5761142699899,
+    "brute_force_width_deg": 9.756920541122383,
+    "qoregeo_covers_all_points": true,
+    "qoregeo_width_minus_brute_force_deg": 0.0,
+    "naive_min_max_bbox": [
+     -179.9922,
+     -21.35,
+     179.8734130317058,
+     -12.5
+    ],
+    "naive_width_deg": 359.86561303170583,
+    "bounds": {
+     "min_lat": -21.35,
+     "max_lat": -12.5,
+     "min_lng": -179.9922,
+     "max_lng": 179.8734130317058
+    }
+   },
+   "centroid": {
+    "qoregeo": [
+     -17.427177,
+     -178.238732
+    ],
+    "numpy_vector_mean": [
+     -17.427177366254064,
+     -178.2387323918506
+    ],
+    "unwrapped_arithmetic_mean": [
+     -17.40036744267982,
+     -178.22705369511777
+    ],
+    "naive_arithmetic_mean": [
+     -17.40036744267982,
+     -42.64263811070222
+    ],
+    "qoregeo_to_vector_mean_m": 0.05810504595346087,
+    "qoregeo_to_unwrapped_mean_km": 3.216114225554502,
+    "naive_to_vector_mean_km": 13817.937714609234
+   },
+   "filter_by_bbox": {
+    "Fiji main islands and Lau": {
+     "box_south_west_north_east": [
+      -19.5,
+      177.0,
+      -16.0,
+      -178.5
+     ],
+     "brute_force_count": 37,
+     "qoregeo_count": 37,
+     "qoregeo_matches_brute_force": true,
+     "continuous_east_plus_360_same_result": true,
+     "naive_w_le_lng_le_e_count": 0,
+     "naive_swapped_count": 11,
+     "naive_swapped_true_positives": 0
+    },
+    "Lau and Tonga": {
+     "box_south_west_north_east": [
+      -22.0,
+      179.0,
+      -15.0,
+      -173.0
+     ],
+     "brute_force_count": 46,
+     "qoregeo_count": 46,
+     "qoregeo_matches_brute_force": true,
+     "continuous_east_plus_360_same_result": true,
+     "naive_w_le_lng_le_e_count": 0,
+     "naive_swapped_count": 17,
+     "naive_swapped_true_positives": 0
+    },
+    "filter_by_bbox(**bounds())": {
+     "count": 77,
+     "of": 77
+    }
+   },
+   "framing": {
+    "full_dataset_bbox": [
+     176.5761142699899,
+     -21.35,
+     -173.66696518888773,
+     -12.5
+    ],
+    "full_dataset_brute_force_width_deg": 9.756920541122383,
+    "full_dataset_brute_force_west": 176.5761142699899,
+    "map_html_data_lng_range": [
+     176.5761142699899,
+     186.33303481111227
+    ],
+    "map_html_width_deg": 9.756920541122383,
+    "map_world_copy_jump": false,
+    "heatmap_html_bounds": [
+     [
+      -21.35,
+      176.5761142699899
+     ],
+     [
+      -12.5,
+      186.33303481111227
+     ]
+    ],
+    "heatmap_width_deg": 9.756920541122383,
+    "naive_min_max_lng_range": [
+     -180.0,
+     180.0
+    ],
+    "image_size_px": [
+     800,
+     560
+    ],
+    "image_markers_inside_canvas": true,
+    "image_cx_linear_in_unwrapped_lng_max_residual_px": 0.005378794546231802,
+    "image_cx_linear_in_raw_lng_max_residual_px": 213.77870069841856,
+    "image_visible_lng_range": [
+     174.08213624018765,
+     -171.1729922878091
+    ],
+    "image_grid_labels": [
+     "180°",
+     "175°W",
+     "20°S",
+     "15°S"
+    ],
+    "waiyevo_to_labasa_km": 78.36991864891634,
+    "waiyevo_to_labasa_px_qoregeo": 33.879999999999995,
+    "waiyevo_to_labasa_px_naive_min_max": 742.9867214805071
+   },
+   "readme_claims": [
+    {
+     "claim": "fiji.bounds()",
+     "readme": {
+      "min_lat": -18.14,
+      "max_lat": -16.8,
+      "min_lng": -179.95,
+      "max_lng": 178.44
+     },
+     "actual": {
+      "min_lat": -18.14,
+      "max_lat": -16.8,
+      "min_lng": -179.95,
+      "max_lng": 178.44
+     },
+     "matches": true
+    },
+    {
+     "claim": "fiji.bbox()",
+     "readme": [
+      178.44,
+      -18.14,
+      -179.95,
+      -16.8
+     ],
+     "actual": [
+      178.44,
+      -18.14,
+      -179.95,
+      -16.8
+     ],
+     "matches": true
+    },
+    {
+     "claim": "fiji.centroid()",
+     "readme": [
+      -17.471619,
+      179.247963
+     ],
+     "actual": [
+      -17.471619,
+      179.247963
+     ],
+     "matches": true
+    },
+    {
+     "claim": "point_in_polygon((-18.0, 179.5), fiji zone)",
+     "readme": true,
+     "actual": true,
+     "matches": true
+    },
+    {
+     "claim": "point_in_polygon((-18.0, -179.5), fiji zone)",
+     "readme": true,
+     "actual": true,
+     "matches": true
+    }
+   ],
+   "random_clusters": {
+    "counts": {
+     "sets": 30,
+     "sets_where_naive_min_max_is_wider": 13,
+     "bbox_width_equals_brute_force": 30,
+     "bbox_covers_all_points": 30,
+     "centroid_within_0.2_m_of_vector_mean": 30,
+     "filter_by_bbox_matches_brute_force": 30,
+     "filter_by_bbox_continuous_form_matches": 30,
+     "filter_by_bbox_points_selected": 160
+    },
+    "worst": {
+     "bbox_width_diff_deg": 0.0,
+     "centroid_diff_m": 0.0657377008791972
+    },
+    "naive_centroid_error_km_where_min_max_is_wider": {
+     "median": 4661.537860796562,
+     "max": 11973.434442268725,
+     "min": 727.7542176317205
+    },
+    "rendering": {
+     "rendered": 5,
+     "image_all_markers_inside_canvas": 5,
+     "image_x_linear_in_expected_lng_within_0.05_px": 5,
+     "map_lng_range_equals_expected": 5,
+     "sets_with_tightest_arc_under_180_deg": 5,
+     "sets_drawn_across_180": 2
+    },
+    "notes": [
+     "Each set: points uniform in a longitude window centred between 150 and 210 deg, 0.01 to 300 deg wide; 20 % of the sets also get points at exactly lng 180 and -180. Expected framing: the narrowest covering longitude arc when it is under 180 deg wide (lng 180 and -180 are one meridian), else the raw min/max (a world map, the documented rule)."
+    ]
+   }
+  },
+  "edge_cases": {
+   "cases": [
+    {
+     "group": "poles",
+     "case": "two spellings of the North Pole",
+     "call": "geo.distance((90, 0), (90, 123), unit='m')",
+     "documented": "points at a pole with different longitudes are the same place",
+     "raised": null,
+     "value": 0.0,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "haversine from the pole vs geographiclib",
+     "call": "geo.distance((90, 0), (89, 0), unit='m')",
+     "documented": "haversine is within about 0.5 % of the true distance",
+     "raised": null,
+     "value": 111195.0802,
+     "warnings": [],
+     "pass": true,
+     "note": "geographiclib: 111693.9 m"
+    },
+    {
+     "group": "poles",
+     "case": "buffer at the North Pole vs exact circle",
+     "call": "geo.point_in_polygon(p, geo.buffer((90, 0), 100))",
+     "documented": "buffers are tested as exact circles (haversine), also near the poles",
+     "raised": null,
+     "value": {
+      "n": 200,
+      "mismatch_vs_geographiclib": 46,
+      "mismatch_vs_numpy_haversine": 0,
+      "included_but_geodesically_outside": 46,
+      "max_geodesic_m_included": 100440.23179495998
+     },
+     "warnings": [],
+     "pass": true,
+     "note": "points at geodesic 99 to 101 km from the pole; mismatches vs geographiclib come from the sphere model (meridian radius of curvature at the pole is 6399.6 km)"
+    },
+    {
+     "group": "poles",
+     "case": "filter_by_radius at the North Pole, haversine",
+     "call": "geo.filter_by_radius(90, 0, 100, method='haversine')",
+     "documented": "vincenty is accurate to about 0.5 mm",
+     "raised": null,
+     "value": {
+      "mismatch_vs_geographiclib": 46,
+      "n": 200
+     },
+     "warnings": [],
+     "pass": null,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "filter_by_radius at the North Pole, vincenty",
+     "call": "geo.filter_by_radius(90, 0, 100, method='vincenty')",
+     "documented": "vincenty is accurate to about 0.5 mm",
+     "raised": null,
+     "value": {
+      "mismatch_vs_geographiclib": 0,
+      "n": 200
+     },
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "centroid of 8 points on the 89 deg N parallel",
+     "call": "ring.centroid()",
+     "documented": "spherical mean of the locations (naive mean: lat 89)",
+     "raised": null,
+     "value": [
+      90.0,
+      -14.036243
+     ],
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "bbox of 8 points around the pole",
+     "call": "ring.bbox()",
+     "documented": "tightest longitude span; here 315 deg (largest gap 45 deg)",
+     "raised": null,
+     "value": [
+      -180.0,
+      89.0,
+      135.0,
+      89.0
+     ],
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "North Pole in a polygon covering lat >= 80",
+     "call": "geo.point_in_polygon((90, 0), north_cap)",
+     "documented": "planar lng/lat edges: the pole lies on the top edge (boundary); the boundary rule is not documented",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": null,
+     "note": "compare with the South Pole case"
+    },
+    {
+     "group": "poles",
+     "case": "South Pole in a polygon covering lat <= -80",
+     "call": "geo.point_in_polygon((-90, 0), south_cap)",
+     "documented": "same as above, mirrored",
+     "raised": null,
+     "value": true,
+     "warnings": [],
+     "pass": null,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "lng 180 vs -180 inside a polygon spanning -180..180",
+     "call": "[geo.point_in_polygon((85, 180), north_cap), geo.point_in_polygon((85, -180), north_cap)]",
+     "documented": "the same physical point; planar reading puts both on the polygon's side edges",
+     "raised": null,
+     "value": [
+      false,
+      true
+     ],
+     "warnings": [],
+     "pass": null,
+     "note": ""
+    },
+    {
+     "group": "poles",
+     "case": "buffers near the pole meet",
+     "call": "geo.intersects(geo.buffer((90, 0), 10), geo.buffer((89.95, 77), 1))",
+     "documented": "buffers are exact circles on the sphere, also around the poles",
+     "raised": null,
+     "value": true,
+     "warnings": [],
+     "pass": true,
+     "note": "centres 5.6 km apart, radii 10 + 1 km"
+    },
+    {
+     "group": "poles",
+     "case": "image of points at the pole",
+     "call": "GeoEngine().add_point(90, 0)...to_svg()",
+     "documented": "Web Mercator with latitude clamped to +-85.0511 deg",
+     "raised": null,
+     "value": {
+      "markers": 3,
+      "inside_canvas": true
+     },
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "null geometry is kept",
+     "call": "GeoEngine().load_data(nullf).count()",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": 2,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "bbox skips null geometry",
+     "call": "mixed.bbox()",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": [
+      10.0,
+      20.0,
+      10.0,
+      20.0
+     ],
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "centroid skips null geometry",
+     "call": "mixed.centroid()",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": [
+      20.0,
+      10.0
+     ],
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "filter_by_radius skips null geometry",
+     "call": "mixed.filter_by_radius(20, 10, 5).count()",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": 1,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "filter_intersects skips null geometry",
+     "call": "mixed.filter_intersects(zone).count()",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": 1,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "nearest skips null geometry",
+     "call": "mixed.nearest((0, 0))['feature']['properties']['a']",
+     "documented": "\"geometry\": null features are kept (with their properties) but have no location, so spatial operations skip them",
+     "raised": null,
+     "value": 2,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "map and image skip null geometry",
+     "call": "mixed.map_html(tiles='none'); mixed.to_svg()",
+     "documented": "a None geometry is skipped",
+     "raised": null,
+     "value": [
+      true,
+      1
+     ],
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "null",
+     "case": "bbox of an all-null dataset",
+     "call": "allnull.bbox()",
+     "documented": "NoDataError: nothing is loaded, or the dataset is empty",
+     "raised": "NoDataError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "RuntimeError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Dataset Is Empty",
+      "────────────────────────────────────────────",
+      "You called geo.bbox() but the dataset has no features to use."
+     ]
+    },
+    {
+     "group": "null",
+     "case": "point_in_polygon with polygon None",
+     "call": "geo.point_in_polygon((0, 0), None)",
+     "documented": "InvalidBufferError: a polygon argument is missing, malformed or not a polygon",
+     "raised": "InvalidBufferError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Polygon",
+      "────────────────────────────────────────────",
+      "The polygon you passed is not valid."
+     ]
+    },
+    {
+     "group": "null",
+     "case": "intersects with None",
+     "call": "geo.intersects(None, pt)",
+     "documented": "InvalidArgumentError: any other bad argument",
+     "raised": "InvalidArgumentError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Argument 'geometry_a'",
+      "────────────────────────────────────────────",
+      "Received: None"
+     ]
+    },
+    {
+     "group": "null",
+     "case": "intersects with a null-geometry Feature",
+     "call": "geo.intersects({'type': 'Feature', 'geometry': None}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "load_data([])",
+     "call": "GeoEngine().load_data([])",
+     "documented": "EmptyDatasetError: a file or object contains no usable features",
+     "raised": "EmptyDatasetError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Empty Dataset",
+      "────────────────────────────────────────────",
+      "No valid spatial features were found in: '<in-memory data>'"
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "load_data(empty FeatureCollection)",
+     "call": "GeoEngine().load_data({'type': 'FeatureCollection', 'features': []})",
+     "documented": "EmptyDatasetError: a file or object contains no usable features",
+     "raised": "EmptyDatasetError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Empty Dataset",
+      "────────────────────────────────────────────",
+      "No valid spatial features were found in: '<in-memory data>'"
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "empty geometries load",
+     "call": "GeoEngine().load_data(empties).count()",
+     "documented": "RFC 7946 allows empty coordinate arrays",
+     "raised": null,
+     "value": 4,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "bbox of empty geometries",
+     "call": "eng.bbox()",
+     "documented": "NoDataError: the dataset is empty",
+     "raised": "NoDataError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "RuntimeError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Dataset Is Empty",
+      "────────────────────────────────────────────",
+      "You called geo.bbox() but the dataset has no features to use."
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "intersects with empty LineString",
+     "call": "geo.intersects({\"type\": \"LineString\", \"coordinates\": []}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "intersects with empty Polygon",
+     "call": "geo.intersects({\"type\": \"Polygon\", \"coordinates\": []}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "intersects with empty MultiPolygon",
+     "call": "geo.intersects({\"type\": \"MultiPolygon\", \"coordinates\": []}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "intersects with empty GeometryCollection",
+     "call": "geo.intersects({\"type\": \"GeometryCollection\", \"geometries\": []}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "intersects with empty FeatureCollection",
+     "call": "geo.intersects({\"type\": \"FeatureCollection\", \"features\": []}, pt)",
+     "documented": "shapely: an empty geometry intersects nothing",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "point_in_polygon with empty Polygon",
+     "call": "geo.point_in_polygon((0, 0), {'type': 'Polygon', 'coordinates': []})",
+     "documented": "InvalidBufferError for a malformed polygon (shapely: Polygon() contains nothing)",
+     "raised": "InvalidBufferError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Polygon",
+      "────────────────────────────────────────────",
+      "The polygon you passed is not valid."
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "point_in_polygon with empty MultiPolygon",
+     "call": "geo.point_in_polygon((0, 0), {'type': 'MultiPolygon', 'coordinates': []})",
+     "documented": "same as the empty Polygon",
+     "raised": null,
+     "value": false,
+     "warnings": [],
+     "pass": true,
+     "note": "compare with the empty Polygon case: one raises, the other returns False"
+    },
+    {
+     "group": "empty",
+     "case": "area of empty MultiPolygon",
+     "call": "geo.area({'type': 'MultiPolygon', 'coordinates': []})",
+     "documented": "area of nothing",
+     "raised": null,
+     "value": 0.0,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "empty",
+     "case": "area of empty Polygon",
+     "call": "geo.area({'type': 'Polygon', 'coordinates': []})",
+     "documented": "area of nothing",
+     "raised": "InvalidBufferError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Polygon",
+      "────────────────────────────────────────────",
+      "The polygon you passed is not valid."
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "bbox after a filter matched nothing",
+     "call": "geo.filter_by_radius(50, 50, 1).bbox()",
+     "documented": "NoDataError with empty=True",
+     "raised": "NoDataError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "RuntimeError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Dataset Is Empty",
+      "────────────────────────────────────────────",
+      "You called geo.bbox() but the dataset has no features to use."
+     ]
+    },
+    {
+     "group": "empty",
+     "case": "image of an empty result",
+     "call": "geo.filter_by_radius(50, 50, 1).to_svg()",
+     "documented": "an empty map gets no annotations",
+     "raised": null,
+     "value": true,
+     "warnings": [],
+     "pass": null,
+     "note": ""
+    },
+    {
+     "group": "range",
+     "case": "latitude 91",
+     "call": "geo.distance((91, 0), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=91.0, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "longitude 181",
+     "call": "geo.distance((0, 181), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=0.0, lng=181.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "NaN latitude",
+     "call": "geo.distance((nan, 0), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=nan, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "infinite longitude",
+     "call": "geo.distance((0, inf), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=0.0, lng=inf"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "boolean coordinate",
+     "call": "geo.distance((True, 0), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=True, lng=0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "Sydney as (lng, lat)",
+     "call": "geo.distance((151.2093, -33.8688), (0, 0))",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=151.2093, lng=-33.8688"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "add_point lng 181",
+     "call": "GeoEngine().add_point(0, 181)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=0.0, lng=181.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "filter_by_radius lat 100",
+     "call": "geo.filter_by_radius(100, 0, 5)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=100.0, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "filter_by_bbox lng 400",
+     "call": "geo.filter_by_bbox(-1, 0, 1, 400)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=1, lng=400.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "filter_by_bbox lat 95",
+     "call": "geo.filter_by_bbox(-1, 0, 95, 1)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=95.0, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "point_in_polygon point lat 95",
+     "call": "geo.point_in_polygon((95, 0), square)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=95.0, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "buffer centre lat 91",
+     "call": "geo.buffer((91, 0), 10)",
+     "documented": "InvalidCoordinateError: a lat/lng is missing, non-numeric, NaN or out of range",
+     "raised": "InvalidCoordinateError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Coordinate",
+      "────────────────────────────────────────────",
+      "Received: lat=91.0, lng=0.0"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "lng 180 and -180 are the same meridian",
+     "call": "geo.distance((0, 180), (0, -180))",
+     "documented": "longitude -180 to 180 inclusive",
+     "raised": null,
+     "value": 0.0,
+     "warnings": [],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "range",
+     "case": "Point lng 200 in load_data",
+     "call": "GeoEngine().load_data([Point [200, 10], Point [10, 10]]).count()",
+     "documented": "out-of-range Points are skipped with one warning",
+     "raised": null,
+     "value": 1,
+     "warnings": [
+      "QOREgeo: skipped 1 feature(s) with invalid geometry in '<in-memory data>': #0 (longitude 200 is outside -180..180)"
+     ],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "range",
+     "case": "only Point lat 95 in load_data",
+     "call": "GeoEngine().load_data([Point [10, 95]])",
+     "documented": "skipped with a warning; then no usable features",
+     "raised": "EmptyDatasetError",
+     "value": null,
+     "warnings": [
+      "QOREgeo: skipped 1 feature(s) with invalid geometry in '<in-memory data>': #0 (latitude 95 is outside -90..90 (are lng/lat swapped?))"
+     ],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Empty Dataset",
+      "────────────────────────────────────────────",
+      "No valid spatial features were found in: '<in-memory data>'"
+     ]
+    },
+    {
+     "group": "range",
+     "case": "CSV rows out of range or non-numeric",
+     "call": "GeoEngine().load('pts.csv')",
+     "documented": "blank coordinates skipped silently; non-numeric or out-of-range rows skipped with one summary warning",
+     "raised": null,
+     "value": {
+      "count": 1
+     },
+     "warnings": [
+      "QOREgeo: skipped 2 row(s) in '/tmp/tmpnys15rfu/pts.csv' with non-numeric or out-of-range coordinates (lat must be -90..90 and lng -180..180; check whether the columns are swapped): line 3 (lat='95', l"
+     ],
+     "pass": true,
+     "note": ""
+    },
+    {
+     "group": "range",
+     "case": "polygon position lat 95 in point_in_polygon",
+     "call": "geo.point_in_polygon((0, 0), bad_poly)",
+     "documented": "InvalidBufferError: malformed polygon",
+     "raised": "InvalidBufferError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Polygon",
+      "────────────────────────────────────────────",
+      "The polygon you passed is not valid."
+     ]
+    },
+    {
+     "group": "range",
+     "case": "polygon position lat 95 in intersects",
+     "call": "geo.intersects(bad_poly, pt)",
+     "documented": "InvalidArgumentError",
+     "raised": "InvalidArgumentError",
+     "value": null,
+     "warnings": [],
+     "pass": true,
+     "note": "",
+     "exception_bases": [
+      "QOREgeoError",
+      "ValueError",
+      "Exception",
+      "BaseException"
+     ],
+     "message_first_lines": [
+      "❌  QOREgeo: Invalid Argument 'geometry_a'",
+      "────────────────────────────────────────────",
+      "Received: {'type': 'Polygon', 'coordinates': [[[0, 0], [1, 95], [1, 0], [0, 0]]]}"
+     ]
+    }
+   ],
+   "quoted_message": {
+    "call": "geo.distance((151.2093, -33.8688), (0, 0))",
+    "exception": "InvalidCoordinateError",
+    "message": "❌  QOREgeo: Invalid Coordinate\n────────────────────────────────────────────\nReceived: lat=151.2093, lng=-33.8688\n\nValid ranges are:\n    latitude  : -90.0  to  90.0\n    longitude : -180.0 to 180.0\n\nFix it:\n    Make sure you're passing (latitude, longitude), not (longitude, latitude).\n    Example: (28.6139, 77.2090)  ← Delhi"
+   },
+   "pole_buffer": {
+    "n": 200,
+    "mismatch_vs_geographiclib": 46,
+    "mismatch_vs_numpy_haversine": 0,
+    "included_but_geodesically_outside": 46,
+    "max_geodesic_m_included": 100440.23179495998
+   },
+   "summary": {
+    "empty: pass": 14,
+    "empty: reported": 1,
+    "null: pass": 11,
+    "poles: pass": 8,
+    "poles: reported": 4,
+    "range: pass": 18
+   }
+  }
+ }
+}

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-labelledby="corridor-title corridor-desc">
+<title id="corridor-title">6 of 12 cities are within 150 km of the route</title>
+<desc id="corridor-desc">The Delhi to Mumbai route draws itself, a 150 km corridor opens around it, and the 6 cities that filter_by_line() keeps light up. The other cities stay gray. Drawn by qoregeo.</desc>
+<style>
+text{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace}
+.a{animation-duration:11s;animation-iteration-count:infinite;animation-timing-function:cubic-bezier(.22,.61,.36,1);transform-box:fill-box;transform-origin:center}
+.cycle{animation:cycle 11s linear infinite}
+@keyframes cycle{0%,93%{opacity:1}98%,100%{opacity:0}}
+.k0{animation-name:k0}@keyframes k0{0%,3.64%{opacity:0;transform:scale(.3);fill:#7d8590}8.18%{opacity:1;transform:scale(1)}55.73%{fill:#7d8590;transform:scale(1)}58%{fill:#00977a;transform:scale(1.35)}61.18%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k1{animation-name:k1}@keyframes k1{0%,55.73%{opacity:0;transform:scale(.3)}61.18%,100%{opacity:1;transform:scale(1)}}
+.k2{animation-name:k2}@keyframes k2{0%,4.82%{opacity:0;transform:scale(.3);fill:#7d8590}9.36%{opacity:1;transform:scale(1)}72.09%{fill:#7d8590;transform:scale(1)}74.36%{fill:#00977a;transform:scale(1.35)}77.55%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k3{animation-name:k3}@keyframes k3{0%,72.09%{opacity:0;transform:scale(.3)}77.55%,100%{opacity:1;transform:scale(1)}}
+.k4{animation-name:k4}@keyframes k4{0%,6%{opacity:0;transform:scale(.3)}10.55%,100%{opacity:1;transform:scale(1)}}
+.k5{animation-name:k5}@keyframes k5{0%,7.18%{opacity:0;transform:scale(.3)}11.73%,100%{opacity:1;transform:scale(1)}}
+.k6{animation-name:k6}@keyframes k6{0%,8.36%{opacity:0;transform:scale(.3)}12.91%,100%{opacity:1;transform:scale(1)}}
+.k7{animation-name:k7}@keyframes k7{0%,9.55%{opacity:0;transform:scale(.3);fill:#7d8590}14.09%{opacity:1;transform:scale(1)}76.18%{fill:#7d8590;transform:scale(1)}78.45%{fill:#00977a;transform:scale(1.35)}81.64%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k8{animation-name:k8}@keyframes k8{0%,76.18%{opacity:0;transform:scale(.3)}81.64%,100%{opacity:1;transform:scale(1)}}
+.k9{animation-name:k9}@keyframes k9{0%,10.73%{opacity:0;transform:scale(.3)}15.27%,100%{opacity:1;transform:scale(1)}}
+.k10{animation-name:k10}@keyframes k10{0%,11.91%{opacity:0;transform:scale(.3);fill:#7d8590}16.45%{opacity:1;transform:scale(1)}63.91%{fill:#7d8590;transform:scale(1)}66.18%{fill:#00977a;transform:scale(1.35)}69.36%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k11{animation-name:k11}@keyframes k11{0%,63.91%{opacity:0;transform:scale(.3)}69.36%,100%{opacity:1;transform:scale(1)}}
+.k12{animation-name:k12}@keyframes k12{0%,13.09%{opacity:0;transform:scale(.3);fill:#7d8590}17.64%{opacity:1;transform:scale(1)}68%{fill:#7d8590;transform:scale(1)}70.27%{fill:#00977a;transform:scale(1.35)}73.45%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k13{animation-name:k13}@keyframes k13{0%,68%{opacity:0;transform:scale(.3)}73.45%,100%{opacity:1;transform:scale(1)}}
+.k14{animation-name:k14}@keyframes k14{0%,14.27%{opacity:0;transform:scale(.3);fill:#7d8590}18.82%{opacity:1;transform:scale(1)}59.82%{fill:#7d8590;transform:scale(1)}62.09%{fill:#00977a;transform:scale(1.35)}65.27%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k15{animation-name:k15}@keyframes k15{0%,59.82%{opacity:0;transform:scale(.3)}65.27%,100%{opacity:1;transform:scale(1)}}
+.k16{animation-name:k16}@keyframes k16{0%,15.45%{opacity:0;transform:scale(.3)}20%,100%{opacity:1;transform:scale(1)}}
+.k17{animation-name:k17}@keyframes k17{0%,16.64%{opacity:0;transform:scale(.3)}21.18%,100%{opacity:1;transform:scale(1)}}
+.k18{animation-name:k18}@keyframes k18{0%,4.55%{opacity:0;fill:#7d8590}9.09%{opacity:1}55.73%{fill:#7d8590}59.36%,100%{fill:#333333;opacity:1}}
+.k19{animation-name:k19}@keyframes k19{0%,5.73%{opacity:0;fill:#7d8590}10.27%{opacity:1}72.09%{fill:#7d8590}75.73%,100%{fill:#333333;opacity:1}}
+.k20{animation-name:k20}@keyframes k20{0%,6.91%{opacity:0}11.45%,100%{opacity:1}}
+.k21{animation-name:k21}@keyframes k21{0%,8.09%{opacity:0}12.64%,100%{opacity:1}}
+.k22{animation-name:k22}@keyframes k22{0%,9.27%{opacity:0}13.82%,100%{opacity:1}}
+.k23{animation-name:k23}@keyframes k23{0%,10.45%{opacity:0;fill:#7d8590}15%{opacity:1}76.18%{fill:#7d8590}79.82%,100%{fill:#333333;opacity:1}}
+.k24{animation-name:k24}@keyframes k24{0%,11.64%{opacity:0}16.18%,100%{opacity:1}}
+.k25{animation-name:k25}@keyframes k25{0%,12.82%{opacity:0;fill:#7d8590}17.36%{opacity:1}63.91%{fill:#7d8590}67.55%,100%{fill:#333333;opacity:1}}
+.k26{animation-name:k26}@keyframes k26{0%,14%{opacity:0;fill:#7d8590}18.55%{opacity:1}68%{fill:#7d8590}71.64%,100%{fill:#333333;opacity:1}}
+.k27{animation-name:k27}@keyframes k27{0%,15.18%{opacity:0;fill:#7d8590}19.73%{opacity:1}59.82%{fill:#7d8590}63.45%,100%{fill:#333333;opacity:1}}
+.k28{animation-name:k28}@keyframes k28{0%,16.36%{opacity:0}20.91%,100%{opacity:1}}
+.k29{animation-name:k29}@keyframes k29{0%,17.55%{opacity:0}22.09%,100%{opacity:1}}
+.k30{animation-name:k30}@keyframes k30{0%,23%{stroke-dashoffset:239.46px}44.82%,100%{stroke-dashoffset:0px}}
+.k31{animation-name:k31}@keyframes k31{0%,45.73%{stroke-width:0px;opacity:0}53.91%,100%{stroke-width:54.62px;opacity:1}}
+.k32{animation-name:k32}@keyframes k32{0%,2.73%{opacity:.3}6.36%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k33{animation-name:k33}@keyframes k33{0%,23%{opacity:.3}26.64%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k34{animation-name:k34}@keyframes k34{0%,45.73%{opacity:.3}49.36%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k35{animation-name:k35}@keyframes k35{0%,51.18%{opacity:0}54.82%{opacity:1}55.73%{opacity:1}56.64%,100%{opacity:0}}
+.k36{animation-name:k36}@keyframes k36{0%,55.73%{opacity:0}56.82%{opacity:1}59.82%{opacity:1}60.73%,100%{opacity:0}}
+.k37{animation-name:k37}@keyframes k37{0%,59.82%{opacity:0}60.91%{opacity:1}63.91%{opacity:1}64.82%,100%{opacity:0}}
+.k38{animation-name:k38}@keyframes k38{0%,63.91%{opacity:0}65%{opacity:1}68%{opacity:1}68.91%,100%{opacity:0}}
+.k39{animation-name:k39}@keyframes k39{0%,68%{opacity:0}69.09%{opacity:1}72.09%{opacity:1}73%,100%{opacity:0}}
+.k40{animation-name:k40}@keyframes k40{0%,72.09%{opacity:0}73.18%{opacity:1}76.18%{opacity:1}77.09%,100%{opacity:0}}
+.k41{animation-name:k41}@keyframes k41{0%,76.18%{opacity:0}77.27%,100%{opacity:1}}
+.k42{animation-name:k42}@keyframes k42{0%,76.18%{opacity:0}80.73%,100%{opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<defs><clipPath id="map-clip"><rect width="472" height="426" rx="10"/></clipPath></defs>
+<rect x="0.5" y="0.5" width="799" height="449" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+<g transform="translate(12 12)" clip-path="url(#map-clip)">
+<rect x="0" y="0" width="472" height="426" fill="#f6f8fa" />
+
+<g id="qg-grid" fill="none" stroke="#e6e8eb" stroke-width="1" shape-rendering="crispEdges"><path d="M42.5 0L42.5 426M134.5 0L134.5 426M227.5 0L227.5 426M319.5 0L319.5 426M412.5 0L412.5 426M0 395.5L472 395.5M0 301.5L472 301.5M0 203.5L472 203.5M0 103.5L472 103.5" /></g>
+
+<g id="qg-grid-labels" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#8a8f98" stroke="#f6f8fa" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text x="137" y="420">75&#176;E</text><text x="230" y="420">80&#176;E</text><text x="322" y="420">85&#176;E</text><text x="5" y="393">10&#176;N</text><text x="5" y="299">15&#176;N</text><text x="5" y="201">20&#176;N</text><text x="5" y="101">25&#176;N</text></g>
+
+<g id="qg-scale-bar"><g fill="#f6f8fa"><rect x="7" y="417" width="90" height="4" /><rect x="7" y="413" width="4" height="8" /><rect x="93" y="413" width="4" height="8" /></g><g fill="#333333"><rect x="8" y="418" width="88" height="2" /><rect x="8" y="414" width="2" height="6" /><rect x="94" y="414" width="2" height="6" /></g><g font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#333333" stroke="#f6f8fa" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text x="51.5" y="415" text-anchor="middle">500 km</text></g></g>
+
+<g class="cycle">
+<path class="a k31" d="M175.66 28.75L172.29 32 165.03 37.48 149.34 64.36 128.1 73.94 110.92 112.2 98.04 132.43 89.8 143.83 101.09 158.18 97.33 170.2 94.6 180.84 96.48 196.31 95.47 222.14" fill="none" stroke="#b7791f" stroke-opacity=".14" stroke-width="54.62" stroke-linecap="round" stroke-linejoin="round"/>
+<path class="a k30" d="M175.66 28.75L172.29 32 165.03 37.48 149.34 64.36 128.1 73.94 110.92 112.2 98.04 132.43 89.8 143.83 101.09 158.18 97.33 170.2 94.6 180.84 96.48 196.31 95.47 222.14" fill="none" stroke="#b7791f" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="237.46 237.46"/>
+<g fill="#00d4aa" fill-opacity=".35"><circle class="a k1" cx="175.66" cy="28.75" r="10"/><circle class="a k3" cx="95.47" cy="222.14" r="10"/><circle class="a k8" cx="113.59" cy="233.01" r="10"/><circle class="a k11" cx="89.8" cy="143.83" r="10"/><circle class="a k13" cx="94.6" cy="180.84" r="10"/><circle class="a k15" cx="149.34" cy="64.36" r="10"/></g>
+<g fill="#7d8590" stroke="#ffffff" stroke-width="1.5"><circle class="a k0" cx="175.66" cy="28.75" r="4" fill="#00977a"/><circle class="a k2" cx="95.47" cy="222.14" r="4" fill="#00977a"/><circle class="a k4" cx="182.8" cy="339.8" r="4"/><circle class="a k5" cx="382.2" cy="152.86" r="4"/><circle class="a k6" cx="232.35" cy="337.69" r="4"/><circle class="a k7" cx="113.59" cy="233.01" r="4" fill="#00977a"/><circle class="a k9" cx="199.32" cy="255.11" r="4"/><circle class="a k10" cx="89.8" cy="143.83" r="4" fill="#00977a"/><circle class="a k12" cx="94.6" cy="180.84" r="4" fill="#00977a"/><circle class="a k14" cx="149.34" cy="64.36" r="4" fill="#00977a"/><circle class="a k16" cx="244.86" cy="65.72" r="4"/><circle class="a k17" cx="158.23" cy="397.25" r="4"/></g>
+<g font-size="11" fill="#333333" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text class="a k18" x="183" y="32.46">Delhi</text><text class="a k19" x="103" y="226.46">Mumbai</text><text class="a k20" x="175" y="343.46" text-anchor="end" fill="#7d8590">Bangalore</text><text class="a k21" x="390" y="156.46" fill="#7d8590">Kolkata</text><text class="a k22" x="240" y="341.46" fill="#7d8590">Chennai</text><text class="a k23" x="121" y="237.46">Pune</text><text class="a k24" x="207" y="259.46" fill="#7d8590">Hyderabad</text><text class="a k25" x="97" y="147.46">Ahmedabad</text><text class="a k26" x="102" y="184.46">Surat</text><text class="a k27" x="157" y="68.46">Jaipur</text><text class="a k28" x="252" y="69.46" fill="#7d8590">Lucknow</text><text class="a k29" x="166" y="401.46" fill="#7d8590">Kochi</text></g>
+</g>
+</g>
+<text x="514" y="83.25" font-size="22" font-weight="600" fill="#1f2933">Search along a route</text>
+<g class="a k32"><circle cx="524" cy="128.75" r="10" fill="#00977a"/><text x="524" y="133.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">1</text><text class="mono" x="544" y="133.25" font-size="13" fill="#1f2933">geo.load("cities.csv")</text><text x="544" y="152.25" font-size="12.5" fill="#57606a">12 cities</text></g>
+<g class="a k33"><circle cx="524" cy="186.75" r="10" fill="#00977a"/><text x="524" y="191.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">2</text><text class="mono" x="544" y="191.25" font-size="13" fill="#1f2933">geo.load("route.geojson")</text><text x="544" y="210.25" font-size="12.5" fill="#57606a">Delhi to Mumbai, 1,266 km</text></g>
+<g class="a k34"><circle cx="524" cy="244.75" r="10" fill="#00977a"/><text x="524" y="249.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">3</text><text class="mono" x="544" y="249.25" font-size="13" fill="#1f2933">.filter_by_line(route, 150)</text><text x="544" y="268.25" font-size="12.5" fill="#57606a">within 150 km of the route</text></g>
+<g class="cycle"><text class="a k35" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">0</tspan> of 12</text><text class="a k36" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">1</tspan> of 12</text><text class="a k37" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">2</tspan> of 12</text><text class="a k38" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">3</tspan> of 12</text><text class="a k39" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">4</tspan> of 12</text><text class="a k40" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">5</tspan> of 12</text><text class="a k41" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">6</tspan> of 12</text><text class="a k42" x="514" y="358.25" font-size="13" fill="#57606a">cities within 150 km of the route</text></g>
+<text x="778" y="432" text-anchor="end" font-size="11" fill="#6e7781">made with qoregeo</text>
+</svg>

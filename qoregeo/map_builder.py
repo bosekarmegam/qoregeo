@@ -745,10 +745,11 @@ _MAP_INIT = """\
 
 def _shell_arg(name: str) -> str:
     """
-    ``name`` as one shell argument that can be pasted as printed: bare if it
-    has only plain characters, else in double quotes (POSIX shells, cmd and
-    PowerShell all accept them), else, when it holds a character that "…"
-    leaves special (such as $ ` " \\ or !), single-quoted for POSIX shells.
+    ``name`` as one shell argument that can be pasted as printed. It is bare
+    if it has only plain characters and in double quotes otherwise (POSIX
+    shells, cmd and PowerShell all accept them). When it holds a character
+    that "…" leaves special (such as $ ` " \\ or !), it is single-quoted for
+    POSIX shells instead.
     """
     if _SHELL_PLAIN_RE.fullmatch(name):
         return name

@@ -45,7 +45,7 @@ with open("addresses.csv", encoding="utf-8") as fh:
             geo.add_point(hit["lat"], hit["lng"], **row, match=hit["name"])
         else:
             print("not found:", row["address"])
-geo.save("geocoded.csv")          # keep the results — don't geocode the same rows twice
+geo.save("geocoded.csv")          # keep the results: don't geocode the same rows twice
 geo.show(title="Geocoded addresses")   # serves until Ctrl+C, so it comes last
 ```
 

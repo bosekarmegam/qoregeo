@@ -69,7 +69,6 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
-from matplotlib.patches import Patch  # noqa: E402
 
 import qoregeo  # noqa: E402
 from qoregeo import GeoEngine  # noqa: E402
@@ -121,6 +120,7 @@ SIZES = {
         "micro_pairs": 2_000,
         "micro_repeats": 7,
         "vector_n": [2_000, 100_000],
+        "vector_min_time_s": 0.2,
         "pip_points": 2_000,
         "polygon_vertices": 64,
         "import_runs": 10,
@@ -135,6 +135,7 @@ SIZES = {
         "micro_pairs": 200,
         "micro_repeats": 3,
         "vector_n": [2_000],
+        "vector_min_time_s": 0.02,
         "pip_points": 200,
         "polygon_vertices": 64,
         "import_runs": 2,
@@ -449,8 +450,6 @@ def run_operations(ds: dict[str, Any], out_dir: Path, sz: dict[str, Any], gc_on:
         "filter_ge_strings_equals_numbers": (
             out["filter_ge"]["result_count"] == out["filter_ge_numeric_properties"]["result_count"]),
     }
-    del g, g_num
-    gc.collect()
     return out
 
 
@@ -474,6 +473,7 @@ def run_micro(seed: int, sz: dict[str, Any], polygon64: dict[str, Any]) -> dict[
 
     pairs = [(pt(), pt()) for _ in range(sz["micro_pairs"])]
     reps = sz["micro_repeats"]
+    vmt = sz["vector_min_time_s"]
 
     # Every callable gets the same lambda wrapper, so wrapper cost is equal.
     dist_fns: dict[str, Callable[[Any, Any], Any]] = {
@@ -500,8 +500,9 @@ def run_micro(seed: int, sz: dict[str, Any], polygon64: dict[str, Any]) -> dict[
         vr = _rng(seed, f"micro-vector-{vn}")
         a = np.array([(vr.uniform(south, north), vr.uniform(west, east)) for _ in range(vn)])
         b = np.array([(vr.uniform(south, north), vr.uniform(west, east)) for _ in range(vn)])
-        t_np = time_call(lambda: _np_haversine_km(a[:, 0], a[:, 1], b[:, 0], b[:, 1]), reps, 0.2, False)
-        t_hv = time_call(lambda: haversine_vector(a, b), reps, 0.2, False)
+        t_np = time_call(lambda a=a, b=b: _np_haversine_km(a[:, 0], a[:, 1], b[:, 0], b[:, 1]),
+                         reps, vmt, False)
+        t_hv = time_call(lambda a=a, b=b: haversine_vector(a, b), reps, vmt, False)
         vec[f"numpy haversine, n={vn}"] = {"median_us": t_np["median_s"] / vn * 1e6,
                                            "min_us": t_np["min_s"] / vn * 1e6,
                                            "calls_per_s_median": vn / t_np["median_s"]}
@@ -554,7 +555,7 @@ def run_micro(seed: int, sz: dict[str, Any], polygon64: dict[str, Any]) -> dict[
         vr = _rng(seed, f"micro-pip-vector-{vn}")
         vx = np.array([vr.uniform(min(xs), max(xs)) for _ in range(vn)])
         vy = np.array([vr.uniform(min(ys), max(ys)) for _ in range(vn)])
-        t = time_call(lambda: shapely.contains_xy(s_native, vx, vy), reps, 0.2, False)
+        t = time_call(lambda vx=vx, vy=vy: shapely.contains_xy(s_native, vx, vy), reps, vmt, False)
         vec_pip[f"shapely.contains_xy vectorized, n={vn}"] = {
             "median_us": t["median_s"] / vn * 1e6, "min_us": t["min_s"] / vn * 1e6,
             "calls_per_s_median": vn / t["median_s"]}
@@ -669,10 +670,6 @@ _TRACE_CODE = r"""
 import csv, gc, json, sys, time, tracemalloc
 kind, path = sys.argv[1], sys.argv[2]
 from qoregeo import GeoEngine
-try:
-    import resource
-except ImportError:
-    resource = None
 def load():
     if kind == "qoregeo load CSV":
         return GeoEngine(verbose=False).load(path)
@@ -699,12 +696,23 @@ if mode == "tracemalloc":
     cur, peak = tracemalloc.get_traced_memory()
     print(json.dumps({"current_bytes": cur, "peak_bytes": peak, "elapsed_s_under_tracemalloc": dt}))
 else:
-    r0 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss if resource else None
+    def status():
+        # Linux: VmHWM is the peak resident set of this process image (reset by exec,
+        # unlike ru_maxrss, which keeps the parent's peak from before the fork).
+        try:
+            with open("/proc/self/status", encoding="ascii") as fh:
+                rows = dict(line.split(":", 1) for line in fh if ":" in line)
+            return {k: int(rows[k].split()[0]) * 1024 for k in ("VmRSS", "VmHWM")}
+        except OSError:
+            return None
+    s0 = status()
     obj = load()
-    r1 = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss if resource else None
-    scale = 1 if sys.platform == "darwin" else 1024
-    print(json.dumps({"maxrss_before_bytes": r0 * scale if r0 is not None else None,
-                      "maxrss_after_bytes": r1 * scale if r1 is not None else None}))
+    s1 = status()
+    if s0 is None:
+        print(json.dumps({"rss_note": "no /proc/self/status on this platform"}))
+    else:
+        print(json.dumps({"rss_before_bytes": s0["VmRSS"], "rss_after_bytes": s1["VmRSS"],
+                          "peak_rss_after_bytes": s1["VmHWM"]}))
 """
 
 
@@ -730,14 +738,15 @@ def run_memory(ds: dict[str, Any], cwd: str) -> dict[str, Any]:
         if "peak_bytes" in res:
             res["peak_bytes_per_feature"] = res["peak_bytes"] / ds["n"]
             res["retained_bytes_per_feature"] = res["current_bytes"] / ds["n"]
-        if res.get("maxrss_after_bytes") is not None:
-            res["maxrss_growth_bytes"] = res["maxrss_after_bytes"] - res["maxrss_before_bytes"]
+        if res.get("rss_after_bytes") is not None:
+            res["rss_growth_bytes"] = res["rss_after_bytes"] - res["rss_before_bytes"]
+            res["peak_rss_growth_bytes"] = res["peak_rss_after_bytes"] - res["rss_before_bytes"]
         out["cases"][kind] = res
     out["_method"] = ("Each case runs in a fresh interpreter after qoregeo is imported. tracemalloc "
                       "counts Python allocations only; peak is the high-water mark during the load, "
-                      "current is what the loaded object keeps. maxrss_growth is the growth of the "
-                      "process peak resident set (a second, untraced run); it includes allocator "
-                      "overhead and is coarser.")
+                      "current is what the loaded object keeps. rss_growth and peak_rss_growth come "
+                      "from /proc/self/status (VmRSS, VmHWM) in a second, untraced run (Linux "
+                      "only); they include allocator overhead and memory the allocator keeps.")
     return out
 
 
@@ -920,8 +929,8 @@ def fig_ops_vs_n(ops: dict[int, dict[str, Any]]) -> str:
     ns = sorted(ops)
     fig, axes = plt.subplots(2, 2, figsize=(8.0, 6.6), sharex=True, sharey=True)
     all_vals = []
-    for _title, series, _ctx in PANELS:
-        for key, _label in series:
+    for _title, series, ctx in PANELS:
+        for key, _label in series + ([ctx] if ctx else []):
             all_vals += [ops[n][key]["median_s"] * 1e3 for n in ns if key in ops[n]]
     lo, hi = min(all_vals), max(all_vals)
     for (title, series, ctx), ax in zip(PANELS, axes.flat, strict=True):
@@ -953,7 +962,7 @@ def fig_ops_vs_n(ops: dict[int, dict[str, Any]]) -> str:
         ax.tick_params(length=0)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
-    axes[0, 0].set_ylim(lo / 3, hi * 40)
+    axes[0, 0].set_ylim(lo / 2, hi * 30)
     for ax in axes[1]:
         ax.set_xlabel("dataset size N (features)")
     for ax in axes[:, 0]:
@@ -963,22 +972,35 @@ def fig_ops_vs_n(ops: dict[int, dict[str, Any]]) -> str:
     return _save(fig, "ops-vs-n")
 
 
+def _dots(ax: plt.Axes, labels: list[str], values: list[float], colors: list[str],
+          fmt: Callable[[float], str]) -> None:
+    """Dot plot on a log axis: bars would need an arbitrary baseline there."""
+    y = np.arange(len(labels))[::-1]
+    ax.scatter(values, y, s=52, color=colors, edgecolor="white", linewidth=1.5, zorder=3)
+    for yi, v in zip(y, values, strict=True):
+        ax.text(v * 1.22, yi, fmt(v), va="center", ha="left", fontsize=8.2, color=INK)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=8.6)
+    ax.set_ylim(-0.6, len(labels) - 0.4)
+    ax.set_xscale("log")
+    ax.tick_params(length=0)
+    for side in ("top", "right", "left"):
+        ax.spines[side].set_visible(False)
+
+
 def _barh(ax: plt.Axes, labels: list[str], values: list[float], colors: list[str],
-          fmt: Callable[[float], str], log: bool = False) -> None:
+          fmt: Callable[[float], str]) -> None:
     y = np.arange(len(labels))[::-1]
     ax.barh(y, values, height=0.56, color=colors, zorder=2)
     vmax = max(values)
     for yi, v in zip(y, values, strict=True):
-        x = v * 1.08 if log else v + vmax * 0.012
-        ax.text(x, yi, fmt(v), va="center", ha="left", fontsize=8.2, color=INK)
+        ax.text(v + vmax * 0.012, yi, fmt(v), va="center", ha="left", fontsize=8.2, color=INK)
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=8.6)
     ax.tick_params(length=0)
     ax.grid(axis="y", visible=False)
     for side in ("top", "right", "left"):
         ax.spines[side].set_visible(False)
-    if log:
-        ax.set_xscale("log")
 
 
 def fig_footprint(wheel: dict[str, Any], stack: dict[str, Any] | None) -> str | None:
@@ -1078,7 +1100,7 @@ def fig_micro(micro: dict[str, Any]) -> str:
     ]
     l1, v1, c1 = collect(d, "_vectorized_per_pair", dist_rows)
     l2, v2, c2 = collect(p, "_vectorized_per_point", pip_rows)
-    fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.0, 7.0),
+    fig, (a1, a2) = plt.subplots(2, 1, figsize=(8.0, 7.2),
                                  gridspec_kw={"height_ratios": [len(l1), len(l2)]})
 
     def rate(x: float) -> str:
@@ -1086,8 +1108,8 @@ def fig_micro(micro: dict[str, Any]) -> str:
             return f"{x / 1e6:.1f} M/s"
         return f"{x / 1e3:.0f} k/s"
 
-    _barh(a1, l1, v1, c1, rate, log=True)
-    _barh(a2, l2, v2, c2, rate, log=True)
+    _dots(a1, l1, v1, c1, rate)
+    _dots(a2, l2, v2, c2, rate)
     lo = min(v1 + v2) / 2
     hi = max(v1 + v2) * 8
     for ax in (a1, a2):
@@ -1096,11 +1118,15 @@ def fig_micro(micro: dict[str, Any]) -> str:
     a2.set_title(f"point in polygon, {p['_agreement']['polygon_vertices']} vertices",
                  loc="left", fontsize=10, color=INK, pad=4)
     a2.set_xlabel("calls per second, median (log scale; vectorized rows: points per second)")
-    a1.legend(handles=[Patch(color=C_QG, label="qoregeo, one call per point"),
-                       Patch(color=C_GREY, label="other library, one call per point"),
-                       Patch(color=C_VEC, label="numpy-vectorized, arrays ready")],
-              loc="lower right", fontsize=7.8)
-    fig.tight_layout(rect=(0, 0.015, 1, 1))
+    def key(color: str, label: str) -> Line2D:
+        return Line2D([], [], ls="none", marker="o", ms=7, color=color, markeredgecolor="white",
+                      label=label)
+
+    fig.legend(handles=[key(C_QG, "qoregeo, one call per point"),
+                        key(C_GREY, "other library, one call per point"),
+                        key(C_VEC, "numpy-vectorized, arrays ready")],
+               loc="upper center", ncol=3, fontsize=8, bbox_to_anchor=(0.5, 0.995))
+    fig.tight_layout(rect=(0, 0.015, 1, 0.955))
     _note(fig)
     return _save(fig, "micro")
 

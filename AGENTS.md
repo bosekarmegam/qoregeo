@@ -1,4 +1,4 @@
-# AGENTS.md — working on qoregeo
+# AGENTS.md: working on qoregeo
 
 Instructions for AI coding agents (Claude Code, Codex, Copilot, Cursor, Gemini, …) and humans
 contributing to this repository. To *use* qoregeo from an agent, see
@@ -16,7 +16,7 @@ python -m build && twine check dist/*            # packaging
 ```
 
 All four must pass before a commit. CI (`.github/workflows/tests.yml`) runs the tests on
-Linux/macOS/Windows × Python 3.10–3.15, and ruff, mypy and the build + `twine check --strict`
+Linux/macOS/Windows × Python 3.10 to 3.15, and ruff, mypy and the build + `twine check --strict`
 once, on Ubuntu with Python 3.14.
 
 ## Hard rules
@@ -29,8 +29,8 @@ once, on Ubuntu with Python 3.14.
   must run on its own (`pytest tests/test_tools.py`), including against the installed wheel,
   which only the release workflow tests (with `--import-mode=importlib`).
 - **Coordinate conventions.** Python API: `(lat, lng)`. GeoJSON: `[lng, lat]`. Tool/MCP
-  arguments: `{"lat": …, "lng": …}` objects. Bounding boxes: `[west, south, east, north]`
-  (west > east crosses the antimeridian — keep that working).
+  arguments: `{"lat": …, "lng": …}` objects. Bounding boxes: `[west, south, east, north]`,
+  where west > east crosses the antimeridian. Keep that working.
 - **Errors teach.** Raise the classes in `qoregeo/exceptions.py` (they subclass built-ins and
   pickle) with the value, what was expected and a runnable example.
 - **Never weaken the HTML safety model.** Map data is embedded with `JSON.parse("…")` and
@@ -44,7 +44,7 @@ once, on Ubuntu with Python 3.14.
 
 | Path | What |
 |---|---|
-| `qoregeo/engine.py` | `GeoEngine` — the public API |
+| `qoregeo/engine.py` | `GeoEngine`, the public API |
 | `qoregeo/utils.py` | geometry, parsing and I/O helpers |
 | `qoregeo/map_builder.py` | Leaflet HTML pages, basemap presets |
 | `qoregeo/render.py` | static PNG/SVG renderer (pure Python) |
@@ -67,11 +67,38 @@ once, on Ubuntu with Python 3.14.
 3. Add tests to `tests/test_tools.py` (and `tests/test_mcp_server.py` if visibility changes).
 4. Document it in the README tool table and `skills/qoregeo/SKILL.md`.
 
+## Writing docs
+
+These rules cover every doc, docstring, comment, help text, error message and tool or JSON
+description. `tests/test_docs.py` checks the Markdown files (README, AGENTS.md, CHANGELOG,
+llms.txt, `docs/`, `skills/`) against the dash and word rules, so run
+`pytest tests/test_docs.py` after editing them.
+
+- **No dashes as punctuation.** No em dash (U+2014) or en dash (U+2013), and no spaced
+  hyphen or double hyphen between clauses. Use a period (often best: split the sentence),
+  a comma, a colon or parentheses. CLI flags such as `--near` and the `--` separator in
+  shell commands are code and stay, as do hyphens inside words (`zero-dependency`).
+- **Ranges.** Write "Python 3.10 to 3.15" in prose. A plain hyphen (`0-360`) is fine in
+  tables and code.
+- **Plain words.** No marketing or filler words (`seamless`, `robust`, `powerful`,
+  `leverage`, `utilize`, `comprehensive`, `simply`, `various`, …), no `just` or `easily`
+  to play down effort, no exclamation marks, rhetorical questions or decorative emoji
+  (status ticks in tables are fine). The full list is `BANNED` in `tests/test_docs.py`.
+- **Voice.** Say what the thing does, then show it. Short sentences, one idea each. Use
+  "you" in guides and the imperative for steps ("Load the file"). Give numbers instead of
+  adjectives; claims must be obvious or measured (the scripts in `experiments/`). Headings
+  are in sentence case. Keep the spelling a file already uses ("neighbours").
+- **Examples run.** Every code example must run as written against the current code, or
+  start with `# needs network`. `tests/test_docs.py` runs the `python` blocks and the
+  `qoregeo` command lines on the `docs/*.md` pages offline (its conventions are in a comment
+  above those tests), runs the README and Agent Skill quick starts, and checks the API
+  reference against the real signatures.
+
 ## Releasing
 
 Bump the version in `qoregeo/_version.py`, `.claude-plugin/plugin.json`,
 `gemini-extension.json` and `server.json` (both `version` fields), add a CHANGELOG entry, then
-publish a GitHub Release tagged `vX.Y.Z` — or, once that's merged, run the *Publish to PyPI*
-workflow on `main` by hand with the version, which creates the tag and Release itself. Either
-way the workflow tests, builds, uploads to PyPI (trusted publishing) and lists the new version
-in the MCP Registry.
+publish a GitHub Release tagged `vX.Y.Z`. Or, once the version bump is merged, run the
+*Publish to PyPI* workflow on `main` by hand with the version; it creates the tag and
+Release itself. Either way the workflow tests, builds, uploads to PyPI (trusted publishing)
+and lists the new version in the MCP Registry.

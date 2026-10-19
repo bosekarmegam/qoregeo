@@ -1771,7 +1771,7 @@ class GeoEngine:
         zoom        : with ``center``: the initial zoom (default 10);
                       without: the maximum zoom used when fitting the data
         center      : (lat, lng) initial center; fits all features if None
-        tiles       : basemap preset 'light' (OpenStreetMap, softened; default) |
+        tiles       : basemap, one of 'light' (OpenStreetMap, softened; default) |
                       'osm' | 'dark' | 'humanitarian' | 'topo' | 'satellite' |
                       'cyclosm' | 'osm-de' | 'osm-fr' | 'none', or a custom
                       ``https://…/{z}/{x}/{y}.png`` URL template.
