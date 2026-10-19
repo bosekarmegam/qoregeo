@@ -138,14 +138,32 @@ print(isinstance(error, LookupError))  # True
 The message lists the columns the file has and a call to copy:
 
 ```text
-<<ColumnNotFoundError survey.csv>>
+❌  QOREgeo: Column Not Found
+────────────────────────────────────────────
+File: 'survey.csv'
+Could not find a 'latitude' column.
+
+Columns in your file:
+    'point', 'north', 'east'
+
+Fix it:
+    geo.load('survey.csv', lat_col='<your lat column>', lng_col='<your lng column>')
 ```
 
 When you pass a name that is close to a real one, the suggested call uses the real name. Here
 `lat_col="nort"` was passed:
 
 ```text
-<<ColumnNotFoundError nort>>
+❌  QOREgeo: Column Not Found
+────────────────────────────────────────────
+File: 'survey.csv'
+Could not find a 'nort' column.
+
+Columns in your file:
+    'point', 'north', 'east'
+
+Fix it:
+    geo.load('survey.csv', lat_col='north', lng_col='east')
 ```
 
 ### Delimiters
@@ -267,11 +285,11 @@ print(messy.filter("staff", 10, op=">").count())  # 2
 The full warning, a `UserWarning`:
 
 ```text
-<<messy warning>>
+QOREgeo: skipped 2 row(s) in 'messy.csv' with non-numeric or out-of-range coordinates (lat must be -90..90 and lng -180..180; check whether the columns are swapped): line 6 (lat='91.7362', lng='26.1445'), line 8 (lat='n/a', lng='80.2209')
 ```
 
-- A row with a blank latitude or longitude is skipped without a warning. A row with fewer values
-  than the header counts as blank.
+- A row with a blank latitude or longitude is skipped without a warning. A row that ends before
+  its latitude or longitude column counts as blank.
 - A row whose coordinates are not numbers, or are outside -90 to 90 (latitude) and -180 to 180
   (longitude), is skipped. One warning per file lists the first 5 such lines.
 - Whitefield Depot loads, because its coordinates are fine. A numeric comparison skips its
@@ -356,7 +374,8 @@ print(GeoEngine().load("geometry.geojson").get_features()[0])  # {'type': 'Featu
 
 A bare geometry is wrapped in a Feature with empty properties. A list may mix Features and
 geometries. A Feature with `"properties": null` gets `{}`. A Feature whose `type` is missing or
-spelled `"feature"` is accepted when it has a `geometry` or `properties` member.
+written in another case, such as `"feature"`, is accepted when it has a `geometry` or
+`properties` member.
 
 ### Null and invalid geometries
 
@@ -389,7 +408,7 @@ print(len(caught))  # 1
 The warning names each skipped feature by its index in the file:
 
 ```text
-<<sites warning>>
+QOREgeo: skipped 2 feature(s) with invalid geometry in 'sites.geojson': #2 (latitude 91.7362 is outside -90..90 (are lng/lat swapped?)), #3 (unsupported geometry type 'Circle')
 ```
 
 - A feature with `"geometry": null` is kept with its properties. It counts in `len()`, but it
@@ -724,8 +743,9 @@ an image written there would destroy your data. `save()` has no such guard, so t
 replaced the 12 rows of `draft.csv` with the 2 Gujarat rows. The check compares real paths, so
 `./draft.csv` and an absolute path to the same file are refused too.
 
-`qoregeo export` refuses to write over its input file, and so does the `export_data` tool of
-the [MCP server](ai-integration.md). In Python, write results to a new file name.
+`qoregeo export` refuses to write over its input file. The `export_features` tool of the
+[MCP server](ai-integration.md) refuses it too, and it also refuses any existing file unless the
+call passes `"overwrite": true`. In Python, write results to a new file name.
 
 ## From the command line
 
@@ -740,7 +760,11 @@ qoregeo export stores.csv -o delhi_raw.csv --where "city==Delhi" --raw-csv
 `qoregeo info cities.csv` prints:
 
 ```text
-<<info cities>>
+cities.csv: 12 features
+  geometry : Point × 12
+  bbox     : west 72.5714, south 9.9312, east 88.3639, north 28.6139
+  centre   : 20.062217, 77.239359
+  columns  : name (str), state (str), population (int)
 ```
 
 | Flag | Commands | What it does |
@@ -772,8 +796,6 @@ for name in ["missing.csv", "notes.docx", "survey.csv", "messy.csv"]:
         GeoEngine().load(name)
     except QOREgeoError as err:
         problems[name] = type(err).__name__
-    except UserWarning:
-        problems[name] = "warning only"
 
 print(problems)  # {'missing.csv': 'GeoFileNotFoundError', 'notes.docx': 'UnsupportedFormatError', 'survey.csv': 'ColumnNotFoundError'}
 ```
@@ -798,37 +820,81 @@ for the most common file problems.
 A file that does not exist:
 
 ```text
-<<GeoFileNotFoundError>>
+❌  QOREgeo: File Not Found
+────────────────────────────────────────────
+Could not find the file: 'citiess.csv'
+
+Fix it:
+    • Check the spelling of the filename
+    • Check that the file is in the right folder
+    • Use an absolute path if needed:
+      geo.load('/full/path/to/your_file.csv')
 ```
 
 A spreadsheet that was not exported to CSV:
 
 ```text
-<<UnsupportedFormatError>>
+❌  QOREgeo: Unsupported File Format '.xlsx'
+────────────────────────────────────────────
+QOREgeo currently supports:
+    • .csv / .tsv / .txt (delimited text)
+    • .geojson
+    • .json (GeoJSON format)
+
+Fix it: convert your file first, or use geo.load_data([...]) with raw Feature dicts.
 ```
 
 A file that is not valid JSON:
 
 ```text
-<<InvalidGeoJSONError broken>>
+❌  QOREgeo: Invalid GeoJSON
+────────────────────────────────────────────
+Source: 'broken.geojson'
+Problem: not valid JSON (Expecting value: line 1 column 44 (char 43))
+
+Fix it by passing a FeatureCollection, a Feature, a bare Geometry
+or a list of Features, for example:
+
+    {"type": "FeatureCollection", "features": [...]}
 ```
 
 JSON that is not GeoJSON, such as TopoJSON:
 
 ```text
-<<InvalidGeoJSONError topo>>
+❌  QOREgeo: Invalid GeoJSON
+────────────────────────────────────────────
+Source: 'topo.json'
+Problem: top-level type is 'Topology'; expected a FeatureCollection, Feature or Geometry
+
+Fix it by passing a FeatureCollection, a Feature, a bare Geometry
+or a list of Features, for example:
+
+    {"type": "FeatureCollection", "features": [...]}
 ```
 
 A CSV file with a header and no rows:
 
 ```text
-<<EmptyDatasetError>>
+❌  QOREgeo: Empty Dataset
+────────────────────────────────────────────
+No valid spatial features were found in: 'header_only.csv'
+
+Fix it:
+    • Make sure the file has data rows below the header
+    • Make sure latitude and longitude values are not all blank
+    • Check that the lat/lng columns contain numbers in range
 ```
 
 A file in another encoding:
 
 ```text
-<<FileReadError>>
+❌  QOREgeo: Could Not Read File
+────────────────────────────────────────────
+File: 'cafes.csv'
+Problem: the file is not valid utf-8-sig text (invalid continuation byte at byte 16)
+
+Fix it:
+    geo.load('cafes.csv', encoding='cp1252')   # or 'latin-1', 'utf-16', …
 ```
 
 Warnings do not stop a load. They are `UserWarning`s that start with `QOREgeo:`:
