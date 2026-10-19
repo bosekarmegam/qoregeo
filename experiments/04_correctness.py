@@ -1357,6 +1357,39 @@ def run_antimeridian(seed: int, sz: dict[str, int]) -> tuple[dict[str, Any], dic
     return out, fig_data
 
 
+def _linestring_across_180(geo: GeoEngine) -> dict[str, Any]:
+    """How each function reads one LineString segment stored with normalized longitudes."""
+    seg = {"type": "LineString", "coordinates": ROUTE["coordinates"][:2]}
+    (x0, y0), (x1, y1) = seg["coordinates"]
+    y_mid = y0 + (0.0 - x0) / (x1 - x0) * (y1 - y0)   # where the planar (long-way) edge meets lng 0
+    probe = (GeoEngine(verbose=False)
+             .add_point(y_mid, 0.0, name="lng 0, on the long-way edge")
+             .add_point(-17.7, 179.9, name="lng 179.9, 1 km from the short-way segment"))
+
+    def names(e: GeoEngine) -> list[str]:
+        return [f["properties"]["name"] for f in e.get_features()]
+
+    cfg = _page_config(GeoEngine(verbose=False).load_data([seg]).map_html(tiles="none"))
+    mx = [p[0] for p in _positions(cfg["data"])]
+    return {
+        "segment": seg,
+        "geodesic_length_km": W.Inverse(y0, x0, y1, x1)["s12"] / 1000.0,
+        "length_km": geo.length(seg),
+        "point_lng0_on_long_way_edge": [y_mid, 0.0],
+        "intersects_point_lng0": geo.intersects(seg, {"type": "Point", "coordinates": [0.0, y_mid]}),
+        "intersects_buffer_20km_on_the_dateline_crossing": geo.intersects(seg, geo.buffer((-17.7, 180.0), 20)),
+        "distance_to_line_km_from_point_lng0": geo.distance_to_line((y_mid, 0.0), seg),
+        "distance_to_line_km_from_buffer_centre": geo.distance_to_line((-17.7, 180.0), seg),
+        "filter_intersects_keeps": names(probe.filter_intersects(seg)),
+        "filter_by_line_50km_keeps": names(probe.filter_by_line(seg, 50)),
+        "map_html_lng_range": [min(mx), max(mx)],
+        "notes": ["The README documents the planar long-way reading for polygon rings that jump "
+                  "across 180 deg (point_in_polygon) and says intersects() uses the same planar "
+                  "edges. length(), distance_to_line(), filter_by_line(), map() and image() read "
+                  "the same segment the short way."],
+    }
+
+
 def run_random_clusters(rng: np.random.Generator, sz: dict[str, int]) -> dict[str, Any]:
     n_sets, n_pts = sz["am_random_sets"], sz["am_points_per_set"]
     c = Counter()
