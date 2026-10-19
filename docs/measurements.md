@@ -59,14 +59,7 @@ import math
 import warnings
 from collections import Counter
 
-from qoregeo import (
-    GeoEngine,
-    InvalidArgumentError,
-    InvalidBufferError,
-    InvalidCoordinateError,
-    InvalidRadiusError,
-    InvalidUnitError,
-)
+from qoregeo import GeoEngine, InvalidBufferError, InvalidCoordinateError
 
 geo = GeoEngine()
 
@@ -256,7 +249,8 @@ print(caught[0].category.__name__)  # UserWarning
 print(caught[0].message)  # QOREgeo: Vincenty's formula did not converge for these nearly antipodal points; the spherical (haversine) distance was used instead.
 ```
 
-To turn the warning into an error, use `warnings.simplefilter("error")` around the call.
+To get an exception instead, call `warnings.simplefilter("error")` inside the
+`warnings.catch_warnings()` block.
 
 ## Get a compass bearing
 
@@ -352,7 +346,7 @@ For the center of a whole dataset, call `centroid()` on a loaded engine; see the
 zone = geo.buffer(india_gate, 5)
 print(zone["type"])  # Polygon
 print(len(zone["coordinates"][0]))  # 65  64 vertices plus the closing one
-print(zone["coordinates"][0][0])  # [77.2295, 28.657866018186223]
+print([round(x, 6) for x in zone["coordinates"][0][0]])  # [77.2295, 28.657866]  due north, [lng, lat]
 print(zone["_center"], zone["_radius_km"])  # (28.6129, 77.2295) 5.0
 print({geo.distance(india_gate, (lat, lng)) for lng, lat in zone["coordinates"][0]})  # {5.0}
 print(geo.buffer(india_gate, 500, unit="m")["_radius_km"])  # 0.5
@@ -405,7 +399,7 @@ print(geo.area(saved))  # 78.5398
 ```
 
 The extra keys survive `save()`, `load()` and `json`, so a reloaded buffer is still an exact
-circle. Other GeoJSON tools ignore them and see the polygon.
+circle. Tools that do not know the keys see a plain polygon.
 
 ### Buffers across 180° and at the poles
 
@@ -417,8 +411,8 @@ print(geo.point_in_polygon((-17.0, -179.8), fiji_zone))  # True
 ```
 
 Near the antimeridian the ring keeps its longitudes continuous, so some go past 180. That keeps
-it one shape on a map, and qoregeo's own tests handle it. Some other tools expect every
-longitude between -180 and 180. A buffer centered on a pole has its vertices on one circle of
+it one shape on a map, and qoregeo's point-in-polygon and intersection tests handle it. Some
+other tools expect every longitude between -180 and 180. A buffer centered on a pole has its vertices on one circle of
 latitude.
 
 ## Test a point against a polygon
@@ -719,7 +713,7 @@ toward the poles (at Delhi's latitude, about 12 % narrower).
 | `distance()`, `length()` | sphere, radius 6371.0088 km | off from WGS84 by up to about 0.56 %, depending on direction and latitude ([examples](#haversine-or-vincenty)) |
 | `distance()`, `length()` with `method="vincenty"` | WGS84 ellipsoid | under 1 mm from GeographicLib where it converges; [falls back](#nearly-antipodal-points) to haversine where it does not |
 | `bearing()` | sphere | the initial great-circle bearing on the sphere, not the WGS84 azimuth |
-| `destination()`, `midpoint()` | sphere | consistent with `distance()`; off from WGS84 by the same fraction of a percent |
+| `destination()`, `midpoint()` | sphere | the same sphere as `distance()`, so the results agree with it |
 | `buffer()` | sphere | vertices exactly `radius` from the center on the sphere |
 | `distance_to_line()` | sphere | segments are great-circle arcs |
 | `area()` | sphere | off from WGS84 by less than 1 % in the experiments, by an amount that depends on latitude |
@@ -741,8 +735,8 @@ print(geo.distance((60.0, 11.0), geo.midpoint(a, b), unit="m"))  # 420.2062
 Along this 111 km edge at 60° north, the great circle passes 420 m north of the straight line at
 the middle. If that matters, add vertices to long polygon edges.
 
-The coordinates themselves are often the largest error: four decimals of a degree are about
-11 m of latitude.
+The input is often a larger source of error than the model: coordinates written with four
+decimals have a step of 0.0001°, about 11 m of latitude.
 
 [Experiments](experiments.md) measures these methods against GeographicLib and other libraries
 on many random points and shapes, with the scripts to rerun them.
@@ -769,8 +763,8 @@ qoregeo distance -18.1416,178.4419 -18.2333,-178.8 --json
 }
 ```
 
-The other measurements are AI tools. `qoregeo call` runs one with JSON arguments, the same way an
-MCP client does. Points are `{"lat": …, "lng": …}` objects:
+The other measurements are available as AI tools. `qoregeo call` runs one with JSON arguments,
+the same way an MCP client does. Points are `{"lat": …, "lng": …}` objects:
 
 ```bash
 qoregeo call destination '{"start": {"lat": 28.6139, "lng": 77.2090}, "distance": 10, "bearing": 90}'
@@ -816,7 +810,7 @@ flag, and [AI integration](ai-integration.md) covers the MCP server and the tool
 ## Errors
 
 All errors on this page subclass `ValueError` and `qoregeo.QOREgeoError`, and each message
-names the bad value and shows a fix.
+says what was wrong and shows a fix.
 
 ```python
 problems = []

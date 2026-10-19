@@ -352,8 +352,9 @@ print(customers.filter_by_radius(28.6139, 77.2090, radius=3).count())  # 12
 | a `FeatureCollection` | the union of its Polygon and MultiPolygon features; other geometry types are ignored |
 
 Anything else raises `InvalidBufferError`. Polygon edges are straight lines in longitude and
-latitude, which is what GeoJSON tools draw. For zones a few kilometers across this makes no
-practical difference.
+latitude, as RFC 7946 defines them, not great circles. The difference is small at city scale:
+for two points 15.7 km apart on Delhi's latitude, the straight edge and the great circle are
+2.7 m apart at the middle.
 
 ### Along a line
 
