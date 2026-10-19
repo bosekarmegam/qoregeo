@@ -1,7 +1,7 @@
 # Getting started
 
 This page takes you from `pip install qoregeo` to your first map. You load a sample file of 30
-shops, look at it, measure distances, find the nearest shop, filter, save the result, and draw
+stores, look at it, measure distances, find the nearest store, filter, save the result, and draw
 an interactive map and a static image. It ends with how to open maps in a browser and where to
 read next.
 
@@ -102,7 +102,7 @@ print(geo)  # <GeoEngine [30 features]>
 ```
 
 `load()` reads CSV, TSV and GeoJSON files. It finds the coordinate columns by name (`latitude`,
-`lat`, `y`, `longitude`, `lng`, `lon`, `x` and a few more, in any case) and turns each row into
+`lat`, `y`, `longitude`, `lng`, `lon`, `x` and a few more, in upper or lower case) and turns each row into
 a GeoJSON Feature:
 
 ```python
@@ -116,8 +116,8 @@ Two things to notice:
 
 - GeoJSON stores a position as `[lng, lat]`. Everywhere else in the Python API a point is a
   `(lat, lng)` tuple.
-- CSV values stay strings, like `'412000'`. Filters and sorting still compare them as numbers
-  when you pass a number, so you rarely need to convert. When you want real numbers and
+- CSV values stay strings, like `'412000'`. `filter()` still compares them as numbers when you
+  pass a number, and `sort_by()` sorts numeric strings as numbers, so you rarely need to convert. When you want real numbers and
   booleans in the properties, load with `infer_types=True`:
 
 ```python
@@ -126,8 +126,21 @@ print(repr(typed.get_features()[0]["properties"]["revenue"]))  # 412000
 ```
 
 If your coordinate columns have other names, name them:
-`geo.load("depots.csv", lat_col="y_coord", lng_col="x_coord")`. See [Loading and saving
-data](data.md) for delimiters, encodings and GeoJSON input.
+`geo.load("depots.csv", lat_col="y_coord", lng_col="x_coord")`. See
+[Loading and saving data](data.md) for delimiters, encodings and GeoJSON input.
+
+The coordinate order depends on where you write it:
+
+| Where | Order | Delhi |
+|---|---|---|
+| Python API points | `(lat, lng)` | `(28.6139, 77.2090)` |
+| GeoJSON positions | `[lng, lat]` | `[77.2090, 28.6139]` |
+| Command line points | `LAT,LNG` | `28.6139,77.2090` |
+| AI tool and MCP arguments | `{"lat": …, "lng": …}` | `{"lat": 28.6139, "lng": 77.2090}` |
+| Bounding boxes from `bbox()` and for `--bbox` | `[west, south, east, north]` | `[76.84, 28.40, 77.35, 28.88]` |
+
+`filter_by_bbox()` is the one exception: it takes `min_lat, min_lng, max_lat, max_lng`, the
+keys `bounds()` returns.
 
 ### 2. Look at the data
 
@@ -321,7 +334,7 @@ the 5 km circle. `heatmap()` draws density, weighted by a numeric column when yo
 | `output_path` | `"map.html"` | where to write the page (never the file you loaded) |
 | `title` | `"QOREgeo Map"` | the page title |
 | `tiles` | `"light"` | a basemap name (see below) or your own `https://…/{z}/{x}/{y}.png` URL |
-| `zoom` | `None` | with `center`: the start zoom; without: the closest zoom when fitting the data |
+| `zoom` | `None` | with `center`: the start zoom (10 if `None`); without: the highest zoom used to fit the data (15 if `None`) |
 | `center` | `None` | a `(lat, lng)` start point; `None` fits all features |
 | `overlays` | `None` | extra GeoJSON shapes drawn as dashed outlines |
 | `attribution` | `None` | credit HTML, required for a custom tile URL |
@@ -357,7 +370,7 @@ print(png[:4])  # b'\x89PNG'
 print(delhi_stores.to_svg().startswith("<?xml"))  # True
 ```
 
-[Static images](images.md) covers sizes, overlays and styling.
+[Static images](images.md) covers sizes, overlays, labels and backgrounds.
 
 ### The whole walkthrough as one chain
 
@@ -403,7 +416,7 @@ qoregeo map stores.csv -o stores.html --serve
 ```
 
 Both keep serving until you press Ctrl+C. The server listens on 127.0.0.1 only and serves that
-one page.
+one page. From Python, `qoregeo.serve_file("stores.html")` does the same as `qoregeo serve`.
 
 ### Basemaps that work from disk
 
@@ -423,7 +436,7 @@ from disk. Four of the presets do: `"topo"`, `"satellite"`, `"osm-de"` and `"non
 | `"satellite"` | NASA Blue Marble imagery, an overview up to zoom 10 | ✅ |
 | `"none"` | no basemap; nothing is downloaded | ✅ |
 
-A ❌ map opened from disk still shows your data, on a plain gray background with a note that
+A map marked ❌ that you open from disk still shows your data, on a plain gray background with a note that
 explains how to view it. It requests no tiles at all, which keeps it within the tile policy.
 All presets are open and need no API key. List them in Python or with `qoregeo tiles`:
 
@@ -444,7 +457,7 @@ Two more ways to look at a map:
 
 ## The same steps on the command line
 
-Each step above has a `qoregeo` command. Points are `LAT,LNG` with no space:
+Most steps above have a `qoregeo` command. Points are `LAT,LNG` with no space:
 
 ```bash
 qoregeo info stores.csv
@@ -454,6 +467,7 @@ qoregeo export stores.csv -o delhi_big.csv --where "city==Delhi" --where "revenu
 qoregeo map stores.csv -o stores_topo.html --tiles topo
 qoregeo map stores.csv -o revenue.html --heatmap --intensity revenue
 qoregeo image stores.csv -o delhi.png --where "city==Delhi" --labels name
+qoregeo call nearest '{"path": "stores.csv", "point": {"lat": 28.6129, "lng": 77.2295}, "k": 3}'
 ```
 
 The `distance` command prints the distance and the bearing:
@@ -461,6 +475,10 @@ The `distance` command prints the distance and the bearing:
 ```text
 2.4163 km  (bearing 148.86°, South-Southeast)
 ```
+
+Finding the nearest features has no command of its own, so the last line runs the `nearest`
+AI tool through `qoregeo call`, which prints JSON. In Windows `cmd`, which has no single quotes,
+save the JSON to a file and pass it on standard input: `qoregeo call nearest - < args.json`.
 
 The command line loads files with `infer_types=True`, and `export` refuses to write over its
 input. [Command line](cli.md) lists every command and flag.
@@ -483,7 +501,7 @@ print(problem.available)  # ['name', 'city', 'category', 'revenue']
 print(isinstance(problem, LookupError))  # True
 ```
 
-Bad rows don't stop a load. Rows with blank coordinates are skipped without a word. Rows whose
+Bad rows don't stop a load. Rows with blank coordinates are skipped without a warning. Rows whose
 coordinates aren't numbers, or are out of range (often swapped columns), are skipped with one
 warning that lists their line numbers:
 

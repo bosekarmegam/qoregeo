@@ -5,8 +5,8 @@ Give Claude qoregeo's GIS tools with the Claude API (no MCP needed).
     export ANTHROPIC_API_KEY=...
     python examples/claude_tools.py stores.csv "Which 3 stores are closest to Connaught Place, Delhi?"
 
-The tools run locally, confined to the folder of the data file; Claude only sees
-their JSON results — and the PNG from preview_map, so it can look at the map.
+The tools run locally, confined to the folder of the data file. Claude sees only
+their JSON results and the PNG from preview_map, so it can look at the map.
 """
 
 from __future__ import annotations

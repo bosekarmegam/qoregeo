@@ -6,7 +6,7 @@ Connect Claude to the qoregeo MCP server with the Anthropic SDK's tool runner.
     python examples/claude_mcp.py ./data "Make a heatmap of sales.csv weighted by revenue"
 
 The same server works in Claude Code, Claude Desktop, Codex, Cursor, VS Code and
-Gemini CLI — see the README's "AI assistants" section.
+Gemini CLI. See the README's "AI assistants" section.
 """
 
 from __future__ import annotations

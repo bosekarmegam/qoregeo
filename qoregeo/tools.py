@@ -5,9 +5,9 @@ QOREgeo's operations as AI tools.
 
 One registry drives every integration: the MCP server (``qoregeo mcp``),
 Claude API tool definitions, OpenAI function-calling schemas and the CLI's
-``qoregeo tools`` command. Tools take JSON arguments and return JSON — plus a
-PNG for ``preview_map``, so a vision model can look at the data it is
-working on.
+``qoregeo tools`` command. Tools take JSON arguments and return JSON.
+``preview_map`` also returns a PNG, so a vision model can look at the data
+it is working on.
 
 Safety
 ------
@@ -130,7 +130,7 @@ def _valid_text(text: str) -> str:
 
 def _text_safe(obj: Any) -> Any:
     """
-    ``obj`` with every string — keys and values — encodable as UTF-8. Lone
+    ``obj`` with every string (keys and values) encodable as UTF-8. Lone
     surrogates come from undecodable file names (``os.listdir`` on bytes that
     aren't UTF-8) or from ``"\\ud800"`` escapes in data files; serialised, they
     are JSON that strict parsers (the MCP SDKs, the Claude API) reject.
@@ -841,7 +841,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          _schema({"a": _point("First point"), "b": _point("Second point")}, ["a", "b"]),
          _midpoint),
     Tool("buffer", "Circular zone", "A GeoJSON polygon approximating a circle of 'radius' around a "
-         "point — use it as a geofence or delivery zone with contains / query_features.within.",
+         "point. Use it as a geofence or delivery zone with contains / query_features.within.",
          _schema({"center": _point("Circle centre"), "radius": {"type": "number", "exclusiveMinimum": 0},
                   "unit": _unit(), "num_points": {"type": "integer", "minimum": 3,
                                                   "maximum": _MAX_BUFFER_POINTS, "default": 64}},
@@ -856,13 +856,13 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "features or collections) touch or overlap.",
          _schema({"a": _GEOJSON, "b": _GEOJSON}, ["a", "b"]),
          _intersects),
-    Tool("measure", "Area or length", "Area of a polygon (spherical, mean Earth radius — as in "
+    Tool("measure", "Area or length", "Area of a polygon (spherical, mean Earth radius, as in "
          "Turf.js) or great-circle length of a line.",
          _schema({"geometry": _GEOJSON,
                   "area_unit": {"type": "string", "enum": _AREA_UNITS, "default": "km2"},
                   "length_unit": _unit()}, ["geometry"]),
          _measure),
-    Tool("geohash", "Geohash", "Encode a point as a geohash string (precision 1–12) and return the "
+    Tool("geohash", "Geohash", "Encode a point as a geohash string (precision 1 to 12) and return the "
          "cell centre.",
          _schema({"point": _point("Point to encode"),
                   "precision": {"type": "integer", "minimum": 1, "maximum": 12, "default": 9}},
@@ -889,7 +889,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                  ["point"]),
          _nearest),
     Tool("preview_map", "Preview map image", "Render the (optionally filtered) data as a PNG map "
-         "image you can look at — points, lines and polygons on a plain background, plus "
+         "image you can look at: points, lines and polygons on a plain background, plus "
          "optional overlay shapes." + _SOURCE_NOTE,
          _schema({**_SOURCE_PROPS, **_FILTER_PROPS,
                   "title": {"type": "string"},
@@ -899,8 +899,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
                   "height": {"type": "integer", "minimum": 64, "maximum": 2048, "default": 600},
                   **_IMAGE_PROPS}),
          _preview),
-    Tool("make_map", "Create map file", "Write an interactive HTML map or heatmap (OpenStreetMap "
-         "basemap, popups) — or a static .png/.svg image — of the (optionally filtered) data."
+    Tool("make_map", "Create map file", "Write the (optionally filtered) data as an interactive "
+         "HTML map or heatmap (OpenStreetMap basemap, popups) or as a static .png/.svg image."
          + _SOURCE_NOTE,
          _schema({**_SOURCE_PROPS, **_FILTER_PROPS,
                   "output": {"type": "string", "description": "File to write: .html, .png or .svg"},
@@ -926,7 +926,7 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("geocode", "Geocode address", "Look up coordinates for an address or place name with "
          "OpenStreetMap Nominatim (or the server's own geocoder). The public service allows at most "
          "1 request per second, no bulk or autocomplete use, and requires OpenStreetMap "
-         f"attribution — see {NOMINATIM_POLICY}. Don't send personal data.",
+         f"attribution (see {NOMINATIM_POLICY}). Don't send personal data.",
          _schema({"query": {"type": "string"},
                   "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
                   "country_codes": {"type": "array", "items": {"type": "string"},
