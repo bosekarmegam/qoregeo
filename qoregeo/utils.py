@@ -1695,6 +1695,8 @@ def _atomic_write(path: str, text: str | bytes, encoding: str = "utf-8", errors:
 
 
 _SHELL_SAFE_RE = re.compile(r"[A-Za-z0-9._/:@%+=,-]+")
+# On Windows "\" is the path separator, not an escape: cmd and PowerShell take it bare.
+_SHELL_SAFE_NT_RE = re.compile(r"[A-Za-z0-9._/\\:@%+=,-]+")
 
 
 def _shell_quote(path: str) -> str:
@@ -1707,7 +1709,7 @@ def _shell_quote(path: str) -> str:
     """
     if path.startswith("-"):
         path = os.path.join(os.curdir, path)   # not an option
-    if _SHELL_SAFE_RE.fullmatch(path):
+    if (_SHELL_SAFE_NT_RE if os.name == "nt" else _SHELL_SAFE_RE).fullmatch(path):
         return path
     if os.name == "nt" or not any(ch in path for ch in '$`"\\!'):
         return f'"{path}"'

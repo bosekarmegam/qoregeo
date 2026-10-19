@@ -951,7 +951,7 @@ def posix_expands(cmd: str) -> bool:
 class TestViewHint:
     @pytest.mark.parametrize("name", SHELL_NAMES)
     def test_printed_command_pastes_into_a_shell(self, tmp_path, monkeypatch, capsys, name):
-        if os.name == "nt" and '"' in name:
+        if os.name == "nt" and set(name) & set('<>:"|?*'):
             pytest.skip("not a valid Windows file name")
         monkeypatch.chdir(tmp_path)
         GeoEngine(verbose=True).add_point(1, 2).map(name)
@@ -969,6 +969,12 @@ class TestViewHint:
 
     def test_leading_dash_is_not_an_option(self):
         assert qutils._shell_quote("-v.html") == os.path.join(os.curdir, "-v.html")
+
+    def test_windows_paths_stay_unquoted(self, monkeypatch):
+        # "\" separates Windows paths; cmd and PowerShell take it without quotes.
+        monkeypatch.setattr(qutils.os, "name", "nt")
+        assert qutils._shell_quote(r"C:\maps\m-1.html") == r"C:\maps\m-1.html"
+        assert qutils._shell_quote(r"C:\my maps\m.html") == r'"C:\my maps\m.html"'
 
     def test_heatmap_hint_quoted_too(self, tmp_path, monkeypatch, capsys):
         monkeypatch.chdir(tmp_path)

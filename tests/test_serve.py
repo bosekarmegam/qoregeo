@@ -441,8 +441,9 @@ class TestFileNames:
         assert fetch(url)[2] == PAGE.encode("utf-8")
 
     def test_non_utf8_file_name(self, servers, tmp_path):
-        raw = os.path.join(os.fsencode(tmp_path), b"caf\xe9.html")
         try:
+            # Windows file names are Unicode: there is no such byte name to make.
+            raw = os.path.join(os.fsencode(tmp_path), b"caf\xe9.html")
             with open(raw, "wb") as fh:
                 fh.write(b"<p>latin-1 name</p>")
         except (OSError, UnicodeError):
