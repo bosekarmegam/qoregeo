@@ -9,8 +9,8 @@ What is measured:
    ``nearest``, ``k_nearest``, ``sort_by`` + ``head``, ``save``,
    ``map_html()`` and ``image()`` (PNG and SVG). Each operation is timed
    with repeats (median and min) with the garbage collector on, as users
-   run it, and again with it off, to show how much of the cost at large N
-   is cyclic garbage collection.
+   run it, and in alternating loops with it off, to show how much of the
+   cost at large N is cyclic garbage collection.
 2. Context baselines on the same data: a plain-Python CSV reader that builds
    the same Feature dicts, ``json.load``, a numpy vectorized haversine radius
    mask and ``shapely.contains_xy`` on prepared arrays.
@@ -26,8 +26,8 @@ What is measured:
 
 Run from the repository root::
 
-    python experiments/03_performance.py            # full run (about 3 to 5 minutes)
-    python experiments/03_performance.py --quick    # reduced sizes, about 10 seconds
+    python experiments/03_performance.py            # full run (about 5 to 7 minutes)
+    python experiments/03_performance.py --quick    # reduced sizes, about 15 seconds
 
 Outputs: ``experiments/results/performance.json`` and
 ``docs/assets/experiments/performance-*.svg``.
@@ -1247,11 +1247,13 @@ def doc_claims(results: dict[str, Any]) -> list[dict[str, Any]]:
         rp = {p: (latest[p]["version"], latest[p].get("requires_python")) for p in ("shapely", "pyproj")
               if p in latest}
         if rp:
+            expected = {"shapely": ("2.2", ">=3.11"), "pyproj": ("3.8", ">=3.12")}
+            verdicts = [r == expected[p][1] for p, (v, r) in rp.items() if v.startswith(expected[p][0])]
             claims.append({"where": "README.md, 'Why QOREgeo?'",
                            "claim": "shapely 2.2 needs 3.11+, pyproj 3.8 needs 3.12+",
                            "measured": {p: {"version": v, "requires_python": r} for p, (v, r) in rp.items()},
-                           "consistent": None,
-                           "note": "Requires-Python of the newest wheels pip found; compare by eye"})
+                           "consistent": all(verdicts) if len(verdicts) == len(rp) else None,
+                           "note": "Requires-Python read from the METADATA of the newest wheels pip found"})
     return claims
 
 
@@ -1259,7 +1261,7 @@ def doc_claims(results: dict[str, Any]) -> list[dict[str, Any]]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").split("\n\n")[0])
-    ap.add_argument("--quick", action="store_true", help="reduced sizes, runs in about 10 seconds")
+    ap.add_argument("--quick", action="store_true", help="reduced sizes, runs in about 15 seconds")
     ap.add_argument("--seed", type=int, default=20261019, help="random seed (default 20261019)")
     ap.add_argument("--no-network", action="store_true",
                     help="skip downloading the reference wheels (the only network step)")
@@ -1380,7 +1382,9 @@ def main(argv: list[str] | None = None) -> int:
             "sort_by_head": "sort_by('revenue', descending=True).head(10)",
             "map_html": "map_html() with default options",
             "image_png / image_svg": "image('out.png' / 'out.svg') with default options, 1200x800",
-            "operations run on": "the engine loaded from CSV with default options (string values)",
+            "operations run on": "the engine loaded from CSV with default options (string values); "
+                                 "the CSV- and GeoJSON-loaded engines are both in memory while the "
+                                 "non-load operations run, the three loads run with neither",
         },
         "utc_timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
         "command": shlex.join(["python", *sys.argv]),
@@ -1390,8 +1394,9 @@ def main(argv: list[str] | None = None) -> int:
         "figures": figures,
         "notes": [
             "Timing numbers are indicative: this run shared a 4-CPU machine with other jobs.",
-            "Dataset operations: median and min of repeats, each repeat a calibrated loop, after "
-            "a gc.collect(); garbage collector on unless the section says otherwise.",
+            "Dataset operations: median and min of repeats, each repeat a calibrated loop after "
+            "a gc.collect(). 'operations' has the garbage collector on; "
+            "'operations_gc_disabled' comes from loops with it off, alternating with the on loops.",
             "Per-call micro-benchmarks run with the garbage collector off, like timeit.",
             "The Python under test differs from the cp312 wheels used for the footprint "
             "comparison; wheel sizes do not depend on the interpreter running this script.",
