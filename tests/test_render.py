@@ -942,7 +942,7 @@ class TestLabels:
         assert label_texts(render_svg(feats, labels="name")) == ["First"]
         img = png(feats, width=400, height=300, labels="name", scale_bar=False)
         box = ink_box(img, LABEL_INK, (0, 0, 400, 300))
-        assert box is not None and box[2] - box[0] + 1 == 5 * 6 - 1    # just 'First'
+        assert box is not None and box[2] - box[0] + 1 == 5 * 6 - 1    # only 'First'
 
     def test_labels_never_overlap_and_some_are_skipped(self) -> None:
         feats = [named(77.2 + 0.0004 * (i % 6), 28.6 + 0.0003 * (i // 6), f"Store {i}")

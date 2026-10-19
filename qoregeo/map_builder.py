@@ -2,14 +2,14 @@
 qoregeo.map_builder
 ===================
 Generates standalone HTML files containing Leaflet.js interactive maps.
-No server required — just open in a browser.
+No server is needed: open the file in a browser.
 
 Safety
 ------
 * The title is HTML-escaped and all data is embedded as JSON with ``<``,
   ``>``, ``&``, U+2028/U+2029 and lone surrogates escaped, so property
   values can never break out of the ``<script>`` block.
-* Popups are built with DOM ``textContent`` — property keys and values are
+* Popups are built with DOM ``textContent``, so property keys and values are
   never interpreted as HTML.
 * Leaflet and leaflet.heat are loaded with Subresource Integrity hashes and
   fall back to a second CDN if the first one is unreachable.
@@ -241,7 +241,7 @@ def _to_js(obj: Any) -> str:
 
     Values are made JSON-safe first (NaN → null, sets → lists, …, and
     integers beyond 2**53 → strings so no digits are lost in the browser).
-    JSON.parse — unlike an object literal — keeps a property named
+    JSON.parse (unlike an object literal) keeps a property named
     ``__proto__`` as ordinary data instead of turning it into the prototype.
     """
     text = json.dumps(_json_safe(obj, js=True), ensure_ascii=False, allow_nan=False)
@@ -305,8 +305,8 @@ def _tiles_config(tiles: Any, attribution: str | None = None) -> dict[str, Any]:
         names = set(_PLACEHOLDER_RE.findall(url))
         unknown = sorted(names - _TILE_PLACEHOLDERS)
         if not {"z", "x"} <= names or not names & {"y", "-y"} or unknown:
-            problem = (f"unknown placeholder(s) {', '.join('{' + n + '}' for n in unknown)} — "
-                       "substitute their values into the URL" if unknown
+            problem = (f"unknown placeholder(s) {', '.join('{' + n + '}' for n in unknown)} "
+                       "(substitute their values into the URL)" if unknown
                        else "a URL template containing {z}, {x} and {y} (or {-y})")
             raise InvalidArgumentError(
                 "tiles", tiles, problem,
@@ -379,7 +379,7 @@ def _spans_world(geometries: list[Any]) -> bool:
     """
     True if a line or ring runs (all but) the whole way round the globe: its
     longitudes span 360° (e.g. -180° to 180°), or at least 359° with every
-    vertex on one of its two extreme meridians — an extent box from
+    vertex on one of its two extreme meridians, such as an extent box from
     -179.9999° to 179.9999°, whose edges are straight in lon/lat (RFC 7946).
 
     A path that merely crosses ±180° (a dateline-straddling island or track,
@@ -398,10 +398,11 @@ def _spans_world(geometries: list[Any]) -> bool:
 
 def _antimeridian_west(lngs: list[float], geometries: list[Any] | None = None) -> float | None:
     """
-    If the data is one cluster across ±180° — its tightest longitude span
-    crosses the antimeridian and is under 180° wide, and no shape runs round
-    the whole globe (Antarctica, a world bbox) — return the span's western
-    edge (longitudes below it belong east of 180°); else None.
+    Return the western edge of the data's tightest longitude span if the
+    data is one cluster across ±180°, else None. Longitudes below that edge
+    belong east of 180°. The data is one cluster when that span crosses the
+    antimeridian and is under 180° wide, and no shape runs round the whole
+    globe (Antarctica, a world bbox).
     """
     if not lngs:
         return None
@@ -744,10 +745,11 @@ _MAP_INIT = """\
 
 def _shell_arg(name: str) -> str:
     """
-    ``name`` as one shell argument that can be pasted as printed: bare if it
-    has only plain characters, else in double quotes (POSIX shells, cmd and
-    PowerShell all accept them), else — when it holds a character "…" leaves
-    special, such as $ ` " \\ or ! — single-quoted for POSIX shells.
+    ``name`` as one shell argument that can be pasted as printed. It is bare
+    if it has only plain characters and in double quotes otherwise (POSIX
+    shells, cmd and PowerShell all accept them). When it holds a character
+    that "…" leaves special (such as $ ` " \\ or !), it is single-quoted for
+    POSIX shells instead.
     """
     if _SHELL_PLAIN_RE.fullmatch(name):
         return name
@@ -1037,7 +1039,7 @@ def heatmap_page(
             f"QOREgeo: {_plural(len(dropped), 'row')} with a missing, non-numeric or "
             f"non-positive '{intensity_col}' value ({examples}) "
             f"{'adds' if len(dropped) == 1 else 'add'} no heat"
-            + (" — the heatmap is empty." if not points else "."),
+            + (", so the heatmap is empty." if not points else "."),
             stacklevel=stacklevel,
         )
 

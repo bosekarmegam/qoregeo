@@ -47,8 +47,8 @@ class _UsageError(Exception):
 class _Parser(argparse.ArgumentParser):
     """
     argparse that reads ``-33.9,18.4`` or ``-10,-5,10,5`` as a value, not an
-    unknown option, on every Python version (3.14 does this already; 3.10-3.13
-    only accept plain negative numbers such as ``-33.9``).
+    unknown option, on every Python version (3.14 does this already; 3.10 to
+    3.13 only accept plain negative numbers such as ``-33.9``).
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -371,7 +371,7 @@ def _skill_source() -> str:
 def _zip_skill(source: str, output: str) -> int:
     """
     The skill as a zip for claude.ai / the Skills API, with the qoregeo package
-    itself in scripts/ — so it works in sandboxes without pip or internet.
+    itself in scripts/, so it works in sandboxes without pip or internet.
     """
     import zipfile
 
@@ -492,8 +492,8 @@ def _add_sandbox(p: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
         prog="qoregeo",
-        description="Zero-dependency geospatial toolkit: distances, filters, maps, geocoding - "
-                    "and an MCP server for AI assistants.",
+        description="Zero-dependency geospatial toolkit: distances, filters, maps and geocoding, "
+                    "plus an MCP server for AI assistants.",
     )
     parser.add_argument("--version", action="version", version=f"qoregeo {__version__}")
     sub = parser.add_subparsers(dest="command", metavar="COMMAND")

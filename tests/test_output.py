@@ -3,7 +3,7 @@ tests/test_output.py
 ====================
 GeoEngine output features added in this release.
 
-* ``map_html()`` / ``heatmap_html()`` — the page ``map()`` / ``heatmap()`` write
+* ``map_html()`` / ``heatmap_html()``: the page ``map()`` / ``heatmap()`` write
 * the source-file guard: ``map()`` / ``heatmap()`` / ``image()`` never write
   over the CSV / GeoJSON the data was loaded from
 * ``image()`` / ``to_png()`` / ``to_svg()`` static images
@@ -878,7 +878,7 @@ def test_written_page_is_utf8(tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Static images — labels, grid and scale bar options
+# Static images: labels, grid and scale bar options
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestImageOptions:
@@ -955,7 +955,7 @@ class TestViewHint:
             pytest.skip("not a valid Windows file name")
         monkeypatch.chdir(tmp_path)
         GeoEngine(verbose=True).add_point(1, 2).map(name)
-        cmd = capsys.readouterr().out.split("view it with: ", 1)[1].strip()
+        cmd = capsys.readouterr().out.split("View it with: ", 1)[1].strip()
         assert cmd.startswith("qoregeo serve ")
         if os.name != "nt":   # POSIX shell syntax
             assert posix_words(cmd) == ["qoregeo", "serve", name]
@@ -1044,7 +1044,7 @@ class TestIntersectsPoles:
 
     def test_long_edges_are_straight_in_lng_lat(self, geo):
         # An edge from (0, 89) to (180, 89) runs along the 89th parallel
-        # (111 km from the pole), as point_in_polygon() reads it — not over the pole.
+        # (111 km from the pole), as point_in_polygon() reads it, not over the pole.
         assert geo.intersects(geo.buffer((90, 0), 100), line((0, 89), (180, 89))) is False
         assert geo.intersects(geo.buffer((90, 0), 112), line((0, 89), (180, 89))) is True
 

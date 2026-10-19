@@ -1,11 +1,11 @@
 """
 qoregeo
 =======
-Zero-dependency geospatial toolkit for Python — and for AI assistants.
+Zero-dependency geospatial toolkit for Python and for AI assistants.
 
 Pure standard library: installs in seconds anywhere Python 3.10+ runs.
 
-Quick Start
+Quick start
 -----------
     from qoregeo import GeoEngine
 

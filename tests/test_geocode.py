@@ -1,5 +1,5 @@
 """
-Tests for qoregeo.geocode — fully offline.
+Offline tests for qoregeo.geocode.
 
 Every HTTP request goes through ``Geocoder._fetch`` (or, for the one test of
 ``_fetch`` itself, ``urllib.request.urlopen``), both of which are replaced
@@ -1093,7 +1093,7 @@ class TestGeocodingError:
     def test_house_style(self) -> None:
         err = GeocodingError("Something broke.", "Do this.\nThen that.", 503)
         text = str(err)
-        assert "❌  QOREgeo — Geocoding Failed" in text
+        assert "❌  QOREgeo: Geocoding Failed" in text
         assert "Something broke." in text and "HTTP status: 503" in text
         assert "Fix it:\n    Do this.\n    Then that." in text
         assert err.status == 503 and err.hint == "Do this.\nThen that."
@@ -1615,7 +1615,7 @@ class TestSharedAcrossProcesses:
 
 class TestSharedStateDegrades:
     """An unusable cache directory or a Python without sqlite3 falls back to the
-    in-process limit and cache — never an error."""
+    in-process limit and cache instead of raising an error."""
 
     def _check_in_process(self, server: FakeServer, clock: FakeClock, gc: Geocoder) -> None:
         assert gc.search("a") == [] and gc.search("a") == []   # memory cache
@@ -1713,8 +1713,9 @@ def test_default_cache_dir_without_a_home(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 # A child process: geocodes twice against a "public" test host with a short
-# interval, after waiting for its sibling to be ready, and prints when each of
-# its requests started (wall clock, comparable across processes).
+# interval, after waiting for its sibling to be ready. It prints the start time
+# each request booked in the shared file and when each request really began
+# (wall clock, comparable across processes).
 _CHILD = r"""
 import json, os, sys, time
 from qoregeo import geocode as gmod
@@ -1722,13 +1723,30 @@ from qoregeo import geocode as gmod
 host, interval, cache_dir, me, *others = sys.argv[1:]
 gmod.PUBLIC_HOSTS = frozenset({host})
 gmod.PUBLIC_MIN_INTERVAL = float(interval)
-starts = []
+starts, booked = [], []
 
 def fetch(self, url):
     starts.append(time.time())
     return b"[]"
 
+real_book, real_clock = gmod._DiskStore.book_slot, time.time
+
+def book_slot(self, endpoint, interval):
+    seen = []                        # the one time.time() the booking reads: its "now"
+    def clock():
+        seen.append(real_clock())
+        return seen[-1]
+    time.time = clock
+    try:
+        wait = real_book(self, endpoint, interval)
+    finally:
+        time.time = real_clock
+    if wait is not None and seen:
+        booked.append(seen[-1] + wait)
+    return wait
+
 gmod.Geocoder._fetch = fetch
+gmod._DiskStore.book_slot = book_slot
 open(me, "w").close()
 deadline = time.monotonic() + 60
 while not all(os.path.exists(p) for p in others):
@@ -1738,11 +1756,12 @@ while not all(os.path.exists(p) for p in others):
 gc = gmod.Geocoder(url="https://" + host, cache_dir=None if cache_dir == "-" else cache_dir)
 for query in ("first", "second"):
     gc.search(query + " from " + os.path.basename(me))
-print(json.dumps(starts))
+print(json.dumps({"starts": starts, "booked": booked}))
 """
 
 
-def _run_two_processes(tmp_path: Path, cache_dir: str, interval: float) -> list[float]:
+def _run_two_processes(tmp_path: Path, cache_dir: str,
+                       interval: float) -> list[dict[str, list[float]]]:
     root = str(Path(gmod.__file__).resolve().parents[1])     # this checkout of qoregeo
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(
         p for p in (root, os.environ.get("PYTHONPATH")) if p))
@@ -1758,7 +1777,7 @@ def _run_two_processes(tmp_path: Path, cache_dir: str, interval: float) -> list[
     outputs = [proc.communicate(timeout=120) for proc in procs]
     for proc, (_, err) in zip(procs, outputs, strict=True):
         assert proc.returncode == 0, err
-    return sorted(t for out, _ in outputs for t in json.loads(out))
+    return [json.loads(out) for out, _ in outputs]
 
 
 def test_two_real_processes_share_one_slot(tmp_path: Path,
@@ -1766,7 +1785,16 @@ def test_two_real_processes_share_one_slot(tmp_path: Path,
     for name, real in zip(("time", "monotonic", "sleep"), _REAL_TIME, strict=True):
         monkeypatch.setattr(time, name, real)
     interval = 0.2
-    starts = _run_two_processes(tmp_path, str(tmp_path / "cache"), interval)
-    assert len(starts) == 4
-    gaps = [b - a for a, b in zip(starts[:-1], starts[1:], strict=True)]
-    assert min(gaps) >= interval - 0.05, gaps      # small allowance for clock resolution
+    runs = _run_two_processes(tmp_path, str(tmp_path / "cache"), interval)
+    # The shared file hands out slots at least `interval` apart across both
+    # processes. (The moments the requests then begin also carry the OS's
+    # scheduling delay, which is why the slots, not those, are compared.)
+    slots = sorted(t for run in runs for t in run["booked"])
+    assert len(slots) == 4
+    gaps = [b - a for a, b in zip(slots[:-1], slots[1:], strict=True)]
+    assert min(gaps) >= interval - 1e-6, gaps
+    # Each process waits for its slot before it sends the request.
+    for run in runs:
+        assert len(run["starts"]) == len(run["booked"]) == 2
+        for slot, start in zip(run["booked"], run["starts"], strict=True):
+            assert start >= slot - 0.02, (slot, start)   # timer resolution

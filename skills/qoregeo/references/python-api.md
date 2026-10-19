@@ -1,6 +1,6 @@
 # qoregeo Python API reference
 
-`from qoregeo import GeoEngine` — every method below is on `GeoEngine`. Methods that
+Every method below is on `GeoEngine` (`from qoregeo import GeoEngine`). Methods that
 filter return a **new** engine (the original is unchanged); `load`, `load_data`,
 `add_point`, `save`, `map`, `heatmap` and `image` return `self` so calls chain.
 `GeoEngine(verbose=False)` silences the one-line "saved" / "serving" messages.
@@ -25,7 +25,7 @@ Points (`PointLike`) are `(lat, lng)` tuples/lists (`(lat, lng, alt)` too),
 | Method | Returns |
 |---|---|
 | `distance(a, b, unit="km", method="haversine")` | float; `method="vincenty"` = WGS84 ellipsoid (mm accuracy) |
-| `bearing(a, b, as_degrees=False)` | `"South-Southwest"` or degrees 0–360 |
+| `bearing(a, b, as_degrees=False)` | `"South-Southwest"` or degrees 0-360 |
 | `destination(point, distance, bearing, unit="km")` | `(lat, lng)` |
 | `midpoint(a, b)` | `(lat, lng)` |
 | `buffer(center, radius, unit="km", num_points=64)` | GeoJSON Polygon (exact circle for containment tests) |
@@ -41,7 +41,7 @@ Points (`PointLike`) are `(lat, lng)` tuples/lists (`(lat, lng, alt)` too),
 | Method | Notes |
 |---|---|
 | `filter(column, value, op="==")` | ops: `== != > >= < <= in "not in" contains`; a number `value` compares numerically, also against CSV strings |
-| `where(predicate)` | `geo.where(lambda p: p["type"] == "cafe" and float(p["rating"]) > 4)` — `p` is the properties dict; CSV values are strings unless loaded with `infer_types=True` |
+| `where(predicate)` | `geo.where(lambda p: p["type"] == "cafe" and float(p["rating"]) > 4)`: `p` is the properties dict, and CSV values are strings unless loaded with `infer_types=True` |
 | `filter_by_radius(lat, lng, radius, unit="km", method="haversine")` | nearest first, `_distance` added |
 | `filter_by_bbox(min_lat, min_lng, max_lat, max_lng)` | handles boxes across 180° |
 | `filter_by_polygon(polygon)` | by each feature's location |

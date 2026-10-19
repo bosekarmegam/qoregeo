@@ -2,25 +2,39 @@
 tests/test_docs.py
 ==================
 The documentation must match the code: README.md (which is also the PyPI
-project page), the Agent Skill and its references, AGENTS.md, llms.txt and
-the CHANGELOG. Examples are executed where that is cheap and offline;
-everything else is checked against the real signatures and presets.
+project page), the Agent Skill and its references, AGENTS.md, llms.txt, the
+CHANGELOG and the guide in docs/. Examples are executed where that is cheap
+and offline; everything else is checked against the real signatures and
+presets. The last two sections run every example on the docs/*.md pages
+and check the writing style of all Markdown files.
 """
 
 from __future__ import annotations
 
 import ast
 import builtins
+import importlib
 import inspect
+import io
+import json
 import re
+import shlex
+import shutil
+import sys
+import urllib.request
+import webbrowser
 import zlib
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import pytest
 
 import qoregeo
 from qoregeo import GeoEngine
+from qoregeo.geocode import Geocoder
 from qoregeo.map_builder import _TILES
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -35,11 +49,16 @@ TESTS_WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
 PUBLISH_WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 
 GITHUB_BLOB = "https://github.com/bosekarmegam/qoregeo/blob/main/"
-FENCE_RE = re.compile(r"^```(\w*)[^\n]*\n(.*?)^```", re.DOTALL | re.MULTILINE)
+# A fenced block, also one indented inside a list item.
+FENCE_RE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<lang>[\w+-]*)[^\n]*\n"
+    r"(?P<body>.*?)^[ \t]*(?P=fence)[ \t]*$",
+    re.DOTALL | re.MULTILINE,
+)
 
 
 def read(path: Path) -> str:
-    """The file's text, or skip — an sdist ships only some of these files."""
+    """The file's text, or skip: an sdist ships only some of these files."""
     if not path.is_file():
         pytest.skip(f"{path.relative_to(ROOT)} is not part of this checkout")
     return path.read_text(encoding="utf-8")
@@ -47,10 +66,16 @@ def read(path: Path) -> str:
 
 def code_blocks(text: str, lang: str) -> list[tuple[int, str]]:
     """(first line number, source) of every fenced block in language ``lang``."""
-    return [
-        (text.count("\n", 0, m.start()) + 2, m.group(2))
-        for m in FENCE_RE.finditer(text) if m.group(1) == lang
-    ]
+    blocks = []
+    for m in FENCE_RE.finditer(text):
+        if m.group("lang") != lang:
+            continue
+        body, indent = m.group("body"), m.group("indent")
+        if indent:   # a block inside a list item: take off the item's indentation
+            body = "".join(line[len(indent):] if line.startswith(indent) else line.lstrip(" \t")
+                           for line in body.splitlines(keepends=True))
+        blocks.append((text.count("\n", 0, m.start()) + 2, body))
+    return blocks
 
 
 def prose(text: str) -> str:
@@ -238,7 +263,7 @@ def test_api_reference_signatures_match_the_code() -> None:
     problems = []
     for name, call in _documented_calls(read(API_REF)):
         if any(isinstance(a, ast.Constant) and a.value is Ellipsis for a in call.args):
-            continue   # `map_html(...)` — "same options as"
+            continue   # `map_html(...)` means "same options as"
         params = list(inspect.signature(getattr(GeoEngine, name)).parameters.values())[1:]
         named = [p for p in params if p.kind not in (p.VAR_KEYWORD, p.VAR_POSITIONAL)]
         covered = {p.name for p in named[:len(call.args)]}
@@ -402,7 +427,8 @@ def test_agents_md_describes_ci_accurately() -> None:
     versions = re.search(r'python-version: \[([^\]]+)\]', workflow)
     assert versions
     matrix = [v.strip().strip('"') for v in versions.group(1).split(",")]
-    assert f"Python {matrix[0]}–{matrix[-1]}" in agents
+    # The range is written "Python 3.10 to 3.15" (the style rules ban en dashes).
+    assert f"Python {matrix[0]} to {matrix[-1]}" in agents
     lint_job = workflow.split("\n  test:")[0]
     assert "ruff" in lint_job and "mypy" in lint_job and "ubuntu-latest" in lint_job
     lint_python = re.search(r'python-version: "([\d.]+)"', lint_job)
@@ -413,3 +439,442 @@ def test_agents_md_describes_ci_accurately() -> None:
         assert "--import-mode=importlib" in read(PUBLISH_WORKFLOW)
         assert "--import-mode=importlib" not in workflow
         assert "release workflow" in agents
+
+
+# ─── The guide in docs/: every example runs ──────────────────────────────────
+#
+# Conventions for docs/*.md (they are also how a page shows its output):
+#
+# * ```python blocks of one page run top to bottom in ONE namespace, in a
+#   temporary directory holding a copy of every file in docs/data/, so
+#   examples load the samples by bare name ("stores.csv").
+# * A top-level line ``print(expr)  # expected`` is a check: str(expr) must
+#   equal the comment up to its first run of two spaces (the rest is a note).
+#   Every top-level print with a trailing comment is checked.
+# * A python block whose first line is ``# needs network`` is compiled, not run.
+# * GeoEngine.show() is a stub; a blocking show() must end its block.
+# * In ```bash (also sh, shell, console) blocks, each line that starts with
+#   ``qoregeo `` (optionally after ``$ ``) runs through qoregeo.cli.main() in
+#   the same directory and must exit 0. Not run: serve, mcp, geocode, reverse,
+#   lines with --serve and lines ending in ``# needs network``. ``> file``,
+#   ``>> file`` and ``< file`` work; after ``|`` the rest of the line is ignored.
+# * ```json blocks must parse as JSON, ```toml blocks with tomllib (3.11+).
+# * Relative links must point at files that exist, #anchors at real headings.
+#
+# Nothing may touch the network: Geocoder._fetch and urllib's urlopen fail the
+# test, the browser never opens and HOME points into the temporary directory.
+
+DOCS = ROOT / "docs"
+DOCS_DATA = DOCS / "data"
+DOC_PAGES = sorted(DOCS.glob("*.md"))
+NETWORK_MARK = "# needs network"
+NOT_RUN_COMMANDS = frozenset({"serve", "mcp", "geocode", "reverse"})
+SHELL_LANGS = ("bash", "sh", "shell", "console")
+_SHELL_OPERATORS = frozenset("();<>|&")
+
+
+def _page_id(path: Path) -> str:
+    return path.name
+
+
+@dataclass
+class DocSandbox:
+    """Where a docs page runs, and what its examples tried to do."""
+
+    work: Path
+    shows: list[dict[str, Any]]
+    network: list[str]
+
+
+@pytest.fixture
+def doc_sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> DocSandbox:
+    work = tmp_path / "work"
+    if DOCS_DATA.is_dir():
+        shutil.copytree(DOCS_DATA, work)
+    else:
+        work.mkdir()
+    home = tmp_path / "home"   # `qoregeo skill install` writes to ~
+    home.mkdir()
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    # `qoregeo call` / ToolContext read these; the root must be the work directory.
+    for name in ("QOREGEO_ROOT", "CLAUDE_PROJECT_DIR", "QOREGEO_ALLOW_NETWORK",
+                 "QOREGEO_GEOCODER_URL", "QOREGEO_GEOCODER_EMAIL"):
+        monkeypatch.delenv(name, raising=False)
+
+    network: list[str] = []
+
+    def refuse(url: Any) -> None:
+        target = getattr(url, "full_url", url)
+        network.append(str(target))
+        raise AssertionError(f"a docs example tried to reach the network ({target}); "
+                             f"start its block with '{NETWORK_MARK}'")
+
+    monkeypatch.setattr(Geocoder, "_fetch", lambda self, url: refuse(url))
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, *a, **k: refuse(url))
+    monkeypatch.setattr(webbrowser, "open", lambda *args, **kwargs: True)
+
+    def no_serve(server: Any, url: str, *args: Any, **kwargs: Any) -> str:
+        server.server_close()   # serve_file() / serve_html() would block until Ctrl+C
+        return url
+
+    monkeypatch.setattr(importlib.import_module("qoregeo.serve"), "_run", no_serve)
+    shows = record_show(monkeypatch)
+    monkeypatch.chdir(work)
+    return DocSandbox(work, shows, network)
+
+
+def _doc_name(page: Path) -> str:
+    return page.relative_to(ROOT).as_posix()
+
+
+def _needs_network(source: str) -> bool:
+    lines = [line.strip() for line in source.splitlines() if line.strip()]
+    return bool(lines) and lines[0].lower().startswith(NETWORK_MARK)
+
+
+@pytest.mark.parametrize("page", DOC_PAGES, ids=_page_id)
+def test_doc_python_examples_run(page: Path, doc_sandbox: DocSandbox) -> None:
+    name, filename = _doc_name(page), str(page)
+    expected: dict[int, str] = {}
+    wrong: list[str] = []
+
+    def check(line: int, *values: Any, sep: str | None = " ", **_: Any) -> None:
+        printed = (" " if sep is None else sep).join(str(v) for v in values)
+        print(printed)
+        if printed != expected[line]:
+            wrong.append(f"{name}:{line}: printed {printed!r}, the comment says {expected[line]!r}")
+
+    namespace: dict[str, Any] = {"__name__": "__main__", "_check": check}
+    for start, source in code_blocks(read(page), "python"):
+        # Padding with blank lines gives tracebacks and checks the page's line numbers.
+        padded = "\n" * (start - 1) + source
+        blocking = [f"{name}:{line}" for line in _blocking_show_calls(padded)]
+        assert not blocking, (f"{', '.join(blocking)}: show() serves until Ctrl+C in a script; "
+                              f"make it the block's last statement or pass block=False")
+        if _needs_network(source):
+            compile(padded, filename, "exec")
+            continue
+        checked, expectations = _with_print_checks(padded)
+        expected.update(expectations)
+        try:
+            exec(compile(checked, filename, "exec"), namespace)
+        except BaseException:
+            if wrong:   # shown under "Captured stdout call"
+                print("\nprint checks that failed before the error:\n" + "\n".join(wrong))
+            raise
+    assert doc_sandbox.network == []
+    assert not wrong, "\n".join(wrong)
+
+
+def doc_commands(text: str) -> list[tuple[int, str]]:
+    """(page line, command) of every shell-block line that starts with ``qoregeo ``."""
+    found = []
+    for lang in SHELL_LANGS:
+        for start, source in code_blocks(text, lang):
+            for offset, raw in enumerate(source.splitlines()):
+                line = raw.strip()
+                if line.startswith("$ "):
+                    line = line[2:].lstrip()
+                if line.startswith("qoregeo "):
+                    found.append((start + offset, line))
+    return sorted(found)
+
+
+def _shell_words(command: str) -> list[str]:
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def _is_run(command: str, argv: list[str]) -> bool:
+    if re.search(r"#\s*needs network\s*$", command):
+        return False
+    subcommand = next((word for word in argv[1:] if not word.startswith("-")), None)
+    return subcommand not in NOT_RUN_COMMANDS and "--serve" not in argv
+
+
+@pytest.mark.parametrize("page", DOC_PAGES, ids=_page_id)
+def test_doc_cli_examples_run(page: Path, doc_sandbox: DocSandbox,
+                              capsys: pytest.CaptureFixture[str],
+                              monkeypatch: pytest.MonkeyPatch) -> None:
+    from qoregeo.cli import main
+
+    name = _doc_name(page)
+    stdin = sys.stdin
+    for line, command in doc_commands(read(page)):
+        where = f"{name}:{line}: {command}"
+        assert not command.endswith("\\"), f"{where}\n  write the command on one line"
+        argv: list[str] = []
+        redirects: dict[str, str] = {}
+        words = iter(_shell_words(command))
+        for word in words:
+            if word == "|":
+                break   # a pipeline: only the qoregeo part runs
+            if word in (">", ">>", "<"):
+                target = next(words, "")
+                assert target and not Path(target).is_absolute() and ".." not in Path(target).parts, \
+                    f"{where}\n  redirect to a file in the current directory"
+                redirects[word] = target
+            elif set(word) <= _SHELL_OPERATORS:
+                pytest.fail(f"{where}\n  {word!r} is not supported; write one command per line")
+            else:
+                argv.append(word)
+        if not _is_run(command, argv):
+            continue
+
+        if "<" in redirects:
+            data = (doc_sandbox.work / redirects["<"]).read_bytes()
+            monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(data), encoding="utf-8"))
+        else:
+            monkeypatch.setattr(sys, "stdin", stdin)
+        capsys.readouterr()
+        try:
+            code = main(argv[1:])
+        except SystemExit as exc:   # argparse errors, --help and --version
+            code = exc.code if isinstance(exc.code, int) else (0 if exc.code is None else 1)
+        out, err = capsys.readouterr()
+        assert code == 0, f"{where}\n  exited with {code}:\n{err or out}"
+        for op in (">", ">>"):
+            if op in redirects:
+                with open(doc_sandbox.work / redirects[op], "a" if op == ">>" else "w",
+                          encoding="utf-8") as fh:
+                    fh.write(out)
+    assert doc_sandbox.network == []
+
+
+@pytest.mark.parametrize("page", DOC_PAGES, ids=_page_id)
+def test_doc_json_and_toml_blocks_parse(page: Path) -> None:
+    text, name = read(page), _doc_name(page)
+    problems = []
+    for start, source in code_blocks(text, "json"):
+        try:
+            json.loads(source)
+        except ValueError as exc:
+            line = start + getattr(exc, "lineno", 1) - 1
+            problems.append(f"{name}:{line}: not valid JSON: {getattr(exc, 'msg', exc)}")
+
+    toml_blocks = code_blocks(text, "toml")
+    try:
+        tomllib: Any = importlib.import_module("tomllib")
+    except ModuleNotFoundError:   # Python 3.10
+        tomllib = None
+    for start, source in toml_blocks if tomllib else []:
+        try:
+            tomllib.loads(source)
+        except tomllib.TOMLDecodeError as exc:
+            problems.append(f"{name}:{start}: not valid TOML (block line numbers): {exc}")
+    assert not problems, "\n".join(problems)
+    if toml_blocks and tomllib is None:
+        pytest.skip("JSON checked; checking TOML needs tomllib (Python 3.11+)")
+
+
+def github_slug(heading: str) -> str:
+    """The #anchor GitHub gives a heading."""
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", heading)        # images
+    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)       # links keep their text
+    text = re.sub(r"<[^>]+>", "", text)                         # HTML tags
+    text = re.sub(r"[^\w\- ]", "", text.strip().lower())       # \w keeps letters, digits, _
+    return text.replace(" ", "-")
+
+
+def heading_anchors(text: str) -> set[str]:
+    """Every #anchor a Markdown file has: headings (GitHub rules) and id=/name= attributes."""
+    text = FENCE_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    anchors: set[str] = set()
+    seen: Counter[str] = Counter()
+    for m in re.finditer(r"^ {0,3}#{1,6}[ \t]+(.+?)[ \t]*#*[ \t]*$", text, re.MULTILINE):
+        slug = github_slug(m.group(1))
+        anchors.add(f"{slug}-{seen[slug]}" if seen[slug] else slug)
+        seen[slug] += 1
+    anchors.update(re.findall(r"""\b(?:id|name)\s*=\s*["']([^"']+)["']""", text))
+    return anchors
+
+
+def relative_links(text: str) -> list[tuple[int, str]]:
+    """(line, target) of every link and image in the prose that is not a URL."""
+    text = FENCE_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    found = []
+    patterns = (r"\]\(\s*<?([^)\s>]+)", r"^\s{0,3}\[[^\]]+\]:\s*<?([^\s>]+)",
+                r"""\b(?:href|src)\s*=\s*["']([^"']+)["']""")
+    for pattern in patterns:
+        for m in re.finditer(pattern, text, re.MULTILINE):
+            target = m.group(1)
+            if re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:|^//", target):
+                continue   # https:, mailto:, data: ...
+            found.append((text.count("\n", 0, m.start()) + 1, target))
+    return sorted(found)
+
+
+@pytest.mark.parametrize("page", DOC_PAGES, ids=_page_id)
+def test_doc_relative_links_resolve(page: Path) -> None:
+    text, name = read(page), _doc_name(page)
+    problems = []
+    for line, target in relative_links(text):
+        path_part, _, anchor = target.partition("#")
+        dest = (page.parent / unquote(path_part)).resolve() if path_part else page
+        if not dest.exists():
+            problems.append(f"{name}:{line}: {target}: no such file")
+        elif anchor and dest.suffix == ".md" and dest.is_file():
+            if unquote(anchor) not in heading_anchors(dest.read_text(encoding="utf-8")):
+                problems.append(f"{name}:{line}: {target}: no heading with that anchor")
+    assert not problems, "\n".join(problems)
+
+
+# ─── Writing style (see the style guide: no dashes, no filler words) ─────────
+
+def _style_files() -> list[Path]:
+    files = [README, AGENTS, CHANGELOG, LLMS, ROOT / "experiments" / "README.md"]
+    for folder in (DOCS, ROOT / "skills"):
+        files += sorted(folder.rglob("*.md")) if folder.is_dir() else []
+    return [path for path in files if path.is_file()]
+
+
+# Banned words and phrases: (what to report, regex). Case-insensitive, any inflection.
+BANNED: tuple[tuple[str, str], ...] = (
+    ("delve", r"\bdelv(?:e|es|ed|ing)\b"),
+    ("seamless", r"\bseamless(?:ly)?\b"),
+    ("robust", r"\brobust(?:ly|ness)?\b"),
+    ("leverage", r"\bleverag(?:e|es|ed|ing)\b"),
+    ("utilize", r"\butili[sz](?:e|es|ed|ing|ation)\b"),
+    ("comprehensive", r"\bcomprehensive(?:ly)?\b"),
+    ("cutting-edge", r"\bcutting[- ]edge\b"),
+    ("state-of-the-art", r"\bstate[- ]of[- ]the[- ]art\b"),
+    ("empower", r"\bempower(?:s|ed|ing|ment)?\b"),
+    ("unlock", r"\bunlock(?:s|ed|ing)?\b"),
+    ("unleash", r"\bunleash(?:es|ed|ing)?\b"),
+    ("elevate", r"\belevat(?:e|es|ed|ing)\b"),   # "elevation" is a real term
+    ("harness", r"\bharness(?:es|ed|ing)?\b"),
+    ("streamline", r"\bstreamlin(?:e|es|ed|ing)\b"),
+    ("supercharge", r"\bsupercharg(?:e|es|ed|ing)\b"),
+    ("game-changer", r"\bgame[- ]chang(?:er|ers|ing)\b"),
+    ("revolutionize", r"\brevolution(?:i[sz](?:e|es|ed|ing)|ary)\b"),
+    ("effortless", r"\beffortless(?:ly)?\b"),
+    ("blazing", r"\bblazing(?:ly)?\b"),
+    ("lightning-fast", r"\blightning[- ]fast\b"),
+    ("powerful", r"\bpowerful(?:ly)?\b"),
+    ("journey", r"\bjourneys?\b"),
+    ("landscape", r"\blandscapes?\b"),
+    ("tapestry", r"\btapestr(?:y|ies)\b"),
+    ("testament", r"\btestaments?\b"),
+    ("crucial", r"\bcrucial(?:ly)?\b"),
+    ("pivotal", r"\bpivotal\b"),
+    ("vibrant", r"\bvibrant(?:ly)?\b"),
+    ("intricate", r"\bintrica(?:te|tely|cy|cies)\b"),
+    ("meticulous", r"\bmeticulous(?:ly)?\b"),
+    ("realm", r"\brealms?\b"),
+    ("foster", r"\bfoster(?:s|ed|ing)?\b"),
+    ("embark", r"\bembark(?:s|ed|ing)?\b"),
+    ("boast", r"\bboast(?:s|ed|ing|ful)?\b"),
+    ("showcase", r"\bshowcas(?:e|es|ed|ing)\b"),
+    ("plethora", r"\bplethora\b"),
+    ("myriad", r"\bmyriad\b"),
+    ("paramount", r"\bparamount\b"),
+    ("furthermore", r"\bfurthermore\b"),
+    ("moreover", r"\bmoreover\b"),
+    ("holistic", r"\bholistic(?:ally)?\b"),
+    ("synergy", r"\bsynerg(?:y|ies|istic)\b"),
+    ("elegant", r"\belegan(?:t|tly|ce)\b"),
+    ("stunning", r"\bstunning(?:ly)?\b"),
+    ("breeze", r"\bbreezes?\b"),
+    ("hassle-free", r"\bhassle[- ]free\b"),
+    ("a wide range of", r"\ba wide range of\b"),
+    ("in today's", r"\bin today['\N{RIGHT SINGLE QUOTATION MARK}]s\b"),
+    ("whether you're", r"\bwhether you(?:['\N{RIGHT SINGLE QUOTATION MARK}]re| are)\b"),
+    ("look no further", r"\blook no further\b"),
+    ("at its core", r"\bat its core\b"),
+    ("dive into", r"\b(?:dive|dives|diving|dove)\s+into\b"),
+    ("deep dive", r"\bdeep[- ]dives?\b"),
+    ("it's worth noting", r"\bit(?:['\N{RIGHT SINGLE QUOTATION MARK}]s| is) worth not(?:ing|e)\b"),
+    ("it is important to note", r"\bit(?:['\N{RIGHT SINGLE QUOTATION MARK}]s| is) important to note\b"),
+    ("in conclusion", r"\bin conclusion\b"),
+    ("rest assured", r"\brest assured\b"),
+    ("best-in-class", r"\bbest[- ]in[- ]class\b"),
+    ("world-class", r"\bworld[- ]class\b"),
+    ("next-level", r"\bnext[- ]level\b"),   # also "take it to the next level"
+    ("first-class", r"\bfirst[- ]class\b"),
+    ("out of the box", r"\bout[- ]of[- ]the[- ]box\b"),
+    ("under the hood", r"\bunder the hood\b"),
+    ("the power of", r"\bthe power of\b"),
+    ("simply", r"\bsimply\b"),
+    ("magic", r"\bmagic(?:al|ally)?\b"),
+    ("easily", r"\beasily\b"),
+    ("various", r"\bvarious\b"),
+    ("not just X, but Y", r"\bnot just\b[^.]*?\bbut\b"),
+)
+_BANNED_RE = [(label, re.compile(pattern, re.IGNORECASE)) for label, pattern in BANNED]
+
+_DASH_RULES = (
+    ("em dash", re.compile("\N{EM DASH}|&mdash;")),
+    ("en dash", re.compile("\N{EN DASH}|&ndash;")),
+    ("spaced hyphen used as a dash",
+     re.compile(r"(?<=[\w)\].,;:!?'\"*_\N{RIGHT SINGLE QUOTATION MARK}\N{RIGHT DOUBLE QUOTATION MARK}])"
+                r" - "
+                r"(?=[\w(\[\"'*_\N{LEFT SINGLE QUOTATION MARK}\N{LEFT DOUBLE QUOTATION MARK}])")),
+    ("double hyphen used as a dash", re.compile(r"(?<=\S) -- (?=\S)|(?<=[A-Za-z])--(?=[A-Za-z])")),
+)
+# Pictographs, except status ticks and warning signs.
+_EMOJI = "".join(chr(c) for c in (0x1F000, 0x2D, 0x1FAFF, 0x2600, 0x2D, 0x27BF, 0x2B50, 0x2B55))
+_TICKS = "".join(chr(c) for c in (0x2705, 0x274C, 0x2714, 0x2713, 0x2717, 0x2716, 0x26A0))
+_SENTENCE_RULES = (
+    ("'Additionally' starting a sentence", re.compile(r"(?:^|(?<=[.!?:])\s+)additionally\b",
+                                                      re.IGNORECASE)),
+    ("exclamation mark", re.compile(r"(?<=[\w)\]\"'*_])!(?=[\s*_)\"']|$)")),
+    ("decorative emoji", re.compile(f"[{_EMOJI}](?<![{_TICKS}])")),
+)
+_BULLET_RE = re.compile(r"^\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+")
+
+
+def style_prose(text: str) -> str:
+    """
+    The text a reader sees as prose, with line numbers kept: fenced blocks become
+    blank lines, inline code a placeholder word, link targets and URLs disappear.
+    """
+    text = FENCE_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    text = re.sub(r"``[^`\n]+``|`[^`\n]+`", "CODE", text)
+    text = re.sub(r"\]\([^)\s]*(?:\s+\"[^\"]*\")?\)", "]", text)            # [text](target)
+    text = re.sub(r"""\b(?:href|src)\s*=\s*["'][^"']*["']""", "", text)
+    return re.sub(r"<?\b(?:https?|mailto):[^\s>)]+>?", "URL", text)
+
+
+def style_problems(text: str, name: str) -> list[str]:
+    problems = []
+    for number, line in enumerate(style_prose(text).splitlines(), 1):
+        body = _BULLET_RE.sub("", line, count=1)
+        hits = [(label, m) for label, rule in _DASH_RULES for m in rule.finditer(body)]
+        hits += [(label, m) for label, rule in _SENTENCE_RULES for m in rule.finditer(body)]
+        hits += [(f"banned word '{label}'", m) for label, rule in _BANNED_RE
+                 for m in rule.finditer(line)]
+        for label, m in hits:
+            context = m.string[max(0, m.start() - 25):m.end() + 25].strip()
+            problems.append(f"{name}:{number}: {label}: ...{context}...")
+    return problems
+
+
+def test_style_checker_catches_what_it_should() -> None:
+    bad = ("The engine \N{EM DASH} fast. Use 3.10\N{EN DASH}3.15.\nGeocoding - and maps.\n"
+           "A -- B. It's a robust, seamless tool that lets you delve into maps!\n"
+           "Simply put, it utilizes the power of maps. \U0001F680\nAdditionally, this.\n")
+    labels = {problem.split(": ", 2)[1] for problem in style_problems(bad, "x.md")}
+    assert labels >= {"em dash", "en dash", "spaced hyphen used as a dash",
+                      "double hyphen used as a dash", "banned word 'robust'",
+                      "banned word 'seamless'", "banned word 'delve'", "exclamation mark",
+                      "banned word 'simply'", "banned word 'utilize'",
+                      "banned word 'the power of'", "decorative emoji",
+                      "'Additionally' starting a sentence"}
+    good = ("# Load a CSV file\n\n- Load the file: list bullets are fine.\n"
+            "Use `--near 28.61,77.21,25` and `qoregeo mcp add -- uvx`.\n"
+            "```python\ngeo.load('x.csv')  # robust \N{EM DASH} code is not prose\n```\n"
+            "| Option | Default |\n|---|---|\n| `tiles` | - |\n"
+            "Elevation, zero-dependency, [maps](maps.md), ![map](a-landscape.svg), \N{WHITE HEAVY CHECK MARK}.\n"
+            "<!-- a comment --> x != y\n")
+    assert style_problems(good, "x.md") == []
+
+
+@pytest.mark.parametrize("path", _style_files(), ids=lambda p: p.relative_to(ROOT).as_posix())
+def test_writing_style(path: Path) -> None:
+    # No em or en dashes, no spaced hyphens or double hyphens as dashes, no filler words.
+    # Fenced code and inline code are not checked.
+    problems = style_problems(read(path), path.relative_to(ROOT).as_posix())
+    assert not problems, f"{len(problems)} style problem(s):\n" + "\n".join(problems)

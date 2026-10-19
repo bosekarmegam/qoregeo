@@ -1,7 +1,7 @@
 """
 qoregeo.render
 ==============
-Static map images — SVG and PNG — in pure Python, with no dependencies.
+Static map images (SVG and PNG) in pure Python, with no dependencies.
 
     from qoregeo.render import render_png, render_svg
 
@@ -11,8 +11,8 @@ Static map images — SVG and PNG — in pure Python, with no dependencies.
 
 Both functions take a list of GeoJSON Feature dicts (any geometry type,
 including GeometryCollection; a ``None`` geometry is skipped) and optional
-``overlays`` — GeoJSON geometries, Features or FeatureCollections such as a
-``geo.buffer()`` zone — drawn as dashed gold outlines.
+``overlays``, drawn as dashed gold outlines. Overlays are GeoJSON geometries,
+Features or FeatureCollections, such as a ``geo.buffer()`` zone.
 
 Drawing
 -------
@@ -30,7 +30,7 @@ Drawing
 
   - a light latitude / longitude graticule (``grid=True``) with labels on
     the left and bottom edges, e.g. ``28.6°N`` and ``77.2°E`` (``179°W`` on
-    an antimeridian map), at a "nice" step giving about 3-7 lines;
+    an antimeridian map), at a "nice" step giving about 3 to 7 lines;
   - a scale bar in the bottom-left corner (``scale_bar=True``), e.g.
     ``500 m`` or ``20 km``, for views up to ~60° across;
   - optional feature labels (``labels="name"``): the value of that property
@@ -42,7 +42,7 @@ Drawing
 
 The PNG is rasterised into a ``bytearray`` (anti-aliased strokes and markers,
 scanline polygon fill, an embedded 5x7 bitmap font for the text) and encoded
-with ``zlib`` — 8-bit RGBA, no external libraries.
+with ``zlib`` as 8-bit RGBA. No external libraries are needed.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ _LIGHT_TEXT: _RGB = (0xF5, 0xF7, 0xFA)
 _POLYGON_FILL_OPACITY = 0.18
 _OVERLAY_FILL_OPACITY = 0.06
 _LINE_WIDTH = 2.0
-_DASH = (6.0, 4.0)                 # on, off (px) — same as the HTML overlay dashArray
+_DASH = (6.0, 4.0)                 # on, off (px), the same as the HTML overlay dashArray
 _POINT_STROKE = 1.5                # white marker outline (thinner on tiny markers)
 
 _TITLE_BAND = 28                   # px reserved above the map when there is a title
@@ -112,7 +112,7 @@ _SCALE_BAR_MAX_DEG = 60.0          # no scale bar on wider (or taller) views
 _EARTH_RADIUS_M = 6378137.0        # Web Mercator sphere
 
 _MAX_LAT = 85.0511287798           # Web Mercator limit
-_MIN_SPAN = math.radians(0.01)     # smallest extent shown (~1 km) — e.g. a single point
+_MIN_SPAN = math.radians(0.01)     # smallest extent shown (~1 km), e.g. for a single point
 _SIZE_RANGE = (16, 8192)
 _RADIUS_RANGE = (0.5, 50.0)
 _LEVELS = 64                       # alpha quantisation for blending lookup tables
@@ -209,8 +209,8 @@ _Item = tuple[dict[str, Any], Any]
 
 def _collect(fn: str, name: str, items: Any) -> list[_Item]:
     """
-    The drawable geometries in ``items`` — a list of Features, geometries or
-    FeatureCollections (or one such dict) — each with its Feature's
+    The drawable geometries in ``items`` (a list of Features, geometries or
+    FeatureCollections, or one such dict), each with its Feature's
     properties. Null geometries are skipped; anything else that is not valid
     GeoJSON raises InvalidArgumentError.
     """
@@ -330,10 +330,10 @@ def _add_geometry(geometry: dict[str, Any], layer: _Layer) -> None:
 
 def _spans_world(layer: _Layer) -> bool:
     """
-    True if a line or ring runs (all but) the whole way round the globe — the
-    same rule as map_builder._spans_world: its longitudes span 360° (-180° to
-    180°, 0° to 360° …), or at least 359° with every vertex on one of its two
-    extreme meridians (an extent box from -179.9999° to 179.9999°).
+    True if a line or ring runs (all but) the whole way round the globe. This
+    is the same rule as map_builder._spans_world: its longitudes span 360°
+    (-180° to 180°, 0° to 360° …), or at least 359° with every vertex on one
+    of its two extreme meridians (an extent box from -179.9999° to 179.9999°).
     """
     for path in [*layer.lines, *(ring for rings in layer.polygons for ring in rings)]:
         xs = [p[0] for p in path]
@@ -555,7 +555,7 @@ def _degrees(value: float, decimals: int, positive: str, negative: str) -> str:
 class _Scene:
     """
     Validated options, the features and overlays in pixel coordinates, and
-    the layout of the annotations — graticule, scale bar and labels — that
+    the layout of the annotations (graticule, scale bar and labels) that
     the SVG and the PNG writers both draw from.
     """
 
@@ -1063,7 +1063,7 @@ class _Canvas:
     # Blending ---------------------------------------------------------------
 
     def blend_span(self, y: int, x0: int, x1: int, t: _Tables) -> None:
-        """Blend pixels x0..x1 (inclusive) of row y — three C-level translates."""
+        """Blend pixels x0..x1 (inclusive) of row y with three C-level translates."""
         buf = self.buf
         s = (y * self.w + x0) * 4
         e = (y * self.w + x1 + 1) * 4
@@ -1348,7 +1348,7 @@ def _marker_stamp(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bitmap font — classic 5x7, printable ASCII (0x20-0x7E), 5 column bytes per
+# Bitmap font: classic 5x7, printable ASCII (0x20-0x7E), 5 column bytes per
 # glyph, bit 0 = top row.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1511,15 +1511,15 @@ def render_svg(
         features    : GeoJSON Feature dicts (any geometry type; null geometries
                       are skipped). Bare geometries and a FeatureCollection
                       are accepted too.
-        width       : Image width in pixels (16–8192).
-        height      : Image height in pixels (16–8192).
+        width       : Image width in pixels (16 to 8192).
+        height      : Image height in pixels (16 to 8192).
         title       : Optional title drawn above the map (XML-escaped). On
                       images under 56 px tall it is set small over the map.
         overlays    : GeoJSON geometries / Features / FeatureCollections drawn
                       as dashed gold outlines, e.g. ``[geo.buffer(p, 10)]``.
         background  : Background colour, ``'#rrggbb'`` or ``'#rgb'``.
         padding     : Space in pixels between the data and the image edge.
-        point_radius: Radius of point markers in pixels (0.5–50).
+        point_radius: Radius of point markers in pixels (0.5 to 50).
         labels      : Name of a feature property to label the features with,
                       e.g. ``"name"``: its value is written to the right of
                       each point (centred on lines and polygons). Labels that

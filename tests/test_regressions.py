@@ -1,7 +1,7 @@
 """
 tests/test_regressions.py
 =========================
-Regression tests for defects found while reviewing the 1.1.0 release — each
+Regression tests for defects found while reviewing the 1.1.0 release. Each
 test pins one fixed behaviour (most also worked in 1.0.3 and must keep working).
 """
 
@@ -321,7 +321,7 @@ class TestAntimeridianMaps:
         geo = GeoEngine(verbose=False).load_data([
             {"type": "Point", "coordinates": [178.44, -18.14]},          # Fiji
             {"type": "Point", "coordinates": [-179.95, -16.8]},          # Fiji, east of 180
-            {"type": "LineString", "coordinates": [[-0.1276, 51.5], [2.3522, 48.86]]},  # London–Paris
+            {"type": "LineString", "coordinates": [[-0.1276, 51.5], [2.3522, 48.86]]},  # London to Paris
         ])
         out = tmp_path / "g.html"
         geo.map(out, tiles="osm")

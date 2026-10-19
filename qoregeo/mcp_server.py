@@ -13,7 +13,7 @@ Both protocol eras are spoken:
 * stateless era (2026-07-28): ``server/discover`` and every request carrying
   its protocol version in ``_meta``.
 
-stdout carries protocol messages only — diagnostics go to stderr.
+stdout carries protocol messages only. Diagnostics go to stderr.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ class MCPServer:
 
     def handle(self, message: Any) -> Json | list[Json] | None:
         if isinstance(message, list):
-            # JSON-RPC batches (only in protocol 2025-03-26) — answer each request.
+            # JSON-RPC batches (only in protocol 2025-03-26): answer each request.
             if not message:
                 return _error(None, INVALID_REQUEST, "Empty batch")
             replies = [r for r in (self._handle_one(m) for m in message) if r is not None]
@@ -151,7 +151,7 @@ class MCPServer:
             result = call()
         except _RpcError as exc:
             return _error(msg_id, exc.code, exc.message)
-        except Exception as exc:   # noqa: BLE001 — never let one request kill the server
+        except Exception as exc:   # noqa: BLE001 (never let one request kill the server)
             _log(f"internal error in {method}: {type(exc).__name__}: {exc}")
             return _error(msg_id, INTERNAL_ERROR, f"Internal error: {type(exc).__name__}")
         return {"jsonrpc": "2.0", "id": msg_id, "result": result}

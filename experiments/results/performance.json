@@ -1,0 +1,1787 @@
+{
+ "meta": {
+  "experiment": "performance",
+  "mode": "quick",
+  "qoregeo_version": "1.1.0",
+  "python_version": "3.13.16 (main, Oct  1 2026, 15:40:24) [GCC 13.3.0]",
+  "python_implementation": "CPython",
+  "platform": "Linux-6.18.44-fc-v139-x86_64-with-glibc2.39",
+  "machine": "x86_64",
+  "cpu_count": 4,
+  "reference_libraries": {
+   "shapely": "2.2.0",
+   "geos": "3.14.1",
+   "pyproj": "3.8.0",
+   "geopy": "2.5.0",
+   "geographiclib": "2.1",
+   "haversine": "2.9.0",
+   "numpy": "2.5.4",
+   "matplotlib": "3.11.2",
+   "build": "1.6.1",
+   "pip": "26.2.1"
+  },
+  "seed": 20261019,
+  "sizes": {
+   "n_values": [
+    500,
+    2000
+   ],
+   "repeats": 2,
+   "min_time_s": 0.005,
+   "gc_off_pass": true,
+   "image_max_n": 2000,
+   "micro_pairs": 200,
+   "micro_repeats": 3,
+   "vector_n": [
+    2000
+   ],
+   "vector_min_time_s": 0.02,
+   "pip_points": 200,
+   "polygon_vertices": 64,
+   "import_runs": 2,
+   "memory_n": 2000
+  },
+  "dataset": {
+   "columns": [
+    "name",
+    "category",
+    "revenue",
+    "latitude",
+    "longitude"
+   ],
+   "bbox_west_south_east_north": [
+    68.1,
+    6.5,
+    97.4,
+    35.7
+   ],
+   "points": "75 % Gaussian clusters (sigma 40 km) around 10 cities, 25 % uniform in the bbox",
+   "categories": {
+    "grocery": 24,
+    "pharmacy": 14,
+    "cafe": 14,
+    "fuel": 10,
+    "bank": 12,
+    "school": 10,
+    "clinic": 8,
+    "hotel": 8
+   },
+   "revenue": "lognormal(mu=11.0, sigma=0.8), 2 decimals",
+   "smaller datasets are prefixes of the largest": true
+  },
+  "queries": {
+   "filter_eq": "filter('category', 'cafe')",
+   "filter_ge": "filter('revenue', 150000, op='>=') on CSV strings",
+   "filter_ge_numeric_properties": "the same on the GeoJSON-loaded engine (numbers)",
+   "where": "where(lambda p: float(p['revenue']) >= 150000)",
+   "filter_by_radius": "filter_by_radius(28.6139, 77.209, radius=25.0)",
+   "filter_by_bbox": "filter_by_bbox(**{'min_lat': 18.0, 'min_lng': 72.5, 'max_lat': 19.6, 'max_lng': 74.2})",
+   "filter_by_polygon_buffer": "filter_by_polygon(buffer((19.076, 72.8777), 50.0)): tested as an exact circle",
+   "filter_by_polygon_buffer_as_plain_polygon": "the same 64-gon ring as a plain Polygon (ray casting)",
+   "filter_by_polygon_64": "a seeded non-convex 64-vertex polygon",
+   "nearest": "nearest((12.9716, 77.5946))",
+   "k_nearest": "k_nearest((12.9716, 77.5946), k=10)",
+   "sort_by_head": "sort_by('revenue', descending=True).head(10)",
+   "map_html": "map_html() with default options",
+   "image_png / image_svg": "image('out.png' / 'out.svg') with default options, 1200x800",
+   "operations run on": "the engine loaded from CSV with default options (string values); the CSV- and GeoJSON-loaded engines are both in memory while the non-load operations run, the three loads run with neither"
+  },
+  "utc_timestamp": "2026-10-19T13:26:43+00:00",
+  "command": "python experiments/03_performance.py --quick --tmpdir /tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/perftmp",
+  "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
+  "network_used": false,
+  "runtime_seconds": 15.3,
+  "figures": [
+   "docs/assets/experiments/performance-ops-vs-n.svg",
+   "docs/assets/experiments/performance-micro.svg",
+   "docs/assets/experiments/performance-import-time.svg"
+  ],
+  "notes": [
+   "Timing numbers are indicative: this run shared a 4-CPU machine with other jobs.",
+   "Dataset operations: median and min of repeats, each repeat a calibrated loop after a gc.collect(). 'operations' has the garbage collector on; 'operations_gc_disabled' comes from loops with it off, alternating with the on loops.",
+   "Per-call micro-benchmarks run with the garbage collector off, like timeit.",
+   "The Python under test differs from the cp312 wheels used for the footprint comparison; wheel sizes do not depend on the interpreter running this script."
+  ]
+ },
+ "results": {
+  "datasets": {
+   "500": {
+    "n": 500,
+    "csv_bytes": 24477,
+    "geojson_bytes": 86318
+   },
+   "2000": {
+    "n": 2000,
+    "csv_bytes": 97953,
+    "geojson_bytes": 345264
+   }
+  },
+  "operations": {
+   "500": {
+    "load_csv": {
+     "median_s": 0.0030149775000154477,
+     "min_s": 0.0029789780001010513,
+     "max_s": 0.003050976999929844,
+     "first_call_s": 0.003188826000041445,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 165838.7168718301
+    },
+    "load_csv_infer_types": {
+     "median_s": 0.004928589999963151,
+     "min_s": 0.0037527449999288365,
+     "max_s": 0.006104434999997466,
+     "first_call_s": 0.006296218999978009,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 101448.89309188597
+    },
+    "load_geojson": {
+     "median_s": 0.0010793206249104514,
+     "min_s": 0.0010140667499172196,
+     "max_s": 0.0011445744999036833,
+     "first_call_s": 0.0012797899998986395,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 463254.3735940224
+    },
+    "filter_eq": {
+     "median_s": 0.0003532726428667437,
+     "min_s": 0.0003363420714452202,
+     "max_s": 0.0003702032142882672,
+     "first_call_s": 0.000379545999749098,
+     "number": 14,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 60,
+     "features_per_s": 1415337.4457263101
+    },
+    "filter_ge": {
+     "median_s": 0.0006241817499983426,
+     "min_s": 0.0006210381250184582,
+     "max_s": 0.000627325374978227,
+     "first_call_s": 0.0006476090002252022,
+     "number": 8,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 60,
+     "features_per_s": 801048.7330033722
+    },
+    "filter_ge_numeric_properties": {
+     "median_s": 0.00040644429166529034,
+     "min_s": 0.00039980183332014957,
+     "max_s": 0.0004130867500104311,
+     "first_call_s": 0.00042983599996659905,
+     "number": 12,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 60,
+     "features_per_s": 1230180.8888775178
+    },
+    "where": {
+     "median_s": 0.000231675499991171,
+     "min_s": 0.00022968599998623377,
+     "max_s": 0.00023366499999610824,
+     "first_call_s": 0.0002895000002354209,
+     "number": 18,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 60,
+     "features_per_s": 2158191.0906377872
+    },
+    "filter_by_radius": {
+     "median_s": 0.0007652517500294682,
+     "min_s": 0.0007253195000582006,
+     "max_s": 0.000805184000000736,
+     "first_call_s": 0.0009208430001308443,
+     "number": 6,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 5,
+     "features_per_s": 653379.7537617472
+    },
+    "filter_by_bbox": {
+     "median_s": 0.0004716081999731614,
+     "min_s": 0.00045823839996046446,
+     "max_s": 0.0004849779999858583,
+     "first_call_s": 0.0005274370000734052,
+     "number": 10,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 58,
+     "features_per_s": 1060202.0915422046
+    },
+    "filter_by_polygon_buffer": {
+     "median_s": 0.0009665141999903426,
+     "min_s": 0.0008449885999652906,
+     "max_s": 0.0010880398000153945,
+     "first_call_s": 0.0010660030002327403,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 26,
+     "features_per_s": 517322.9736355617
+    },
+    "filter_by_polygon_buffer_as_plain_polygon": {
+     "median_s": 0.0014305763750144251,
+     "min_s": 0.0014188430000103835,
+     "max_s": 0.0014423097500184667,
+     "first_call_s": 0.0015075220003382128,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 26,
+     "features_per_s": 349509.4765527344
+    },
+    "filter_by_polygon_64": {
+     "median_s": 0.0018038008749954315,
+     "min_s": 0.0015155377500377654,
+     "max_s": 0.0020920639999530977,
+     "first_call_s": 0.001442875000066124,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 113,
+     "features_per_s": 277192.45895213704
+    },
+    "nearest": {
+     "median_s": 0.0013390649166543276,
+     "min_s": 0.000827395833312039,
+     "max_s": 0.001850733999996616,
+     "first_call_s": 0.000908613999854424,
+     "number": 6,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_index": 246,
+     "result_distance_km": 10.4052,
+     "features_per_s": 373394.892048443
+    },
+    "k_nearest": {
+     "median_s": 0.0017091755000061917,
+     "min_s": 0.0016580803333757406,
+     "max_s": 0.001760270666636643,
+     "first_call_s": 0.0016768590003266581,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 10,
+     "features_per_s": 292538.7123780962
+    },
+    "sort_by_head": {
+     "median_s": 0.0011924771999929362,
+     "min_s": 0.001085968600000342,
+     "max_s": 0.0012989857999855304,
+     "first_call_s": 0.0011266429996794614,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 10,
+     "features_per_s": 419295.2284563276
+    },
+    "save_csv": {
+     "median_s": 0.00278068499994788,
+     "min_s": 0.0027457424998829083,
+     "max_s": 0.0028156275000128517,
+     "first_call_s": 0.002683445999991818,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 24367,
+     "features_per_s": 179811.80896411202
+    },
+    "save_geojson": {
+     "median_s": 0.006120225499898879,
+     "min_s": 0.004857642999922973,
+     "max_s": 0.007382807999874785,
+     "first_call_s": 0.006189579999954731,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 144379,
+     "features_per_s": 81696.33619026965
+    },
+    "map_html": {
+     "median_s": 0.004429424750014732,
+     "min_s": 0.004399321999926542,
+     "max_s": 0.004459527500102922,
+     "first_call_s": 0.00490934700019352,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 111207,
+     "features_per_s": 112881.47518441013
+    },
+    "image_png": {
+     "median_s": 0.022754629000019122,
+     "min_s": 0.022470447999694443,
+     "max_s": 0.0230388100003438,
+     "first_call_s": 0.03113515399991229,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 25661,
+     "features_per_s": 21973.55096405131
+    },
+    "image_svg": {
+     "median_s": 0.0022544651666673117,
+     "min_s": 0.0021631756667375157,
+     "max_s": 0.002345754666597107,
+     "first_call_s": 0.0021236490001683705,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 21070,
+     "features_per_s": 221782.09155439318
+    },
+    "baseline_csv_feature_dicts": {
+     "median_s": 0.0009941411999989213,
+     "min_s": 0.0009288827999625937,
+     "max_s": 0.001059399600035249,
+     "first_call_s": 0.0012153910001870827,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 502946.6639150882
+    },
+    "baseline_json_load": {
+     "median_s": 0.0006693914999686967,
+     "min_s": 0.0006305374285407847,
+     "max_s": 0.0007082455713966088,
+     "first_call_s": 0.0008226290001402958,
+     "number": 7,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 746947.0407427968
+    },
+    "baseline_build_numpy_arrays": {
+     "median_s": 7.438869736712437e-05,
+     "min_s": 6.730428946722991e-05,
+     "max_s": 8.147310526701883e-05,
+     "first_call_s": 0.000133992999963084,
+     "number": 38,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 500,
+     "features_per_s": 6721451.210960067
+    },
+    "baseline_numpy_radius_mask": {
+     "median_s": 3.0664678571871006e-05,
+     "min_s": 2.707600000511385e-05,
+     "max_s": 3.425335713862816e-05,
+     "first_call_s": 0.0001804660000743752,
+     "number": 28,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 5,
+     "features_per_s": 16305404.892085014
+    },
+    "baseline_shapely_contains_xy": {
+     "median_s": 4.874882050642508e-05,
+     "min_s": 4.775892306824039e-05,
+     "max_s": 4.973871794460977e-05,
+     "first_call_s": 0.00012869400006820797,
+     "number": 39,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 113,
+     "features_per_s": 10256658.413593825
+    },
+    "_checks": {
+     "buffer_polygon_equals_radius_50km": true,
+     "polygon64_equals_shapely": true,
+     "radius_equals_numpy": true,
+     "filter_ge_strings_equals_numbers": true
+    }
+   },
+   "2000": {
+    "load_csv": {
+     "median_s": 0.010073449999708828,
+     "min_s": 0.006638952999765024,
+     "max_s": 0.013507946999652631,
+     "first_call_s": 0.006851631999779784,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 198541.71113747623
+    },
+    "load_csv_infer_types": {
+     "median_s": 0.01784876549982073,
+     "min_s": 0.016242239999883168,
+     "max_s": 0.01945529099975829,
+     "first_call_s": 0.013509485000213317,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 112052.56744619609
+    },
+    "load_geojson": {
+     "median_s": 0.004441352249955344,
+     "min_s": 0.004412636500092049,
+     "max_s": 0.004470067999818639,
+     "first_call_s": 0.004265683999619796,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 450313.30267039937
+    },
+    "filter_eq": {
+     "median_s": 0.0020066745000804076,
+     "min_s": 0.0016363145000468649,
+     "max_s": 0.0023770345001139503,
+     "first_call_s": 0.00397403699980714,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 278,
+     "features_per_s": 996673.8501535051
+    },
+    "filter_ge": {
+     "median_s": 0.0039973436666969064,
+     "min_s": 0.003687610666626521,
+     "max_s": 0.0043070766667672915,
+     "first_call_s": 0.0024959170000329323,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 243,
+     "features_per_s": 500332.26231274835
+    },
+    "filter_ge_numeric_properties": {
+     "median_s": 0.0017543846666588556,
+     "min_s": 0.0017342699999668791,
+     "max_s": 0.0017744993333508319,
+     "first_call_s": 0.0016787220001788228,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 243,
+     "features_per_s": 1140000.8436057
+    },
+    "where": {
+     "median_s": 0.0016283458000089014,
+     "min_s": 0.0009365758000058122,
+     "max_s": 0.0023201158000119904,
+     "first_call_s": 0.0010070880002785998,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 243,
+     "features_per_s": 1228240.3405892453
+    },
+    "filter_by_radius": {
+     "median_s": 0.004083753250029076,
+     "min_s": 0.0030843620002087846,
+     "max_s": 0.005083144499849368,
+     "first_call_s": 0.0036555290002979746,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 28,
+     "features_per_s": 489745.55453020084
+    },
+    "filter_by_bbox": {
+     "median_s": 0.004100695500028451,
+     "min_s": 0.003609999333396748,
+     "max_s": 0.0045913916666601535,
+     "first_call_s": 0.0019398539998292108,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 224,
+     "features_per_s": 487722.143715895
+    },
+    "filter_by_polygon_buffer": {
+     "median_s": 0.005581106249906043,
+     "min_s": 0.004875043499851017,
+     "max_s": 0.006287168999961068,
+     "first_call_s": 0.003400827999939793,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 91,
+     "features_per_s": 358351.8948476693
+    },
+    "filter_by_polygon_buffer_as_plain_polygon": {
+     "median_s": 0.00574114149981142,
+     "min_s": 0.0053152759996919485,
+     "max_s": 0.006167006999930891,
+     "first_call_s": 0.005635363000237703,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 91,
+     "features_per_s": 348362.77769250143
+    },
+    "filter_by_polygon_64": {
+     "median_s": 0.006368232500108206,
+     "min_s": 0.00631614800022362,
+     "max_s": 0.006420316999992792,
+     "first_call_s": 0.0071095299999797135,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 485,
+     "features_per_s": 314058.8852505019
+    },
+    "nearest": {
+     "median_s": 0.004794096999944486,
+     "min_s": 0.004781405499898028,
+     "max_s": 0.004806788499990944,
+     "first_call_s": 0.0025382530002389103,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_index": 941,
+     "result_distance_km": 4.3013,
+     "features_per_s": 417179.7108033399
+    },
+    "k_nearest": {
+     "median_s": 0.004144285750044219,
+     "min_s": 0.00390169699994658,
+     "max_s": 0.004386874500141857,
+     "first_call_s": 0.004815012000108254,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 10,
+     "features_per_s": 482592.2054189097
+    },
+    "sort_by_head": {
+     "median_s": 0.004603625000072498,
+     "min_s": 0.004555329000140773,
+     "max_s": 0.004651921000004222,
+     "first_call_s": 0.007249394000155007,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 10,
+     "features_per_s": 434440.25088240334
+    },
+    "save_csv": {
+     "median_s": 0.014446068999859563,
+     "min_s": 0.011489690999951563,
+     "max_s": 0.017402446999767562,
+     "first_call_s": 0.015070727999955125,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 97480,
+     "features_per_s": 138445.9675514109
+    },
+    "save_geojson": {
+     "median_s": 0.018203558999857705,
+     "min_s": 0.01713431300004231,
+     "max_s": 0.0192728049996731,
+     "first_call_s": 0.017033323000305245,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 577492,
+     "features_per_s": 109868.6251416898
+    },
+    "map_html": {
+     "median_s": 0.02475508249995073,
+     "min_s": 0.02284716499980277,
+     "max_s": 0.02666300000009869,
+     "first_call_s": 0.022268961999998282,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 412320,
+     "features_per_s": 80791.48999014568
+    },
+    "image_png": {
+     "median_s": 0.06333547400004136,
+     "min_s": 0.05886036599986255,
+     "max_s": 0.06781058200022017,
+     "first_call_s": 0.06574188199965647,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 42116,
+     "features_per_s": 31577.880036055212
+    },
+    "image_svg": {
+     "median_s": 0.00697858349985836,
+     "min_s": 0.0066979479997826274,
+     "max_s": 0.007259218999934092,
+     "first_call_s": 0.007442840999829059,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": true,
+     "output_bytes": 79248,
+     "features_per_s": 286591.1112248772
+    },
+    "baseline_csv_feature_dicts": {
+     "median_s": 0.0046320954999146124,
+     "min_s": 0.004214180999952077,
+     "max_s": 0.0050500099998771475,
+     "first_call_s": 0.004678145000070799,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 431770.0272019149
+    },
+    "baseline_json_load": {
+     "median_s": 0.0030740899999273097,
+     "min_s": 0.0029848574999959965,
+     "max_s": 0.003163322499858623,
+     "first_call_s": 0.0031343149998974695,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 650599.0390806034
+    },
+    "baseline_build_numpy_arrays": {
+     "median_s": 0.0002907343928687364,
+     "min_s": 0.0002877250714326302,
+     "max_s": 0.00029374371430484255,
+     "first_call_s": 0.0003713379996952426,
+     "number": 14,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 2000,
+     "features_per_s": 6879131.086850737
+    },
+    "baseline_numpy_radius_mask": {
+     "median_s": 6.99942812474319e-05,
+     "min_s": 6.988915625072423e-05,
+     "max_s": 7.009940624413957e-05,
+     "first_call_s": 0.00015916800020931987,
+     "number": 32,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 28,
+     "features_per_s": 28573762.946860466
+    },
+    "baseline_shapely_contains_xy": {
+     "median_s": 0.00020046086842739896,
+     "min_s": 0.00019814873686348284,
+     "max_s": 0.00020277299999131508,
+     "first_call_s": 0.00026668999998946674,
+     "number": 19,
+     "repeats": 2,
+     "gc_enabled": true,
+     "result_count": 485,
+     "features_per_s": 9977009.556477807
+    },
+    "_checks": {
+     "buffer_polygon_equals_radius_50km": true,
+     "polygon64_equals_shapely": true,
+     "radius_equals_numpy": true,
+     "filter_ge_strings_equals_numbers": true
+    }
+   }
+  },
+  "operations_gc_disabled": {
+   "500": {
+    "load_csv": {
+     "median_s": 0.003023233500016431,
+     "min_s": 0.0030187405000106082,
+     "max_s": 0.003027726500022254,
+     "first_call_s": 0.003188826000041445,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 165385.8360584065
+    },
+    "load_csv_infer_types": {
+     "median_s": 0.0035222115000124177,
+     "min_s": 0.0034834670000236656,
+     "max_s": 0.0035609560000011697,
+     "first_call_s": 0.006296218999978009,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 141956.26809981093
+    },
+    "load_geojson": {
+     "median_s": 0.0009999436250041072,
+     "min_s": 0.0009989064999444963,
+     "max_s": 0.001000980750063718,
+     "first_call_s": 0.0012797899998986395,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 500028.1890871061
+    },
+    "filter_eq": {
+     "median_s": 0.0003434600357325378,
+     "min_s": 0.0003390168571643569,
+     "max_s": 0.00034790321430071866,
+     "first_call_s": 0.000379545999749098,
+     "number": 14,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 60,
+     "features_per_s": 1455773.4466357664
+    },
+    "filter_ge": {
+     "median_s": 0.0006542275000356312,
+     "min_s": 0.000632112875052826,
+     "max_s": 0.0006763421250184365,
+     "first_call_s": 0.0006476090002252022,
+     "number": 8,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 60,
+     "features_per_s": 764260.1388244433
+    },
+    "filter_ge_numeric_properties": {
+     "median_s": 0.00040937000001880125,
+     "min_s": 0.0003998787500070951,
+     "max_s": 0.0004188612500305074,
+     "first_call_s": 0.00042983599996659905,
+     "number": 12,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 60,
+     "features_per_s": 1221388.9634732304
+    },
+    "where": {
+     "median_s": 0.00022945497222634812,
+     "min_s": 0.00022534688888400624,
+     "max_s": 0.00023356305556868998,
+     "first_call_s": 0.0002895000002354209,
+     "number": 18,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 60,
+     "features_per_s": 2179076.7711356026
+    },
+    "filter_by_radius": {
+     "median_s": 0.0008289152499780055,
+     "min_s": 0.0007864028333036307,
+     "max_s": 0.0008714276666523801,
+     "first_call_s": 0.0009208430001308443,
+     "number": 6,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 5,
+     "features_per_s": 603197.9747184855
+    },
+    "filter_by_bbox": {
+     "median_s": 0.0004598892999865712,
+     "min_s": 0.00044633669999711857,
+     "max_s": 0.00047344189997602373,
+     "first_call_s": 0.0005274370000734052,
+     "number": 10,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 58,
+     "features_per_s": 1087218.163185358
+    },
+    "filter_by_polygon_buffer": {
+     "median_s": 0.0008153759999913746,
+     "min_s": 0.0008068453999840131,
+     "max_s": 0.000823906599998736,
+     "first_call_s": 0.0010660030002327403,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 26,
+     "features_per_s": 613214.0264188414
+    },
+    "filter_by_polygon_buffer_as_plain_polygon": {
+     "median_s": 0.0013759686249841252,
+     "min_s": 0.0013639847500144242,
+     "max_s": 0.0013879524999538262,
+     "first_call_s": 0.0015075220003382128,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 26,
+     "features_per_s": 363380.3786810681
+    },
+    "filter_by_polygon_64": {
+     "median_s": 0.01012472224999783,
+     "min_s": 0.001576873249973687,
+     "max_s": 0.018672571250021974,
+     "first_call_s": 0.001442875000066124,
+     "number": 4,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 113,
+     "features_per_s": 49384.07075809977
+    },
+    "nearest": {
+     "median_s": 0.0009823418333401908,
+     "min_s": 0.0007615728333500252,
+     "max_s": 0.0012031108333303564,
+     "first_call_s": 0.000908613999854424,
+     "number": 6,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_index": 246,
+     "result_distance_km": 10.4052,
+     "features_per_s": 508987.79124562343
+    },
+    "k_nearest": {
+     "median_s": 0.0014232258333777281,
+     "min_s": 0.0012322960001256433,
+     "max_s": 0.001614155666629813,
+     "first_call_s": 0.0016768590003266581,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 10,
+     "features_per_s": 351314.58990830346
+    },
+    "sort_by_head": {
+     "median_s": 0.0018117588999302823,
+     "min_s": 0.0011937077999391477,
+     "max_s": 0.002429809999921417,
+     "first_call_s": 0.0011266429996794614,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 10,
+     "features_per_s": 275974.9103587902
+    },
+    "save_csv": {
+     "median_s": 0.003038054250055211,
+     "min_s": 0.002843694000148389,
+     "max_s": 0.003232414499962033,
+     "first_call_s": 0.002683445999991818,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 24367,
+     "features_per_s": 164579.0229028706
+    },
+    "save_geojson": {
+     "median_s": 0.0039538000000902684,
+     "min_s": 0.0037078240002301754,
+     "max_s": 0.0041997759999503614,
+     "first_call_s": 0.006189579999954731,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 144379,
+     "features_per_s": 126460.62015999408
+    },
+    "map_html": {
+     "median_s": 0.0043973969998205575,
+     "min_s": 0.004235842999833039,
+     "max_s": 0.004558950999808076,
+     "first_call_s": 0.00490934700019352,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 111207,
+     "features_per_s": 113703.6296746469
+    },
+    "image_png": {
+     "median_s": 0.022027442500075267,
+     "min_s": 0.021691298999940045,
+     "max_s": 0.02236358600021049,
+     "first_call_s": 0.03113515399991229,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 25661,
+     "features_per_s": 22698.958356072955
+    },
+    "image_svg": {
+     "median_s": 0.0026846451666339517,
+     "min_s": 0.0021844613332480853,
+     "max_s": 0.0031848290000198176,
+     "first_call_s": 0.0021236490001683705,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 21070,
+     "features_per_s": 186244.35221989037
+    },
+    "baseline_csv_feature_dicts": {
+     "median_s": 0.0009216541999649053,
+     "min_s": 0.000899112199931551,
+     "max_s": 0.0009441961999982595,
+     "first_call_s": 0.0012153910001870827,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 542502.8172377872
+    },
+    "baseline_json_load": {
+     "median_s": 0.0006040420714076131,
+     "min_s": 0.000576137285666586,
+     "max_s": 0.00063194685714864,
+     "first_call_s": 0.0008226290001402958,
+     "number": 7,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 827756.9124197568
+    },
+    "baseline_build_numpy_arrays": {
+     "median_s": 7.511044736929762e-05,
+     "min_s": 7.49163157970064e-05,
+     "max_s": 7.530457894158884e-05,
+     "first_call_s": 0.000133992999963084,
+     "number": 38,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 500,
+     "features_per_s": 6656863.559094997
+    },
+    "baseline_numpy_radius_mask": {
+     "median_s": 3.153808929060428e-05,
+     "min_s": 2.6131107152390802e-05,
+     "max_s": 3.6945071428817755e-05,
+     "first_call_s": 0.0001804660000743752,
+     "number": 28,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 5,
+     "features_per_s": 15853845.659221921
+    },
+    "baseline_shapely_contains_xy": {
+     "median_s": 4.702692307872871e-05,
+     "min_s": 4.338446153549459e-05,
+     "max_s": 5.0669384621962825e-05,
+     "first_call_s": 0.00012869400006820797,
+     "number": 39,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 113,
+     "features_per_s": 10632207.409422472
+    }
+   },
+   "2000": {
+    "load_csv": {
+     "median_s": 0.006739872000252944,
+     "min_s": 0.006280790000346315,
+     "max_s": 0.007198954000159574,
+     "first_call_s": 0.006851631999779784,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 296741.5404810271
+    },
+    "load_csv_infer_types": {
+     "median_s": 0.01938910950002537,
+     "min_s": 0.014448200000060751,
+     "max_s": 0.02433001899998999,
+     "first_call_s": 0.013509485000213317,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 103150.6887924576
+    },
+    "load_geojson": {
+     "median_s": 0.004982665000056841,
+     "min_s": 0.004084097000031761,
+     "max_s": 0.00588123300008192,
+     "first_call_s": 0.004265683999619796,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 401391.6247584746
+    },
+    "filter_eq": {
+     "median_s": 0.0020342020000043703,
+     "min_s": 0.0017184465000354976,
+     "max_s": 0.002349957499973243,
+     "first_call_s": 0.00397403699980714,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 278,
+     "features_per_s": 983186.5271962682
+    },
+    "filter_ge": {
+     "median_s": 0.0025687263333414494,
+     "min_s": 0.0024760916667219135,
+     "max_s": 0.0026613609999609857,
+     "first_call_s": 0.0024959170000329323,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 243,
+     "features_per_s": 778595.9812224765
+    },
+    "filter_ge_numeric_properties": {
+     "median_s": 0.0018005353333592211,
+     "min_s": 0.0017128656666803483,
+     "max_s": 0.0018882050000380939,
+     "first_call_s": 0.0016787220001788228,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 243,
+     "features_per_s": 1110780.7566700964
+    },
+    "where": {
+     "median_s": 0.0010615811000207033,
+     "min_s": 0.001054316000045219,
+     "max_s": 0.0010688461999961874,
+     "first_call_s": 0.0010070880002785998,
+     "number": 5,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 243,
+     "features_per_s": 1883982.297688792
+    },
+    "filter_by_radius": {
+     "median_s": 0.0033734979998598646,
+     "min_s": 0.0032563109998591244,
+     "max_s": 0.003490684999860605,
+     "first_call_s": 0.0036555290002979746,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 28,
+     "features_per_s": 592856.4356887362
+    },
+    "filter_by_bbox": {
+     "median_s": 0.00240209200001118,
+     "min_s": 0.002321183000124923,
+     "max_s": 0.002483000999897437,
+     "first_call_s": 0.0019398539998292108,
+     "number": 3,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 224,
+     "features_per_s": 832607.5770581191
+    },
+    "filter_by_polygon_buffer": {
+     "median_s": 0.003570066999941446,
+     "min_s": 0.0030806879999545345,
+     "max_s": 0.004059445999928357,
+     "first_call_s": 0.003400827999939793,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 91,
+     "features_per_s": 560213.5758328353
+    },
+    "filter_by_polygon_buffer_as_plain_polygon": {
+     "median_s": 0.0063174604999858275,
+     "min_s": 0.005084534000161511,
+     "max_s": 0.007550386999810144,
+     "first_call_s": 0.005635363000237703,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 91,
+     "features_per_s": 316582.90542607853
+    },
+    "filter_by_polygon_64": {
+     "median_s": 0.005746345000034125,
+     "min_s": 0.00572629299995242,
+     "max_s": 0.0057663970001158305,
+     "first_call_s": 0.0071095299999797135,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 485,
+     "features_per_s": 348047.3239925766
+    },
+    "nearest": {
+     "median_s": 0.003189939000094455,
+     "min_s": 0.0030306820001442247,
+     "max_s": 0.003349196000044685,
+     "first_call_s": 0.0025382530002389103,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_index": 941,
+     "result_distance_km": 4.3013,
+     "features_per_s": 626971.2367354922
+    },
+    "k_nearest": {
+     "median_s": 0.0036713024999244226,
+     "min_s": 0.0036130689998117305,
+     "max_s": 0.0037295360000371147,
+     "first_call_s": 0.004815012000108254,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 10,
+     "features_per_s": 544765.788174952
+    },
+    "sort_by_head": {
+     "median_s": 0.006473737499845811,
+     "min_s": 0.005240039999989676,
+     "max_s": 0.007707434999701945,
+     "first_call_s": 0.007249394000155007,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 10,
+     "features_per_s": 308940.54633009684
+    },
+    "save_csv": {
+     "median_s": 0.010243762499840159,
+     "min_s": 0.01016705899974113,
+     "max_s": 0.010320465999939188,
+     "first_call_s": 0.015070727999955125,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 97480,
+     "features_per_s": 195240.76236941334
+    },
+    "save_geojson": {
+     "median_s": 0.01565778650001448,
+     "min_s": 0.014552320000348118,
+     "max_s": 0.016763252999680844,
+     "first_call_s": 0.017033323000305245,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 577492,
+     "features_per_s": 127731.97539755382
+    },
+    "map_html": {
+     "median_s": 0.023971173500058285,
+     "min_s": 0.018456449000041175,
+     "max_s": 0.029485898000075395,
+     "first_call_s": 0.022268961999998282,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 412320,
+     "features_per_s": 83433.5457125258
+    },
+    "image_png": {
+     "median_s": 0.06091945100001794,
+     "min_s": 0.056746404000023176,
+     "max_s": 0.06509249800001271,
+     "first_call_s": 0.06574188199965647,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 42116,
+     "features_per_s": 32830.2367662409
+    },
+    "image_svg": {
+     "median_s": 0.008773451000251953,
+     "min_s": 0.006950276000225131,
+     "max_s": 0.010596626000278775,
+     "first_call_s": 0.007442840999829059,
+     "number": 1,
+     "repeats": 2,
+     "gc_enabled": false,
+     "output_bytes": 79248,
+     "features_per_s": 227960.46845677542
+    },
+    "baseline_csv_feature_dicts": {
+     "median_s": 0.004399157499960893,
+     "min_s": 0.003924471999880552,
+     "max_s": 0.004873843000041234,
+     "first_call_s": 0.004678145000070799,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 454632.50634190283
+    },
+    "baseline_json_load": {
+     "median_s": 0.0027386154999931023,
+     "min_s": 0.002539715000011711,
+     "max_s": 0.0029375159999744938,
+     "first_call_s": 0.0031343149998974695,
+     "number": 2,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 730296.0200163322
+    },
+    "baseline_build_numpy_arrays": {
+     "median_s": 0.00028944175000690715,
+     "min_s": 0.0002640158571531564,
+     "max_s": 0.00031486764286065797,
+     "first_call_s": 0.0003713379996952426,
+     "number": 14,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 2000,
+     "features_per_s": 6909853.191366735
+    },
+    "baseline_numpy_radius_mask": {
+     "median_s": 7.009960937409687e-05,
+     "min_s": 6.924759375692702e-05,
+     "max_s": 7.095162499126673e-05,
+     "first_call_s": 0.00015916800020931987,
+     "number": 32,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 28,
+     "features_per_s": 28530829.45622002
+    },
+    "baseline_shapely_contains_xy": {
+     "median_s": 0.00019644076315958764,
+     "min_s": 0.00019416052631832396,
+     "max_s": 0.00019872100000085133,
+     "first_call_s": 0.00026668999998946674,
+     "number": 19,
+     "repeats": 2,
+     "gc_enabled": false,
+     "result_count": 485,
+     "features_per_s": 10181186.266188594
+    }
+   }
+  },
+  "micro": {
+   "pairs": 200,
+   "repeats": 3,
+   "distance": {
+    "empty lambda (loop and call overhead)": {
+     "median_us": 0.03551499958120985,
+     "min_us": 0.03222500026822672,
+     "calls_per_s_median": 28157117.04327533,
+     "calls_per_s_best": 31031807.344497755
+    },
+    "qoregeo distance() haversine": {
+     "median_us": 2.9914450010437577,
+     "min_us": 2.762234998954227,
+     "calls_per_s_median": 334286.60719187075,
+     "calls_per_s_best": 362025.6786184364
+    },
+    "qoregeo distance() vincenty": {
+     "median_us": 7.835375001832289,
+     "min_us": 7.370934999926249,
+     "calls_per_s_median": 127626.31013399508,
+     "calls_per_s_best": 135667.998701658
+    },
+    "qoregeo utils._haversine_km (internal, no validation)": {
+     "median_us": 0.5976299985377409,
+     "min_us": 0.5851149990121485,
+     "calls_per_s_median": 1673276.1113845746,
+     "calls_per_s_best": 1709065.74209908
+    },
+    "qoregeo utils._vincenty_km (internal, no validation)": {
+     "median_us": 4.80272499999046,
+     "min_us": 4.232095000133995,
+     "calls_per_s_median": 208215.12787052902,
+     "calls_per_s_best": 236289.59179043438
+    },
+    "haversine package haversine()": {
+     "median_us": 0.7528149990321253,
+     "min_us": 0.7431350013575866,
+     "calls_per_s_median": 1328347.6037083135,
+     "calls_per_s_best": 1345650.51864488
+    },
+    "geopy great_circle().km": {
+     "median_us": 6.117069999618252,
+     "min_us": 5.395590001171513,
+     "calls_per_s_median": 163476.9587502525,
+     "calls_per_s_best": 185336.54332202332
+    },
+    "geopy geodesic().km": {
+     "median_us": 103.77588499977719,
+     "min_us": 100.38186499969015,
+     "calls_per_s_median": 9636.150055498414,
+     "calls_per_s_best": 9961.958766188362
+    },
+    "geographiclib Geodesic.WGS84.Inverse (distance only)": {
+     "median_us": 62.100444999941836,
+     "min_us": 59.925949999524164,
+     "calls_per_s_median": 16102.944189867507,
+     "calls_per_s_best": 16687.261528735722
+    },
+    "_vectorized_per_pair": {
+     "numpy haversine, n=2000": {
+      "median_us": 0.04786834375162622,
+      "min_us": 0.044204151040598084,
+      "calls_per_s_median": 20890632.965884205
+     },
+     "haversine package haversine_vector, n=2000": {
+      "median_us": 0.06826396774187977,
+      "min_us": 0.0589334731191024,
+      "calls_per_s_median": 14649016.6493282
+     }
+    },
+    "_agreement": {
+     "max_abs_diff_km_qoregeo_vs_haversine_package": 0.0,
+     "max_rel_diff_qoregeo_vs_geopy_great_circle": 3.139220353002951e-08,
+     "earth_radius_km": {
+      "qoregeo": 6371.0088,
+      "haversine package": 6371.0088,
+      "geopy great_circle": 6371.009
+     },
+     "pair_distance_km": {
+      "median": 1707.3503880367498,
+      "min": 125.58445946801065,
+      "max": 3547.50684617032
+     }
+    }
+   },
+   "point_in_polygon": {
+    "empty lambda (loop and call overhead)": {
+     "median_us": 0.030804999369138386,
+     "min_us": 0.028274998840061016,
+     "calls_per_s_median": 32462263.284505624,
+     "calls_per_s_best": 35366933.36953085
+    },
+    "qoregeo point_in_polygon() (validates the polygon on every call)": {
+     "median_us": 23.842849998345628,
+     "min_us": 22.478890000456886,
+     "calls_per_s_median": 41941.294772621,
+     "calls_per_s_best": 44486.18236842099
+    },
+    "qoregeo prepared tester (utils._polygon_tester, used by filter_by_polygon)": {
+     "median_us": 1.9546449993868007,
+     "min_us": 1.6722700001992052,
+     "calls_per_s_median": 511601.85113599343,
+     "calls_per_s_best": 597989.5590310639
+    },
+    "shapely Point(x, y).within(polygon)": {
+     "median_us": 5.459904998588172,
+     "min_us": 4.99552500059508,
+     "calls_per_s_median": 183153.36993200085,
+     "calls_per_s_best": 200179.16032466604
+    },
+    "shapely prepared.prep(polygon).contains(Point(x, y))": {
+     "median_us": 3.902710000147636,
+     "min_us": 3.9007349982966844,
+     "calls_per_s_median": 256232.20786637257,
+     "calls_per_s_best": 256361.94215620015
+    },
+    "shapely.contains_xy(prepared polygon, x, y), scalar": {
+     "median_us": 2.3647250009162235,
+     "min_us": 2.168789999359433,
+     "calls_per_s_median": 422882.1531520771,
+     "calls_per_s_best": 461086.5968099065
+    },
+    "_vectorized_per_point": {
+     "shapely.contains_xy vectorized, n=2000": {
+      "median_us": 0.13505338888872184,
+      "min_us": 0.13419348148023277,
+      "calls_per_s_median": 7404479.133981279
+     }
+    },
+    "_agreement": {
+     "points": 200,
+     "inside_fraction": 0.48,
+     "mismatches_prepared_vs_shapely": 0,
+     "mismatches_public_vs_shapely": 0,
+     "polygon_vertices": 64,
+     "polygon_is_valid_in_shapely": true
+    }
+   },
+   "note": "Per-call loops run with the garbage collector off, like timeit. Every scalar callable is wrapped in the same kind of lambda; the empty-lambda row is that shared overhead and is not subtracted. Vectorized rows exclude building the numpy arrays."
+  },
+  "footprint": {
+   "import_time": {
+    "import qoregeo": {
+     "statement": "import qoregeo",
+     "importtime_cumulative_ms": {
+      "median": 31.8525,
+      "min": 26.391,
+      "max": 37.314
+     },
+     "process_wall_ms": {
+      "median": 46.614184499958355,
+      "min": 44.03712800012727,
+      "max": 49.19124099978944
+     },
+     "process_wall_minus_empty_interpreter_ms": 33.696721999831425,
+     "new_modules_imported": 74,
+     "top_self_time_modules_ms": {
+      "ipaddress": 2.7255,
+      "typing": 2.19,
+      "_hashlib": 2.028,
+      "html.entities": 1.982,
+      "qoregeo.utils": 1.539,
+      "enum": 1.3785,
+      "re._compiler": 1.28,
+      "urllib.parse": 1.1795
+     }
+    },
+    "from qoregeo import GeoEngine": {
+     "statement": "from qoregeo import GeoEngine",
+     "importtime_cumulative_ms": {
+      "median": 37.6005,
+      "min": 30.499,
+      "max": 44.702
+     },
+     "process_wall_ms": {
+      "median": 59.8252209997554,
+      "min": 52.16002199995273,
+      "max": 67.49041999955807
+     },
+     "process_wall_minus_empty_interpreter_ms": 46.90775849962847,
+     "new_modules_imported": 74,
+     "top_self_time_modules_ms": {
+      "typing": 3.2615,
+      "_hashlib": 2.365,
+      "qoregeo.utils": 2.006,
+      "enum": 1.795,
+      "html.entities": 1.5455,
+      "collections": 1.4555,
+      "ipaddress": 1.4165,
+      "urllib.parse": 1.39
+     }
+    },
+    "import shapely": {
+     "statement": "import shapely",
+     "importtime_cumulative_ms": {
+      "median": 160.56,
+      "min": 155.842,
+      "max": 165.278
+     },
+     "process_wall_ms": {
+      "median": 195.26076450006258,
+      "min": 188.565909999852,
+      "max": 201.95561900027315
+     },
+     "process_wall_minus_empty_interpreter_ms": 182.34330199993565,
+     "new_modules_imported": 176,
+     "top_self_time_modules_ms": {
+      "numpy._core._add_newdocs": 11.794,
+      "ast": 10.7465,
+      "inspect": 7.371,
+      "numpy._core.numeric": 4.986,
+      "numpy.linalg._linalg": 4.45,
+      "numpy._core": 3.4285,
+      "numpy._typing": 3.277,
+      "numpy._core.overrides": 3.215
+     }
+    },
+    "import pyproj": {
+     "statement": "import pyproj",
+     "importtime_cumulative_ms": {
+      "median": 112.7355,
+      "min": 98.228,
+      "max": 127.243
+     },
+     "process_wall_ms": {
+      "median": 126.81109949994607,
+      "min": 125.2092800000355,
+      "max": 128.41291899985663
+     },
+     "process_wall_minus_empty_interpreter_ms": 113.89363699981914,
+     "new_modules_imported": 163,
+     "top_self_time_modules_ms": {
+      "pyproj": 13.7575,
+      "pyproj.crs.coordinate_operation": 3.9785,
+      "pyproj._context": 3.6435,
+      "typing": 3.2235,
+      "pyproj.transformer": 3.0435,
+      "ssl": 2.704,
+      "inspect": 2.666,
+      "_hashlib": 2.197
+     }
+    },
+    "import geopy": {
+     "statement": "import geopy",
+     "importtime_cumulative_ms": {
+      "median": 87.5195,
+      "min": 74.186,
+      "max": 100.853
+     },
+     "process_wall_ms": {
+      "median": 118.22118600002796,
+      "min": 110.32911000029344,
+      "max": 126.11326199976247
+     },
+     "process_wall_minus_empty_interpreter_ms": 105.30372349990103,
+     "new_modules_imported": 202,
+     "top_self_time_modules_ms": {
+      "asyncio.sslproto": 3.2795,
+      "ssl": 3.105,
+      "logging": 2.8255,
+      "typing": 2.577,
+      "ast": 2.4415,
+      "inspect": 2.0785,
+      "_bz2": 1.9245,
+      "enum": 1.9205
+     }
+    },
+    "from geopy.distance import geodesic": {
+     "statement": "from geopy.distance import geodesic",
+     "importtime_cumulative_ms": {
+      "median": 101.087,
+      "min": 92.805,
+      "max": 109.369
+     },
+     "process_wall_ms": {
+      "median": 127.39888449982573,
+      "min": 122.54375599968625,
+      "max": 132.2540129999652
+     },
+     "process_wall_minus_empty_interpreter_ms": 114.4814219996988,
+     "new_modules_imported": 208,
+     "top_self_time_modules_ms": {
+      "asyncio.sslproto": 4.3915,
+      "ssl": 3.8635,
+      "typing": 2.8305,
+      "enum": 2.729,
+      "logging": 2.496,
+      "urllib.parse": 2.4635,
+      "inspect": 2.289,
+      "geopy.point": 2.2575
+     }
+    },
+    "import numpy (context)": {
+     "statement": "import numpy",
+     "importtime_cumulative_ms": {
+      "median": 146.1205,
+      "min": 143.931,
+      "max": 148.31
+     },
+     "process_wall_ms": {
+      "median": 162.16639750018658,
+      "min": 154.94373400042605,
+      "max": 169.3890609999471
+     },
+     "process_wall_minus_empty_interpreter_ms": 149.24893500005965,
+     "new_modules_imported": 140,
+     "top_self_time_modules_ms": {
+      "numpy._core": 12.2875,
+      "numpy._core._add_newdocs": 11.999,
+      "typing": 7.0995,
+      "numpy._core._internal": 5.709,
+      "numpy._core._multiarray_umath": 5.174,
+      "opcode": 3.816,
+      "numpy._core.multiarray": 3.734,
+      "numpy._core.overrides": 3.566
+     }
+    },
+    "_empty_interpreter_wall_ms": {
+     "median": 12.91746250012693,
+     "min": 12.35005300031844,
+     "max": 13.484871999935422
+    },
+    "_method": "Median of 2 fresh interpreter processes per statement, in shuffled order. importtime_cumulative_ms sums the top-level cumulative times that python -X importtime reports for modules not already loaded by an empty interpreter. .pyc files exist and the OS file cache is warm, so this is a cold interpreter, not a cold disk. qoregeo is an editable install (a .pth path entry), so its import reads the repository source tree."
+   },
+   "memory_load": {
+    "n": 2000,
+    "csv_bytes": 97953,
+    "geojson_bytes": 345264,
+    "cases": {
+     "qoregeo load CSV": {
+      "current_bytes": 1661641,
+      "peak_bytes": 1695106,
+      "elapsed_s_under_tracemalloc": 0.06699925900011294,
+      "rss_before_bytes": 19226624,
+      "rss_after_bytes": 21102592,
+      "peak_rss_after_bytes": 21102592,
+      "peak_bytes_per_feature": 847.553,
+      "retained_bytes_per_feature": 830.8205,
+      "rss_growth_bytes": 1875968,
+      "peak_rss_growth_bytes": 1875968
+     },
+     "qoregeo load CSV, infer_types=True": {
+      "current_bytes": 1612417,
+      "peak_bytes": 1646489,
+      "elapsed_s_under_tracemalloc": 0.10420794200035743,
+      "rss_before_bytes": 19177472,
+      "rss_after_bytes": 20996096,
+      "peak_rss_after_bytes": 20996096,
+      "peak_bytes_per_feature": 823.2445,
+      "retained_bytes_per_feature": 806.2085,
+      "rss_growth_bytes": 1818624,
+      "peak_rss_growth_bytes": 1818624
+     },
+     "qoregeo load GeoJSON": {
+      "current_bytes": 1828268,
+      "peak_bytes": 2179436,
+      "elapsed_s_under_tracemalloc": 0.03219211199984784,
+      "rss_before_bytes": 19177472,
+      "rss_after_bytes": 21143552,
+      "peak_rss_after_bytes": 21377024,
+      "peak_bytes_per_feature": 1089.718,
+      "retained_bytes_per_feature": 914.134,
+      "rss_growth_bytes": 1966080,
+      "peak_rss_growth_bytes": 2199552
+     },
+     "plain-Python CSV reader (same Feature dicts)": {
+      "current_bytes": 1657391,
+      "peak_bytes": 1687960,
+      "elapsed_s_under_tracemalloc": 0.030191319000095973,
+      "rss_before_bytes": 19316736,
+      "rss_after_bytes": 21180416,
+      "peak_rss_after_bytes": 21180416,
+      "peak_bytes_per_feature": 843.98,
+      "retained_bytes_per_feature": 828.6955,
+      "rss_growth_bytes": 1863680,
+      "peak_rss_growth_bytes": 1863680
+     },
+     "json.load of the GeoJSON file": {
+      "current_bytes": 1827495,
+      "peak_bytes": 2179039,
+      "elapsed_s_under_tracemalloc": 0.03701587799969275,
+      "rss_before_bytes": 19165184,
+      "rss_after_bytes": 21131264,
+      "peak_rss_after_bytes": 21495808,
+      "peak_bytes_per_feature": 1089.5195,
+      "retained_bytes_per_feature": 913.7475,
+      "rss_growth_bytes": 1966080,
+      "peak_rss_growth_bytes": 2330624
+     }
+    },
+    "_method": "Each case runs in a fresh interpreter after qoregeo is imported. tracemalloc counts Python allocations only; peak is the high-water mark during the load, current is what the loaded object keeps. rss_growth and peak_rss_growth come from /proc/self/status (VmRSS, VmHWM) in a second, untraced run (Linux only); they include allocator overhead and memory the allocator keeps."
+   },
+   "qoregeo_wheel": {
+    "file": "qoregeo-1.1.0-py3-none-any.whl",
+    "bytes": 161969,
+    "distribution": "qoregeo",
+    "version": "1.1.0",
+    "tags": "py3-none-any",
+    "unpacked_bytes": 523466,
+    "files": 22,
+    "requires_python": ">=3.10",
+    "native_library_bytes_unpacked": 0,
+    "composition": {
+     "Python modules": {
+      "compressed_bytes": 130669,
+      "unpacked_bytes": 453364,
+      "files": 13
+     },
+     "other": {
+      "compressed_bytes": 1824,
+      "unpacked_bytes": 2964,
+      "files": 5
+     },
+     "Agent Skill files": {
+      "compressed_bytes": 7955,
+      "unpacked_bytes": 16398,
+      "files": 3
+     },
+     "METADATA (embeds README.md as the long description)": {
+      "compressed_bytes": 18739,
+      "unpacked_bytes": 50740,
+      "files": 1
+     }
+    },
+    "build_command": "python -m build --wheel --outdir '<tmp>' '<repo>'",
+    "build_isolation": true
+   },
+   "stack_wheels": null,
+   "stack_wheels_skipped": "--quick or --no-network"
+  },
+  "summary": {
+   "n_max": 2000,
+   "median_ms_at_n_max": {
+    "load_csv": 10.073449999708828,
+    "load_csv_infer_types": 17.84876549982073,
+    "load_geojson": 4.441352249955344,
+    "filter_eq": 2.0066745000804076,
+    "filter_ge": 3.9973436666969064,
+    "filter_ge_numeric_properties": 1.7543846666588556,
+    "where": 1.6283458000089013,
+    "filter_by_radius": 4.083753250029076,
+    "filter_by_bbox": 4.100695500028451,
+    "filter_by_polygon_buffer": 5.581106249906043,
+    "filter_by_polygon_buffer_as_plain_polygon": 5.74114149981142,
+    "filter_by_polygon_64": 6.368232500108206,
+    "nearest": 4.794096999944486,
+    "k_nearest": 4.144285750044219,
+    "sort_by_head": 4.603625000072498,
+    "save_csv": 14.446068999859563,
+    "save_geojson": 18.203558999857705,
+    "map_html": 24.75508249995073,
+    "image_png": 63.33547400004136,
+    "image_svg": 6.97858349985836,
+    "baseline_csv_feature_dicts": 4.6320954999146124,
+    "baseline_json_load": 3.0740899999273097,
+    "baseline_build_numpy_arrays": 0.2907343928687364,
+    "baseline_numpy_radius_mask": 0.0699942812474319,
+    "baseline_shapely_contains_xy": 0.20046086842739896
+   },
+   "loglog_slope_1k_to_n_max": {
+    "load_csv": 0.8701693638644741,
+    "load_csv_infer_types": 0.9282887092155165,
+    "load_geojson": 1.0204377499892536,
+    "filter_eq": 1.2529763402524068,
+    "filter_ge": 1.3395017654781902,
+    "filter_ge_numeric_properties": 1.054917788330964,
+    "where": 1.406614858240989,
+    "filter_by_radius": 1.2079446768510944,
+    "filter_by_bbox": 1.5601039555845262,
+    "filter_by_polygon_buffer": 1.2648441390629095,
+    "filter_by_polygon_buffer_as_plain_polygon": 1.0023705459528374,
+    "filter_by_polygon_64": 0.9099264615908047,
+    "nearest": 0.920016598359751,
+    "k_nearest": 0.6389114693460128,
+    "sort_by_head": 0.9744043187622875,
+    "save_csv": 1.1885823689536203,
+    "save_geojson": 0.7862819129506534,
+    "map_html": 1.2412667521205678,
+    "image_png": 0.7384268553666483,
+    "image_svg": 0.8150745056081323,
+    "baseline_csv_feature_dicts": 1.1100711585825624,
+    "baseline_json_load": 1.099618633316368,
+    "baseline_build_numpy_arrays": 0.9832732038220027,
+    "baseline_numpy_radius_mask": 0.5953296127373348,
+    "baseline_shapely_contains_xy": 1.0199407102882192
+   },
+   "gc_share_at_n_max": {
+    "load_csv": 0.3309271401111079,
+    "load_csv_infer_types": -0.08629974998663692,
+    "load_geojson": -0.12188016613790076,
+    "filter_eq": -0.013717969667158103,
+    "filter_ge": 0.3573916711884708,
+    "filter_ge_numeric_properties": -0.026305899485691064,
+    "where": 0.3480616340737329,
+    "filter_by_radius": 0.1739221756760535,
+    "filter_by_bbox": 0.4142232701758728,
+    "filter_by_polygon_buffer": 0.36032986291892444,
+    "filter_by_polygon_buffer_as_plain_polygon": -0.10038404386886102,
+    "filter_by_polygon_64": 0.09765464751224362,
+    "nearest": 0.33461108523015004,
+    "k_nearest": 0.11412901490075811,
+    "sort_by_head": -0.40622607178991843,
+    "save_csv": 0.2908961946713847,
+    "save_geojson": 0.1398502622406489,
+    "map_html": 0.0316665880589978,
+    "image_png": 0.038146442229544775,
+    "image_svg": -0.2571965357196089,
+    "baseline_csv_feature_dicts": 0.05028782328818859,
+    "baseline_json_load": 0.10912969364662062,
+    "baseline_build_numpy_arrays": 0.0044461298475027,
+    "baseline_numpy_radius_mask": -0.0015048104614809876,
+    "baseline_shapely_contains_xy": 0.020054314337500156
+   },
+   "ratios_at_n_max": {
+    "filter_by_polygon_64 / shapely.contains_xy (arrays ready)": 31.767958255726068,
+    "filter_by_radius / numpy haversine mask (arrays ready)": 58.344098649900914,
+    "building numpy arrays from qoregeo features / filter_by_radius": 0.07119293822825029,
+    "load_csv / plain-Python CSV reader": 2.174706890195705,
+    "load_geojson / json.load": 1.4447697530197114
+   },
+   "micro_ratios": {
+    "qoregeo distance() haversine / haversine package": 3.973678798761689,
+    "qoregeo _haversine_km / haversine package": 0.793860376461811,
+    "geopy great_circle / qoregeo distance() haversine": 2.0448545761275634,
+    "qoregeo distance() vincenty / geographiclib Inverse": 0.12617260636118835,
+    "geopy geodesic / qoregeo distance() vincenty": 13.244533283411371,
+    "qoregeo prepared tester / shapely Point.within": 0.3579998186584263,
+    "qoregeo point_in_polygon() / shapely Point.within": 4.366898325980203,
+    "qoregeo prepared tester / shapely.contains_xy vectorized, n=2000": 14.473128112300415
+   }
+  },
+  "doc_claims": [
+   {
+    "where": "README.md, 'Why QOREgeo?'",
+    "claim": "a ~160 KB pure-Python wheel",
+    "measured": "162.0 KB (161969 bytes), 523 KB unpacked",
+    "consistent": true
+   }
+  ]
+ }
+}

@@ -57,7 +57,7 @@ WGS84_ONE_DEGREE_EQUATOR_KM = 6378.137 * math.pi / 180.0    # ≈ 111.31949 km (
 # Movable Type "crossTrackDistanceTo" example: a path and two test points.
 XT_PATH = [(53.3206, -1.7297), (53.1887, 0.1334)]
 XT_NEAR = (53.2611, -0.7972)    # 307.5 m off the path (cross-track)
-XT_FAR = (53.0, 1.0)            # 61.551 km — nearest to endpoint b
+XT_FAR = (53.0, 1.0)            # 61.551 km, nearest to endpoint b
 LONDON = (51.5074, -0.1278)
 
 CITY_ROWS: list[tuple[str, float, float, dict[str, Any]]] = [
@@ -158,7 +158,7 @@ def along_path() -> GeoEngine:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# filter() — equality
+# filter(): equality
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFilterEquality:
@@ -174,7 +174,7 @@ class TestFilterEquality:
         assert _names(geo.filter("name", "STRASSE")) == ["Straße", "Strasse"]
 
     def test_numeric_value_matches_numeric_strings_and_floats(self, values):
-        # 5, "5", 5.0, "5.0", " 5 " — but not "five", True, None or NaN
+        # Matches 5, "5", 5.0, "5.0" and " 5 ", but not "five", True, None or NaN
         assert _names(values.filter("v", 5), "id") == [0, 1, 2, 3, 4]
 
     def test_string_value_compares_as_text(self, values):
@@ -203,7 +203,7 @@ class TestFilterEquality:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# filter() — ordering operators
+# filter(): ordering operators
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFilterOrdering:
@@ -251,7 +251,7 @@ class TestFilterOrdering:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# filter() — membership and substring operators
+# filter(): membership and substring operators
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFilterMembership:
@@ -298,7 +298,7 @@ class TestFilterMembership:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# filter() — validation and empty datasets
+# filter(): validation and empty datasets
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFilterValidation:
@@ -1071,7 +1071,7 @@ class TestExceptionHierarchy:
             GeoEngine().load(missing)
         except builtins.FileNotFoundError as e:
             caught: BaseException = e
-        else:  # pragma: no cover - the load must fail
+        else:  # pragma: no cover (the load must fail)
             pytest.fail("load() of a missing file did not raise")
         assert isinstance(caught, GeoFileNotFoundError)
         assert isinstance(caught, OSError)

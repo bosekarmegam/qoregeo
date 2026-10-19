@@ -57,20 +57,20 @@ class NoDataError(QOREgeoError, RuntimeError):
         self.empty = empty
         if empty:
             msg = (
-                f"\n\n❌  QOREgeo — Dataset Is Empty\n{_LINE}\n"
+                f"\n\n❌  QOREgeo: Dataset Is Empty\n{_LINE}\n"
                 f"You called geo.{method_name}() but the dataset has no features to use.\n"
                 f"This usually means a previous filter matched nothing\n"
                 f"(or every feature has a null geometry).\n\n"
-                f"Fix it — check your filter before calling geo.{method_name}():\n\n"
+                f"Fix it by checking your filter before calling geo.{method_name}():\n\n"
                 f"    result = geo.filter('state', 'Maharashtra')\n"
                 f"    if result.count():\n"
                 f"        result.{method_name}(...)"
             )
         else:
             msg = (
-                f"\n\n❌  QOREgeo — No Data Loaded\n{_LINE}\n"
+                f"\n\n❌  QOREgeo: No Data Loaded\n{_LINE}\n"
                 f"You called geo.{method_name}() but haven't loaded any data yet.\n\n"
-                f"Fix it — load your data first:\n\n"
+                f"Fix it by loading your data first:\n\n"
                 f"    geo.load('your_file.csv')\n"
                 f"    geo.load('your_file.geojson')\n"
                 f"    geo.load_data([...])\n\n"
@@ -88,14 +88,14 @@ class InvalidCoordinateError(QOREgeoError, ValueError):
         self.context = context
         where = f"Where   : {context}\n" if context else ""
         msg = (
-            f"\n\n❌  QOREgeo — Invalid Coordinate\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid Coordinate\n{_LINE}\n"
             f"Received: lat={lat!r}, lng={lng!r}\n"
             f"{where}\n"
             f"Valid ranges are:\n"
             f"    latitude  : -90.0  to  90.0\n"
             f"    longitude : -180.0 to 180.0\n\n"
             f"Fix it:\n"
-            f"    Make sure you're passing (latitude, longitude) — not (longitude, latitude).\n"
+            f"    Make sure you're passing (latitude, longitude), not (longitude, latitude).\n"
             f"    Example: (28.6139, 77.2090)  ← Delhi"
         )
         super().__init__(msg)
@@ -109,7 +109,7 @@ class InvalidUnitError(QOREgeoError, ValueError):
         self.valid = list(valid)
         valid_str = ", ".join(f"'{u}'" for u in valid)
         msg = (
-            f"\n\n❌  QOREgeo — Invalid Unit '{unit}'\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid Unit '{unit}'\n{_LINE}\n"
             f"'{unit}' is not a recognised unit here.\n\n"
             f"Supported units: {valid_str}\n\n"
             f"Fix it:\n"
@@ -143,7 +143,7 @@ class ColumnNotFoundError(QOREgeoError, LookupError):
             hint = f"geo.filter('{first}', value)"
 
         msg = (
-            f"\n\n❌  QOREgeo — Column Not Found\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Column Not Found\n{_LINE}\n"
             f"File: '{filepath}'\n"
             f"Could not find a '{column}' column.\n\n"
             f"Columns in your file:\n"
@@ -178,7 +178,7 @@ class GeoFileNotFoundError(QOREgeoError, builtins.FileNotFoundError):
                 "    • Use an absolute path if needed:\n"
                 "      geo.load('/full/path/to/your_file.csv')"
             )
-        msg = f"\n\n❌  QOREgeo — File Not Found\n{_LINE}\n{problem}\n\nFix it:\n{tips}"
+        msg = f"\n\n❌  QOREgeo: File Not Found\n{_LINE}\n{problem}\n\nFix it:\n{tips}"
         super().__init__(msg)
         # Behave like the built-in FileNotFoundError for code that inspects it.
         self.errno = errno.ENOENT
@@ -203,7 +203,7 @@ class FileReadError(QOREgeoError, ValueError):
         self.reason = reason
         fix = hint or "Check that the file is a valid, uncorrupted CSV or GeoJSON file."
         msg = (
-            f"\n\n❌  QOREgeo — Could Not Read File\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Could Not Read File\n{_LINE}\n"
             f"File: '{path}'\n"
             f"Problem: {reason}\n\n"
             f"Fix it:\n"
@@ -223,13 +223,13 @@ class UnsupportedFormatError(QOREgeoError, ValueError):
                 "    • .geojson\n"
                 "    • .json (GeoJSON format)\n\n"
             )
-            fix = ("Fix it — convert your file first, or use geo.load_data([...]) "
+            fix = ("Fix it: convert your file first, or use geo.load_data([...]) "
                    "with raw Feature dicts.")
         else:
             listing = "".join(f"    • {s}\n" for s in supported) + "\n"
-            fix = f"Fix it — use one of those extensions, e.g. geo.save('output{supported[0]}')."
+            fix = f"Fix it: use one of those extensions, e.g. geo.save('output{supported[0]}')."
         msg = (
-            f"\n\n❌  QOREgeo — Unsupported File Format '{ext}'\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Unsupported File Format '{ext}'\n{_LINE}\n"
             f"QOREgeo currently supports:\n"
             f"{listing}"
             f"{fix}"
@@ -244,14 +244,14 @@ class InvalidGeoJSONError(UnsupportedFormatError):
         self.source = source
         self.reason = reason
         msg = (
-            f"\n\n❌  QOREgeo — Invalid GeoJSON\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid GeoJSON\n{_LINE}\n"
             f"Source: '{source}'\n"
             f"Problem: {reason}\n\n"
-            f"Fix it — QOREgeo accepts a FeatureCollection, a Feature, a bare\n"
-            f"Geometry, or a list of Features, e.g.:\n\n"
+            f"Fix it by passing a FeatureCollection, a Feature, a bare Geometry\n"
+            f"or a list of Features, for example:\n\n"
             f'    {{"type": "FeatureCollection", "features": [...]}}'
         )
-        # Skip UnsupportedFormatError.__init__ — it builds a different message.
+        # Skip UnsupportedFormatError.__init__, which builds a different message.
         QOREgeoError.__init__(self, msg)
         self.ext = source
 
@@ -263,7 +263,7 @@ class EmptyDatasetError(QOREgeoError, ValueError):
         self.path = str(path)
         if self.path.lower().endswith((".csv", ".tsv", ".txt")):
             tips = (
-                "    • Make sure the file has data rows (not just a header)\n"
+                "    • Make sure the file has data rows below the header\n"
                 "    • Make sure latitude and longitude values are not all blank\n"
                 "    • Check that the lat/lng columns contain numbers in range"
             )
@@ -274,7 +274,7 @@ class EmptyDatasetError(QOREgeoError, ValueError):
                 "    • Positions must be [longitude, latitude] numbers"
             )
         msg = (
-            f"\n\n❌  QOREgeo — Empty Dataset\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Empty Dataset\n{_LINE}\n"
             f"No valid spatial features were found in: '{path}'\n\n"
             f"Fix it:\n"
             f"{tips}"
@@ -288,7 +288,7 @@ class InvalidRadiusError(QOREgeoError, ValueError):
     def __init__(self, radius: Any) -> None:
         self.radius = radius
         msg = (
-            f"\n\n❌  QOREgeo — Invalid Radius ({radius!r})\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid Radius ({radius!r})\n{_LINE}\n"
             f"Radius must be a finite number greater than zero.\n\n"
             f"Fix it:\n"
             f"    geo.buffer(point, radius=10)          ← 10 km\n"
@@ -304,12 +304,12 @@ class InvalidBufferError(QOREgeoError, ValueError):
         self.reason = reason
         detail = f"Problem: {reason}\n\n" if reason else ""
         msg = (
-            f"\n\n❌  QOREgeo — Invalid Polygon\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid Polygon\n{_LINE}\n"
             f"The polygon you passed is not valid.\n"
             f"{detail}"
             f"Accepted: a geo.buffer() result, a GeoJSON Polygon or MultiPolygon,\n"
             f"a Feature whose geometry is one of those, or a FeatureCollection.\n\n"
-            f"Fix it — e.g. use a polygon created with geo.buffer():\n\n"
+            f"Fix it, for example with a polygon created by geo.buffer():\n\n"
             f"    zone = geo.buffer((28.61, 77.20), radius=10)\n"
             f"    geo.point_in_polygon((28.65, 77.22), zone)"
         )
@@ -325,7 +325,7 @@ class InvalidArgumentError(QOREgeoError, ValueError):
         self.expected = expected
         fix = f"\n\nFix it:\n    {example}" if example else ""
         msg = (
-            f"\n\n❌  QOREgeo — Invalid Argument '{name}'\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Invalid Argument '{name}'\n{_LINE}\n"
             f"Received: {value!r}\n"
             f"Expected: {expected}"
             f"{fix}"
@@ -347,7 +347,7 @@ class GeocodingError(QOREgeoError, RuntimeError):
         fix_lines = "\n".join(f"    {line}" if line.strip() else "" for line in fix.splitlines())
         code = f"HTTP status: {status}\n" if status is not None else ""
         msg = (
-            f"\n\n❌  QOREgeo — Geocoding Failed\n{_LINE}\n"
+            f"\n\n❌  QOREgeo: Geocoding Failed\n{_LINE}\n"
             f"{message}\n"
             f"{code}\n"
             f"Fix it:\n"

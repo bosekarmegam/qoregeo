@@ -1,0 +1,30 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "Delhi to Mumbai freight route",
+        "stops": "Delhi, Jaipur, Ahmedabad, Mumbai"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [77.209, 28.6139],
+          [77.0266, 28.4595],
+          [76.6346, 28.199],
+          [75.7873, 26.9124],
+          [74.6399, 26.4499],
+          [73.7125, 24.5854],
+          [73.0169, 23.588],
+          [72.5714, 23.0225],
+          [73.1812, 22.3072],
+          [72.9781, 21.7051],
+          [72.8311, 21.1702],
+          [72.9324, 20.3893],
+          [72.8777, 19.076]
+        ]
+      }
+    }
+  ]
+}

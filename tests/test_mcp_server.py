@@ -1,17 +1,17 @@
 """
 tests/test_mcp_server.py
 ========================
-qoregeo.mcp_server — the Model Context Protocol server (``qoregeo mcp``).
+qoregeo.mcp_server: the Model Context Protocol server (``qoregeo mcp``).
 
 ``MCPServer.handle()`` is tested as a pure function (decoded JSON-RPC in,
 response dict out), ``serve_stdio()`` with ``io.StringIO`` streams, and one
 end-to-end test runs ``python -m qoregeo mcp`` as a subprocess.
 
-Covers both protocol eras — the handshake era (``initialize``; versions
+Covers both protocol eras: the handshake era (``initialize``; versions
 2024-11-05 … 2025-11-25) and the stateless era (2026-07-28: ``server/discover``
-and the protocol version in every request's ``_meta``) — plus JSON-RPC error
-handling, batches, notifications, the read-only / offline tool filtering and
-the one-line ASCII framing of stdout.
+and the protocol version in every request's ``_meta``). Also covers JSON-RPC
+error handling, batches, notifications, the read-only / offline tool filtering
+and the one-line ASCII framing of stdout.
 
 Run with:
     pytest tests/test_mcp_server.py -v
@@ -129,7 +129,7 @@ def strict_loads(line: str) -> Any:
     """
     Parse one output line the way strict JSON parsers (the MCP SDKs' pydantic)
     do: a lone UTF-16 surrogate escape such as "\\udce9" is an error there, while
-    Python's json module accepts it — so check every decoded string too.
+    Python's json module accepts it, so every decoded string is checked too.
     """
     try:
         from pydantic_core import from_json  # optional: the parser the MCP SDK uses

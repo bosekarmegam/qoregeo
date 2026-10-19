@@ -1,12 +1,12 @@
 """
 tests/test_serve.py
 ===================
-qoregeo.serve — the one-page localhost server behind ``qoregeo serve`` and
+qoregeo.serve: the one-page localhost server behind ``qoregeo serve`` and
 ``GeoEngine.show()``.
 
 Every server binds 127.0.0.1 on a free port (port 0) in a background thread
-(``block=False``), is queried with urllib / http.client (proxies bypassed —
-the traffic never leaves this machine) and is shut down after each test.
+(``block=False``), is queried with urllib / http.client (proxies bypassed,
+so the traffic never leaves this machine) and is shut down after each test.
 The browser is never opened. Also covered: requests for a foreign Host
 (DNS rebinding) are refused, a busy port is a clean error, browsers that
 disconnect mid-download leave no traceback, and bytes / non-UTF-8 file names.

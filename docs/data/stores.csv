@@ -1,0 +1,31 @@
+name,city,category,revenue,latitude,longitude
+Haldi Fresh Connaught Place,Delhi,grocery,412000,28.6315,77.2167
+Brew Bazaar Hauz Khas,Delhi,cafe,186000,28.5494,77.2001
+Tulsi Pharmacy Lajpat Nagar,Delhi,pharmacy,154000,28.5677,77.2433
+Volt Junction Karol Bagh,Delhi,electronics,338000,28.6519,77.1909
+Loom Lane Chandni Chowk,Delhi,apparel,221000,28.6506,77.2303
+Haldi Fresh Saket,Delhi,grocery,297000,28.5245,77.2066
+Brew Bazaar Lodhi Colony,Delhi,cafe,96000,28.5933,77.2190
+Tulsi Pharmacy Rajouri Garden,Delhi,pharmacy,118000,28.6415,77.1209
+Haldi Fresh Dwarka,Delhi,grocery,243000,28.5810,77.0570
+Loom Lane Greater Kailash,Delhi,apparel,265000,28.5487,77.2340
+Volt Junction Vasant Kunj,Delhi,electronics,179000,28.5200,77.1590
+Haldi Fresh Bandra West,Mumbai,grocery,388000,19.0596,72.8295
+Brew Bazaar Colaba,Mumbai,cafe,172000,18.9067,72.8147
+Tulsi Pharmacy Andheri West,Mumbai,pharmacy,163000,19.1364,72.8296
+Volt Junction Lower Parel,Mumbai,electronics,451000,18.9980,72.8300
+Loom Lane Dadar,Mumbai,apparel,148000,19.0178,72.8478
+Haldi Fresh Powai,Mumbai,grocery,276000,19.1176,72.9060
+Brew Bazaar Juhu,Mumbai,cafe,134000,19.1075,72.8263
+Tulsi Pharmacy Fort,Mumbai,pharmacy,87000,18.9338,72.8356
+Loom Lane Malad West,Mumbai,apparel,192000,19.1874,72.8484
+Haldi Fresh Chembur,Mumbai,grocery,231000,19.0522,72.9005
+Haldi Fresh Indiranagar,Bengaluru,grocery,349000,12.9784,77.6408
+Brew Bazaar Koramangala,Bengaluru,cafe,214000,12.9352,77.6245
+Volt Junction MG Road,Bengaluru,electronics,402000,12.9756,77.6066
+Tulsi Pharmacy Jayanagar,Bengaluru,pharmacy,126000,12.9250,77.5938
+Volt Junction Whitefield,Bengaluru,electronics,318000,12.9698,77.7500
+Loom Lane Malleshwaram,Bengaluru,apparel,157000,13.0031,77.5643
+Brew Bazaar HSR Layout,Bengaluru,cafe,169000,12.9116,77.6474
+Haldi Fresh Electronic City,Bengaluru,grocery,204000,12.8452,77.6602
+Tulsi Pharmacy Hebbal,Bengaluru,pharmacy,99000,13.0358,77.5970

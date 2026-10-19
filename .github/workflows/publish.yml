@@ -3,9 +3,20 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
+  # Or run it by hand from main ("Run workflow"): it publishes, then creates the vX.Y.Z tag
+  # and the GitHub Release itself (a release made with GITHUB_TOKEN doesn't re-trigger this).
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.1.0 (must match qoregeo/_version.py)"
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version) }}
 
 jobs:
   checks:
@@ -30,10 +41,15 @@ jobs:
 
       - name: Check the release tag matches the package version
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
           VERSION=$(python -c "exec(open('qoregeo/_version.py').read()); print(__version__)")
-          echo "tag=${TAG} version=${VERSION}"
+          echo "tag=${TAG} version=${VERSION} ref=${REF}"
+          if [ "${EVENT}" = "workflow_dispatch" ] && [ "${REF}" != "refs/heads/main" ]; then
+            echo "::error::Run the release from main, not ${REF}"
+            exit 1
+          fi
           if [ "${TAG#v}" != "${VERSION}" ]; then
             echo "::error::Release tag '${TAG}' does not match qoregeo/_version.py (${VERSION})"
             exit 1
@@ -101,6 +117,39 @@ jobs:
           skip-existing: true
           verbose: true
 
+  github-release:
+    name: Create the tag and GitHub Release
+    if: github.event_name == 'workflow_dispatch'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download distributions
+        uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          # Release notes: this version's CHANGELOG section, without its heading.
+          awk -v v="$VERSION" '
+            /^## \[/ { if (on) exit; on = index($0, "## [" v "]") == 1; next }
+            on' CHANGELOG.md > notes.md
+          test -s notes.md || echo "See CHANGELOG.md." > notes.md
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "QOREgeo $VERSION" --notes-file notes.md --latest
+
   mcp-registry:
     name: List the release in the MCP Registry
     needs: publish
@@ -118,8 +167,6 @@ jobs:
           persist-credentials: false
 
       - name: Wait until PyPI serves the new version
-        env:
-          TAG: ${{ github.event.release.tag_name }}
         run: |
           for i in $(seq 1 30); do
             curl -fsS "https://pypi.org/pypi/qoregeo/${TAG#v}/json" > /dev/null && exit 0
@@ -128,9 +175,16 @@ jobs:
           echo "::error::qoregeo ${TAG#v} did not appear on PyPI"
           exit 1
 
+      # A pinned release with its checksum: this job holds an OIDC token, so it
+      # never runs a binary that could change under it.
       - name: Install mcp-publisher
+        env:
+          MCP_PUBLISHER_VERSION: v1.8.1
+          MCP_PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl -fsSL -o mcp-publisher.tar.gz "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER_VERSION}/mcp-publisher_linux_amd64.tar.gz"
+          echo "${MCP_PUBLISHER_SHA256}  mcp-publisher.tar.gz" | sha256sum --check
+          tar xzf mcp-publisher.tar.gz mcp-publisher
 
       - name: Publish server.json
         run: |

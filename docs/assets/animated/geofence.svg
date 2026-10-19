@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450" role="img" aria-labelledby="geofence-title geofence-desc">
+<title id="geofence-title">4 of 11 Delhi stores are within 5 km</title>
+<desc id="geofence-desc">11 stores in Delhi appear. A 5 km zone from GeoEngine.buffer() draws around central Delhi, and the 4 stores inside it turn teal one by one. Drawn by qoregeo.</desc>
+<style>
+.ui{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.mono{font-family:ui-monospace,SFMono-Regular,'SF Mono',Menlo,Consolas,'Liberation Mono',monospace}
+.a{animation-duration:11s;animation-iteration-count:infinite;animation-timing-function:cubic-bezier(.22,.61,.36,1);transform-box:fill-box;transform-origin:center}
+.cycle{animation:cycle 11s linear infinite}
+@keyframes cycle{0%,93%{opacity:1}98%,100%{opacity:0}}
+.k0{animation-name:k0}@keyframes k0{0%,3.64%{opacity:0;transform:scale(.3);fill:#7d8590}8.18%{opacity:1;transform:scale(1)}50%{fill:#7d8590;transform:scale(1)}52.27%{fill:#00977a;transform:scale(1.35)}55.45%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k1{animation-name:k1}@keyframes k1{0%,50%{opacity:0;transform:scale(.3)}55.45%,100%{opacity:1;transform:scale(1)}}
+.k2{animation-name:k2}@keyframes k2{0%,5%{opacity:0;transform:scale(.3)}9.55%,100%{opacity:1;transform:scale(1)}}
+.k3{animation-name:k3}@keyframes k3{0%,6.36%{opacity:0;transform:scale(.3)}10.91%,100%{opacity:1;transform:scale(1)}}
+.k4{animation-name:k4}@keyframes k4{0%,7.73%{opacity:0;transform:scale(.3);fill:#7d8590}12.27%{opacity:1;transform:scale(1)}59.09%{fill:#7d8590;transform:scale(1)}61.36%{fill:#00977a;transform:scale(1.35)}64.55%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k5{animation-name:k5}@keyframes k5{0%,59.09%{opacity:0;transform:scale(.3)}64.55%,100%{opacity:1;transform:scale(1)}}
+.k6{animation-name:k6}@keyframes k6{0%,9.09%{opacity:0;transform:scale(.3);fill:#7d8590}13.64%{opacity:1;transform:scale(1)}63.64%{fill:#7d8590;transform:scale(1)}65.91%{fill:#00977a;transform:scale(1.35)}69.09%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k7{animation-name:k7}@keyframes k7{0%,63.64%{opacity:0;transform:scale(.3)}69.09%,100%{opacity:1;transform:scale(1)}}
+.k8{animation-name:k8}@keyframes k8{0%,10.45%{opacity:0;transform:scale(.3)}15%,100%{opacity:1;transform:scale(1)}}
+.k9{animation-name:k9}@keyframes k9{0%,11.82%{opacity:0;transform:scale(.3);fill:#7d8590}16.36%{opacity:1;transform:scale(1)}54.55%{fill:#7d8590;transform:scale(1)}56.82%{fill:#00977a;transform:scale(1.35)}60%,100%{transform:scale(1);opacity:1;fill:#00977a}}
+.k10{animation-name:k10}@keyframes k10{0%,54.55%{opacity:0;transform:scale(.3)}60%,100%{opacity:1;transform:scale(1)}}
+.k11{animation-name:k11}@keyframes k11{0%,13.18%{opacity:0;transform:scale(.3)}17.73%,100%{opacity:1;transform:scale(1)}}
+.k12{animation-name:k12}@keyframes k12{0%,14.55%{opacity:0;transform:scale(.3)}19.09%,100%{opacity:1;transform:scale(1)}}
+.k13{animation-name:k13}@keyframes k13{0%,15.91%{opacity:0;transform:scale(.3)}20.45%,100%{opacity:1;transform:scale(1)}}
+.k14{animation-name:k14}@keyframes k14{0%,17.27%{opacity:0;transform:scale(.3)}21.82%,100%{opacity:1;transform:scale(1)}}
+.k15{animation-name:k15}@keyframes k15{0%,4.55%{opacity:0;fill:#7d8590}9.09%{opacity:1}50%{fill:#7d8590}53.64%,100%{fill:#333333;opacity:1}}
+.k16{animation-name:k16}@keyframes k16{0%,5.91%{opacity:0}10.45%,100%{opacity:1}}
+.k17{animation-name:k17}@keyframes k17{0%,7.27%{opacity:0}11.82%,100%{opacity:1}}
+.k18{animation-name:k18}@keyframes k18{0%,8.64%{opacity:0;fill:#7d8590}13.18%{opacity:1}59.09%{fill:#7d8590}62.73%,100%{fill:#333333;opacity:1}}
+.k19{animation-name:k19}@keyframes k19{0%,10%{opacity:0;fill:#7d8590}14.55%{opacity:1}63.64%{fill:#7d8590}67.27%,100%{fill:#333333;opacity:1}}
+.k20{animation-name:k20}@keyframes k20{0%,11.36%{opacity:0}15.91%,100%{opacity:1}}
+.k21{animation-name:k21}@keyframes k21{0%,12.73%{opacity:0;fill:#7d8590}17.27%{opacity:1}54.55%{fill:#7d8590}58.18%,100%{fill:#333333;opacity:1}}
+.k22{animation-name:k22}@keyframes k22{0%,14.09%{opacity:0}18.64%,100%{opacity:1}}
+.k23{animation-name:k23}@keyframes k23{0%,15.45%{opacity:0}20%,100%{opacity:1}}
+.k24{animation-name:k24}@keyframes k24{0%,18.18%{opacity:0}22.73%,100%{opacity:1}}
+.k25{animation-name:k25}@keyframes k25{0%,25.45%{stroke-dashoffset:664.16px}41.82%,100%{stroke-dashoffset:0px}}
+.k26{animation-name:k26}@keyframes k26{0%,38.18%{opacity:0}43.64%,100%{opacity:1}}
+.k27{animation-name:k27}@keyframes k27{0%,41.82%{opacity:0}44.55%,100%{opacity:1}}
+.k28{animation-name:k28}@keyframes k28{0%,22.73%{opacity:0;transform:scale(.3)}27.27%,100%{opacity:1;transform:scale(1)}}
+.k29{animation-name:k29}@keyframes k29{0%,42.73%{opacity:0}47.27%,100%{opacity:1}}
+.k30{animation-name:k30}@keyframes k30{0%,2.73%{opacity:.3}6.36%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k31{animation-name:k31}@keyframes k31{0%,22.73%{opacity:.3}26.36%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k32{animation-name:k32}@keyframes k32{0%,45.45%{opacity:.3}49.09%{opacity:1}93%{opacity:1}98%,100%{opacity:.3}}
+.k33{animation-name:k33}@keyframes k33{0%,45.45%{opacity:0;transform:translateY(8px)}49.09%{opacity:1;transform:translateY(0)}49.27%{opacity:1}50%,100%{opacity:0;transform:translateY(0)}}
+.k34{animation-name:k34}@keyframes k34{0%,50%{opacity:0;transform:translateY(8px)}51.36%{opacity:1;transform:translateY(0)}53.82%{opacity:1}54.55%,100%{opacity:0;transform:translateY(0)}}
+.k35{animation-name:k35}@keyframes k35{0%,54.55%{opacity:0;transform:translateY(8px)}55.91%{opacity:1;transform:translateY(0)}58.36%{opacity:1}59.09%,100%{opacity:0;transform:translateY(0)}}
+.k36{animation-name:k36}@keyframes k36{0%,59.09%{opacity:0;transform:translateY(8px)}60.45%{opacity:1;transform:translateY(0)}62.91%{opacity:1}63.64%,100%{opacity:0;transform:translateY(0)}}
+.k37{animation-name:k37}@keyframes k37{0%,63.64%{opacity:0;transform:translateY(8px)}65%,100%{opacity:1;transform:translateY(0)}}
+.k38{animation-name:k38}@keyframes k38{0%,63.64%{opacity:0}68.18%,100%{opacity:1}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+<defs><clipPath id="map-clip"><rect width="472" height="426" rx="10"/></clipPath><mask id="zone-trace" maskUnits="userSpaceOnUse" x="0" y="0" width="472" height="426"><path class="a k25" d="M338.78 51.72L328.53 52.22 318.39 53.73 308.44 56.22 298.78 59.68 289.51 64.06 280.71 69.34 272.48 75.45 264.88 82.34 257.99 89.94 251.89 98.18 246.62 106.98 242.24 116.25 238.79 125.9 236.3 135.85 234.8 145.99 234.3 156.24 234.81 166.48 236.32 176.62 238.81 186.56 242.27 196.21 246.66 205.47 251.93 214.26 258.04 222.5 264.92 230.09 272.52 236.97 280.75 243.07 289.55 248.34 298.81 252.72 308.46 256.17 318.4 258.66 328.54 260.16 338.78 260.67 349.01 260.16 359.15 258.66 369.09 256.17 378.74 252.72 388.01 248.34 396.8 243.07 405.03 236.97 412.63 230.09 419.51 222.5 425.62 214.26 430.9 205.47 435.28 196.21 438.74 186.56 441.23 176.62 442.74 166.48 443.25 156.24 442.75 145.99 441.25 135.85 438.76 125.9 435.31 116.25 430.93 106.98 425.66 98.18 419.56 89.94 412.67 82.34 405.08 75.45 396.84 69.34 388.04 64.06 378.77 59.68 369.12 56.22 359.17 53.73 349.02 52.22Z" fill="none" stroke="#ffffff" stroke-width="8" stroke-dasharray="662.16 662.16"/></mask></defs>
+<rect x="0.5" y="0.5" width="799" height="449" rx="14" fill="#ffffff" stroke="#d0d7de"/>
+<g transform="translate(12 12)" clip-path="url(#map-clip)">
+<rect x="0" y="0" width="472" height="426" fill="#f6f8fa" />
+
+<g id="qg-grid" fill="none" stroke="#e6e8eb" stroke-width="1" shape-rendering="crispEdges"><path d="M14.5 0L14.5 426M116.5 0L116.5 426M218.5 0L218.5 426M320.5 0L320.5 426M422.5 0L422.5 426M0 420.5L472 420.5M0 304.5L472 304.5M0 188.5L472 188.5M0 72.5L472 72.5" /></g>
+
+<g id="qg-grid-labels" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#8a8f98" stroke="#f6f8fa" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text x="119" y="420">77.10&#176;E</text><text x="221" y="420">77.15&#176;E</text><text x="323" y="420">77.20&#176;E</text><text x="5" y="302">28.55&#176;N</text><text x="5" y="186">28.60&#176;N</text><text x="5" y="70">28.65&#176;N</text></g>
+
+<g id="qg-scale-bar"><g fill="#f6f8fa"><rect x="7" y="417" width="106" height="4" /><rect x="7" y="413" width="4" height="8" /><rect x="109" y="413" width="4" height="8" /></g><g fill="#333333"><rect x="8" y="418" width="104" height="2" /><rect x="8" y="414" width="2" height="6" /><rect x="110" y="414" width="2" height="6" /></g><g font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#333333" stroke="#f6f8fa" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text x="59.5" y="415" text-anchor="middle">5 km</text></g></g>
+
+<g class="cycle">
+<path class="a k26" d="M338.78 51.72L328.53 52.22 318.39 53.73 308.44 56.22 298.78 59.68 289.51 64.06 280.71 69.34 272.48 75.45 264.88 82.34 257.99 89.94 251.89 98.18 246.62 106.98 242.24 116.25 238.79 125.9 236.3 135.85 234.8 145.99 234.3 156.24 234.81 166.48 236.32 176.62 238.81 186.56 242.27 196.21 246.66 205.47 251.93 214.26 258.04 222.5 264.92 230.09 272.52 236.97 280.75 243.07 289.55 248.34 298.81 252.72 308.46 256.17 318.4 258.66 328.54 260.16 338.78 260.67 349.01 260.16 359.15 258.66 369.09 256.17 378.74 252.72 388.01 248.34 396.8 243.07 405.03 236.97 412.63 230.09 419.51 222.5 425.62 214.26 430.9 205.47 435.28 196.21 438.74 186.56 441.23 176.62 442.74 166.48 443.25 156.24 442.75 145.99 441.25 135.85 438.76 125.9 435.31 116.25 430.93 106.98 425.66 98.18 419.56 89.94 412.67 82.34 405.08 75.45 396.84 69.34 388.04 64.06 378.77 59.68 369.12 56.22 359.17 53.73 349.02 52.22Z" fill="#b7791f" fill-opacity=".08"/>
+<path d="M338.78 51.72L328.53 52.22 318.39 53.73 308.44 56.22 298.78 59.68 289.51 64.06 280.71 69.34 272.48 75.45 264.88 82.34 257.99 89.94 251.89 98.18 246.62 106.98 242.24 116.25 238.79 125.9 236.3 135.85 234.8 145.99 234.3 156.24 234.81 166.48 236.32 176.62 238.81 186.56 242.27 196.21 246.66 205.47 251.93 214.26 258.04 222.5 264.92 230.09 272.52 236.97 280.75 243.07 289.55 248.34 298.81 252.72 308.46 256.17 318.4 258.66 328.54 260.16 338.78 260.67 349.01 260.16 359.15 258.66 369.09 256.17 378.74 252.72 388.01 248.34 396.8 243.07 405.03 236.97 412.63 230.09 419.51 222.5 425.62 214.26 430.9 205.47 435.28 196.21 438.74 186.56 441.23 176.62 442.74 166.48 443.25 156.24 442.75 145.99 441.25 135.85 438.76 125.9 435.31 116.25 430.93 106.98 425.66 98.18 419.56 89.94 412.67 82.34 405.08 75.45 396.84 69.34 388.04 64.06 378.77 59.68 369.12 56.22 359.17 53.73 349.02 52.22Z" fill="none" stroke="#b7791f" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round" mask="url(#zone-trace)"/><path class="a k27" d="M338.78 51.72L328.53 52.22 318.39 53.73 308.44 56.22 298.78 59.68 289.51 64.06 280.71 69.34 272.48 75.45 264.88 82.34 257.99 89.94 251.89 98.18 246.62 106.98 242.24 116.25 238.79 125.9 236.3 135.85 234.8 145.99 234.3 156.24 234.81 166.48 236.32 176.62 238.81 186.56 242.27 196.21 246.66 205.47 251.93 214.26 258.04 222.5 264.92 230.09 272.52 236.97 280.75 243.07 289.55 248.34 298.81 252.72 308.46 256.17 318.4 258.66 328.54 260.16 338.78 260.67 349.01 260.16 359.15 258.66 369.09 256.17 378.74 252.72 388.01 248.34 396.8 243.07 405.03 236.97 412.63 230.09 419.51 222.5 425.62 214.26 430.9 205.47 435.28 196.21 438.74 186.56 441.23 176.62 442.74 166.48 443.25 156.24 442.75 145.99 441.25 135.85 438.76 125.9 435.31 116.25 430.93 106.98 425.66 98.18 419.56 89.94 412.67 82.34 405.08 75.45 396.84 69.34 388.04 64.06 378.77 59.68 369.12 56.22 359.17 53.73 349.02 52.22Z" fill="none" stroke="#b7791f" stroke-width="2" stroke-dasharray="6 4" stroke-linejoin="round"/>
+<g class="a k29"><path d="M338.78 156.21L443.25 156.24" stroke="#b7791f" stroke-width="1.5"/><text class="ui" x="376.62" y="149.23" font-size="12" font-weight="700" fill="#8a5a12" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke">5 km</text></g>
+<g class="a k28"><circle cx="338.78" cy="156.21" r="7" fill="none" stroke="#1f2933" stroke-width="1.5"/><circle cx="338.78" cy="156.21" r="2.5" fill="#1f2933"/></g>
+<g fill="#00d4aa" fill-opacity=".35"><circle class="a k1" cx="354.48" cy="115.32" r="9"/><circle class="a k5" cx="301.86" cy="67.91" r="9"/><circle class="a k7" cx="382.22" cy="70.93" r="9"/><circle class="a k10" cx="359.17" cy="204.07" r="9"/></g>
+<g fill="#7d8590" stroke="#ffffff" stroke-width="1.5"><circle class="a k0" cx="354.48" cy="115.32" r="4" fill="#00977a"/><circle class="a k2" cx="320.62" cy="306.03" r="4"/><circle class="a k3" cx="408.74" cy="263.53" r="4"/><circle class="a k4" cx="301.86" cy="67.91" r="4" fill="#00977a"/><circle class="a k6" cx="382.22" cy="70.93" r="4" fill="#00977a"/><circle class="a k8" cx="333.88" cy="363.84" r="4"/><circle class="a k9" cx="359.17" cy="204.07" r="4" fill="#00977a"/><circle class="a k11" cx="159.08" cy="92.08" r="4"/><circle class="a k12" cx="28.75" cy="232.64" r="4"/><circle class="a k13" cx="389.77" cy="307.65" r="4"/><circle class="a k14" cx="236.79" cy="374.28" r="4"/></g>
+<g font-family="Helvetica, Arial, sans-serif" font-size="11" fill="#333333" stroke="#ffffff" stroke-width="3" stroke-linejoin="round" paint-order="stroke"><text class="a k15" x="362" y="119.46">Connaught Place</text><text class="a k16" x="328" y="310.46" fill="#7d8590">Hauz Khas</text><text class="a k17" x="401" y="267.46" text-anchor="end" fill="#7d8590">Lajpat Nagar</text><text class="a k18" x="309" y="71.46">Karol Bagh</text><text class="a k19" x="390" y="74.46">Chandni Chowk</text><text class="a k20" x="341" y="367.46" fill="#7d8590">Saket</text><text class="a k21" x="367" y="208.46">Lodhi Colony</text><text class="a k22" x="167" y="96.46" fill="#7d8590">Rajouri Garden</text><text class="a k23" x="36" y="236.46" fill="#7d8590">Dwarka</text><text class="a k24" x="244" y="378.46" fill="#7d8590">Vasant Kunj</text></g>
+</g>
+</g>
+<g class="ui">
+<text x="514" y="83.25" font-size="22" font-weight="600" fill="#1f2933">Filter by a zone</text>
+<g class="a k30"><circle cx="524" cy="128.75" r="10" fill="#00977a"/><text x="524" y="133.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">1</text><text class="mono" x="544" y="133.25" font-size="13" fill="#1f2933">geo.load(&quot;stores.csv&quot;)</text><text x="544" y="152.25" font-size="12.5" fill="#57606a">11 of the 30 stores are in Delhi</text></g>
+<g class="a k31"><circle cx="524" cy="186.75" r="10" fill="#00977a"/><text x="524" y="191.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">2</text><text class="mono" x="544" y="191.25" font-size="13" fill="#1f2933">zone = geo.buffer(center, 5)</text><text x="544" y="210.25" font-size="12.5" fill="#57606a">5 km around central Delhi</text></g>
+<g class="a k32"><circle cx="524" cy="244.75" r="10" fill="#00977a"/><text x="524" y="249.25" text-anchor="middle" font-size="11.5" font-weight="700" fill="#ffffff">3</text><text class="mono" x="544" y="249.25" font-size="13" fill="#1f2933">.filter_by_polygon(zone)</text><text x="544" y="268.25" font-size="12.5" fill="#57606a">keeps the stores inside it</text></g>
+<g class="cycle"><text class="a k33" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">0</tspan> of 11</text><text class="a k34" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">1</tspan> of 11</text><text class="a k35" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">2</tspan> of 11</text><text class="a k36" opacity="0" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">3</tspan> of 11</text><text class="a k37" x="514" y="332.25" font-size="38" font-weight="700" fill="#1f2933"><tspan fill="#00977a">4</tspan> of 11</text><text class="a k38" x="514" y="358.25" font-size="13" fill="#57606a">Delhi stores within 5 km</text></g>
+</g>
+<text class="ui" x="778" y="432" text-anchor="end" font-size="11" fill="#6e7781">made with qoregeo</text>
+</svg>

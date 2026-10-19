@@ -1,7 +1,7 @@
 """
 qoregeo.utils
 =============
-Pure utility functions — no side effects, fully testable.
+Pure utility functions: no side effects, fully testable.
 
 Conventions
 -----------
@@ -52,7 +52,7 @@ WGS84_B = WGS84_A * (1 - WGS84_F)
 # Units
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Kilometres per unit — one table for every distance-taking method.
+# Kilometres per unit: one table for every distance-taking method.
 _KM_PER_UNIT: dict[str, float] = {
     "km": 1.0,
     "m": 0.001,
@@ -546,7 +546,7 @@ def _polygon_parts(polygon: Any) -> list[list[list[list[float]]]]:
                 bad = next(q for q in positions
                            if not (-90.0 <= q[1] <= 90.0 and -360.0 <= q[0] <= 360.0))
                 raise InvalidBufferError(
-                    f"position [{bad[0]!r}, {bad[1]!r}] is out of range — positions are "
+                    f"position [{bad[0]!r}, {bad[1]!r}] is out of range. Positions are "
                     "[lng, lat] with latitude -90..90 and longitude -180..180 "
                     "(are lng/lat swapped?)"
                 )
@@ -581,12 +581,12 @@ def _buffer_circle(polygon: Any) -> tuple[float, float, float] | None:
 def _polygon_tester(polygon: Any) -> Callable[[float, float], bool]:
     """
     Validate ``polygon`` once and return a ``(lat, lng) -> inside`` test
-    giving the same answers as ``_point_in_geometry`` — use it to test many
+    giving the same answers as ``_point_in_geometry``. Use it to test many
     points against one polygon.
     """
     circle = _buffer_circle(polygon)
     if circle is not None:
-        # Exact geodesic test — also correct near the poles and antimeridian.
+        # Exact geodesic test, also correct near the poles and antimeridian.
         c_lat, c_lng, radius_km = circle
         return lambda lat, lng: _haversine_km((lat, lng), (c_lat, c_lng)) <= radius_km
     indexes = [_PolygonIndex([[(p[0], p[1]) for p in ring] for ring in rings])
@@ -657,10 +657,10 @@ def _ring_centroid(ring: list[list[float]]) -> tuple[tuple[float, float] | None,
 
 def _seam_west(rings: list[list[list[float]]]) -> float | None:
     """
-    If the rings form one cluster across ±180° — their tightest longitude
-    span crosses the antimeridian and is under 180° wide, and no ring runs
-    round the whole globe — return the span's western edge (longitudes below
-    it belong east of 180°); else None.
+    If the rings form one cluster across ±180°, return the span's western
+    edge (longitudes below it belong east of 180°); else None. One cluster
+    means that their tightest longitude span crosses the antimeridian and is
+    under 180° wide, and that no ring runs round the whole globe.
     """
     lngs = [p[0] for ring in rings for p in ring]
     if not lngs or any(ring and max(p[0] for p in ring) - min(p[0] for p in ring) >= 360.0
@@ -737,7 +737,7 @@ def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
     n = len(points)
     x, y, z = x / n, y / n, z / n
     if math.hypot(x, y, z) < 1e-12:
-        # Points cancel out (e.g. two antipodes) — fall back to the plain mean.
+        # Points cancel out (e.g. two antipodes): fall back to the plain mean.
         return sum(p[0] for p in points) / n, sum(p[1] for p in points) / n
     return math.degrees(math.atan2(z, math.hypot(x, y))), _normalize_lng(math.degrees(math.atan2(y, x)))
 
@@ -746,7 +746,7 @@ def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
 # Intersection test
 # ─────────────────────────────────────────────────────────────────────────────
 
-_XY = tuple[float, float]                        # (lng, lat) — planar GeoJSON order
+_XY = tuple[float, float]                        # (lng, lat): planar GeoJSON order
 _Box = tuple[float, float, float, float]         # (min_x, min_y, max_x, max_y)
 _Edge = tuple[float, float, float, float, int]   # (x_i, y_i, x_j, y_j, ring number)
 _Seg = tuple[float, float, float, float, _XY, _XY]   # (min_x, max_x, min_y, max_y, start, end)
@@ -1020,7 +1020,7 @@ def _on_segment(a: _XY, b: _XY, p: _XY) -> bool:
 
 
 def _segments_intersect(p1: _XY, p2: _XY, q1: _XY, q2: _XY) -> bool:
-    """True if the closed segments p1–p2 and q1–q2 share at least one point."""
+    """True if the closed segments (p1, p2) and (q1, q2) share at least one point."""
     d1 = _orient(q1, q2, p1)
     d2 = _orient(q1, q2, p2)
     d3 = _orient(p1, p2, q1)
@@ -1133,7 +1133,7 @@ def _angle(u: tuple[float, float, float], v: tuple[float, float, float]) -> floa
 
 
 def _arc_distance_km(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
-    """Great-circle distance from ``p`` to the (shorter) arc ``a``–``b``; all (lat, lng)."""
+    """Great-circle distance from ``p`` to the (shorter) arc from ``a`` to ``b``; all (lat, lng)."""
     vp, va, vb = _unit_vector(*p), _unit_vector(*a), _unit_vector(*b)
     n = _cross(va, vb)
     norm = math.sqrt(_dot(n, n))
@@ -1241,9 +1241,9 @@ def _geometries_intersect(a: Any, b: Any) -> bool:
 
 def _ring_area_m2(ring: list[list[float]]) -> float:
     """
-    Spherical area of a [lng, lat] ring in m² (Chamberlain & Duquette, 2007,
-    "Some Algorithms for Polygons on a Sphere", JPL — the method used by
-    Turf.js and OpenLayers).
+    Spherical area of a [lng, lat] ring in m², by the method Turf.js and
+    OpenLayers use (Chamberlain & Duquette, 2007, "Some Algorithms for
+    Polygons on a Sphere", JPL).
     """
     if len(ring) < 3:
         return 0.0
@@ -1288,7 +1288,7 @@ def _point_segment_km(
     b: tuple[float, float],
 ) -> float:
     """
-    Great-circle distance in km from ``p`` to the segment ``a``–``b``
+    Great-circle distance in km from ``p`` to the segment from ``a`` to ``b``
     (cross-track distance when the foot of the perpendicular lies on the
     segment, else the distance to the nearer end; Veness, "Movable Type").
     """
@@ -1704,7 +1704,7 @@ def _shell_quote(path: str) -> str:
     ``path`` as one argument that can be pasted into a shell: unchanged when
     it only has characters no shell treats specially, else in double quotes
     (understood by sh, bash, zsh, cmd and PowerShell). On POSIX, names with
-    ``$`` `` ` `` ``"`` ``\\`` or ``!`` — special even inside double quotes —
+    ``$`` `` ` `` ``"`` ``\\`` or ``!`` (special even inside double quotes)
     use single quotes instead.
     """
     if path.startswith("-"):

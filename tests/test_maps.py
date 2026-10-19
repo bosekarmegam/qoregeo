@@ -1,7 +1,7 @@
 """
 tests/test_maps.py
 ==================
-HTML map and heatmap generation — static analysis of the generated files.
+HTML map and heatmap generation, checked by static analysis of the generated files.
 
 No browser and no network: every test writes a page into ``tmp_path`` and
 inspects its text (and the ``var CONFIG = JSON.parse("…");`` data it embeds).
@@ -193,7 +193,7 @@ def empty(geo: GeoEngine) -> GeoEngine:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# File output — map()
+# File output: map()
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestMapFileOutput:
@@ -288,7 +288,7 @@ class TestMapFileOutput:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# File output — heatmap()
+# File output: heatmap()
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestHeatmapFileOutput:
@@ -506,7 +506,7 @@ class TestNonJsonValues:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Assets — pinned versions, SRI hashes and CDN fallbacks
+# Assets: pinned versions, SRI hashes and CDN fallbacks
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestAssetsAndSRI:
@@ -566,7 +566,7 @@ class TestAssetsAndSRI:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# View config — center / zoom
+# View config: center / zoom
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestViewConfig:
@@ -633,7 +633,7 @@ class TestZoomValidation:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Basemaps — presets (all open and keyless)
+# Basemaps: presets (all open and keyless)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestTilePresets:
@@ -731,7 +731,7 @@ class TestTilePresets:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Basemaps — OpenStreetMap and pages opened from disk
+# Basemaps: OpenStreetMap and pages opened from disk
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestFileNotice:
@@ -872,7 +872,7 @@ class TestBrandPanel:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Basemaps — custom URL templates
+# Basemaps: custom URL templates
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestCustomTiles:
@@ -1093,14 +1093,14 @@ class TestOverlays:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Heatmap — intensity weights
+# Heatmap: intensity weights
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestHeatmapIntensity:
     def test_dropped_rows_warning(self, tmp_path):
         with pytest.warns(UserWarning, match=r"2 rows .* 'w' value \(-1, 'x'\) add no heat\.$"):
             render(weighted(10, -1, "x"), tmp_path, "heatmap", intensity_col="w")
-        with pytest.warns(UserWarning, match=r"1 row .* adds no heat — the heatmap is empty"):
+        with pytest.warns(UserWarning, match=r"1 row .* adds no heat, so the heatmap is empty"):
             render(weighted(0), tmp_path, "heatmap", intensity_col="w")
 
     def test_unweighted_points_are_lat_lng_one(self, geo, tmp_path):
@@ -1204,7 +1204,7 @@ class TestHeatmapIntensity:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Heatmap — radius / blur
+# Heatmap: radius / blur
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestHeatmapRadiusBlur:
@@ -1278,7 +1278,7 @@ class TestVerboseOutput:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# _announce — status line that survives non-UTF-8 consoles
+# _announce: status line that survives non-UTF-8 consoles
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _cp1252_stdout(monkeypatch: pytest.MonkeyPatch) -> tuple[io.TextIOWrapper, io.BytesIO]:

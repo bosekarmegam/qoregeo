@@ -6,8 +6,8 @@ Forward and reverse geocoding with the standard library only (``urllib``).
 Turn an address or place name into coordinates, and coordinates back into an
 address, using open-source OpenStreetMap geocoders:
 
-* ``"nominatim"`` — https://nominatim.openstreetmap.org  (default)
-* ``"photon"``    — https://photon.komoot.io
+* ``"nominatim"``: https://nominatim.openstreetmap.org (the default)
+* ``"photon"``: https://photon.komoot.io
 
 Usage:
     from qoregeo.geocode import Geocoder
@@ -33,15 +33,15 @@ Fair use of the free public servers
 The public Nominatim and Photon servers are community resources. The Nominatim
 usage policy (https://operations.osmfoundation.org/policies/nominatim/) asks for:
 
-* an absolute maximum of 1 request per second — enforced here for the public
-  endpoints across threads *and processes* (``min_interval`` can only raise it
-  within a process);
-* an identifying User-Agent — qoregeo sends one; pass your own application
+* an absolute maximum of 1 request per second, which qoregeo enforces for the
+  public endpoints across threads *and processes* (``min_interval`` can only
+  raise it within a process);
+* an identifying User-Agent: qoregeo sends one, but pass your own application
   name and a contact (``user_agent=...``, ``email=...``) for real projects;
-* caching of results — every ``Geocoder`` keeps an LRU cache of answers, and
+* caching of results: every ``Geocoder`` keeps an LRU cache of answers, and
   answers from the public servers are also kept on disk for 30 days;
 * no bulk geocoding of large lists and no autocomplete-as-you-type;
-* visible attribution — every result carries an ``attribution`` string
+* visible attribution: every result carries an ``attribution`` string
   ("Data © OpenStreetMap contributors, ODbL 1.0").
 
 The shared request slot and the on-disk answers live in one small SQLite file,
@@ -57,7 +57,7 @@ back to applying within the process only.
 
 There is deliberately no batch method. To geocode thousands of addresses, run
 your own server (Nominatim and Photon are open source and ship Docker images)
-and point ``url=`` at it — custom endpoints are not throttled by default and
+and point ``url=`` at it. Custom endpoints are not throttled by default, and
 their answers are not stored on disk.
 """
 
@@ -294,7 +294,7 @@ class _DiskStore:
         return self._run(book)
 
     def get_results(self, key: str) -> list[dict[str, Any]] | None:
-        """A stored, unexpired answer for ``key`` — or ``None``."""
+        """A stored, unexpired answer for ``key``, or ``None``."""
         def get(con: sqlite3.Connection) -> list[dict[str, Any]] | None:
             row = con.execute("SELECT value, expires FROM results WHERE key = ?",
                               (key,)).fetchone()
@@ -783,7 +783,7 @@ class Geocoder:
         timeout     : Seconds to wait for a response (default 10, at most 86400).
         cache_size  : Number of answers kept in the LRU cache (0 disables result
                       caching, on disk too).
-        language    : Preferred result language — ``"en"`` or an Accept-Language
+        language    : Preferred result language: ``"en"`` or an Accept-Language
                       list such as ``"de,en;q=0.8"`` (Photon uses the first one).
         cache_dir   : Where the public servers' shared request slot and answers
                       (kept 30 days) are stored, so the 1 request/second limit and
@@ -798,8 +798,8 @@ class Geocoder:
         48.8582602
         >>> gc.search("Springfield", limit=3, country_codes="us")   # doctest: +SKIP
 
-    Bulk geocoding (thousands of rows) must use your own server — the public
-    ones forbid it. There is intentionally no batch method.
+    Bulk geocoding (thousands of rows) must use your own server, because the
+    public ones forbid it. There is intentionally no batch method.
     """
 
     def __init__(
@@ -857,8 +857,8 @@ class Geocoder:
 
         Args:
             query        : Free-form text, e.g. ``"10 Downing St, London"``.
-            limit        : Maximum number of results, 1–50 (Nominatim caps at 40).
-            country_codes: Restrict to ISO 3166-1 alpha-2 countries —
+            limit        : Maximum number of results, 1 to 50 (Nominatim caps at 40).
+            country_codes: Restrict to ISO 3166-1 alpha-2 countries:
                            ``"de"``, ``"de,fr"`` or ``["de", "fr"]``.
 
         Returns:
@@ -894,7 +894,7 @@ class Geocoder:
         country_codes: str | list[str] | None = None,
     ) -> dict[str, Any] | None:
         """
-        Return the best match for ``query`` — or ``None`` if nothing matched.
+        Return the best match for ``query``, or ``None`` if nothing matched.
 
         Example:
             >>> gc.geocode("Taj Mahal, Agra")   # doctest: +SKIP
@@ -905,7 +905,7 @@ class Geocoder:
 
     def reverse(self, lat: float, lng: float, zoom: int = 18) -> dict[str, Any] | None:
         """
-        Return the address at ``(lat, lng)`` — or ``None`` if there is none.
+        Return the address at ``(lat, lng)``, or ``None`` if there is none.
 
         Args:
             lat, lng: The coordinate (WGS-84 degrees).
@@ -1009,7 +1009,7 @@ class Geocoder:
                 raise self._unexpected(payload)
             if "error" in payload:
                 if isinstance(payload["error"], str):
-                    return []        # {"error": "Unable to geocode"} — nothing there
+                    return []        # {"error": "Unable to geocode"}: nothing there
                 raise GeocodingError(  # a structured error is a failure, not "no address"
                     f"{self._spec.label} returned an error: "
                     f"{_error_text(payload) or 'no details given'}",
@@ -1160,10 +1160,10 @@ class Geocoder:
         other = "photon" if self.provider == "nominatim" else "nominatim"
         if status in (401, 403):
             return GeocodingError(
-                f"{host} refused the request (HTTP {status} — access denied).{said}",
+                f"{host} refused the request (HTTP {status}: access denied).{said}",
                 "Identify your app with a real name and contact:\n"
                 "Geocoder(user_agent='my-app/1.0 (you@example.com)', email='you@example.com')\n"
-                "If you sent many requests you may be blocked — for bulk work run your\n"
+                "If you sent many requests you may be blocked. For bulk work, run your\n"
                 "own server (Nominatim / Photon are open source): Geocoder(url='http://localhost:8080')",
                 status,
             )
@@ -1175,22 +1175,22 @@ class Geocoder:
             wait = (f" Retry after {when} s." if when.isdigit()
                     else f" Retry after {when}." if when else "")
             return GeocodingError(
-                f"{host} is rate-limiting you (HTTP 429 — too many requests).{wait}{said}",
+                f"{host} is rate-limiting you (HTTP 429: too many requests).{wait}{said}",
                 "Slow down: reuse one Geocoder (its cache avoids repeat requests), keep at\n"
                 "most 1 request per second (e.g. Geocoder(min_interval=2.0)), and never\n"
-                "geocode in bulk against a public server — run your own instead.",
+                "geocode in bulk against a public server. Run your own instead.",
                 status,
             )
         if status == 404:
             return GeocodingError(
-                f"{self.url} has no {self._spec.label} API (HTTP 404 — not found).{said}",
+                f"{self.url} has no {self._spec.label} API (HTTP 404: not found).{said}",
                 f"Check that url= is the base address of a {self._spec.label} server, e.g.\n"
                 f"Geocoder(provider='{self.provider}', url='{self._spec.default_url}')",
                 status,
             )
         if status == 400:
             return GeocodingError(
-                f"{host} rejected the request (HTTP 400 — bad request).{said}",
+                f"{host} rejected the request (HTTP 400: bad request).{said}",
                 "Check the arguments: language='en' (Photon supports only a few languages),\n"
                 "country codes like country_codes=['de', 'fr'], and the query text.",
                 status,
@@ -1198,7 +1198,7 @@ class Geocoder:
         if status >= 500:
             return GeocodingError(
                 f"{host} had a server error (HTTP {status}), also after one retry.{said}",
-                "The service may be overloaded or down — try again later, or switch provider:\n"
+                "The service may be overloaded or down. Try again later, or switch provider:\n"
                 f"Geocoder(provider='{other}')",
                 status,
             )
@@ -1218,7 +1218,7 @@ class Geocoder:
     def _network_error(self, host: str, reason: Any) -> GeocodingError:
         text = _clean_text(reason) or type(reason).__name__
         if "CERTIFICATE" in text.upper() or "SSL" in text.upper():
-            hint = ("A TLS/SSL certificate problem — check your system clock and CA\n"
+            hint = ("This is a TLS/SSL certificate problem. Check your system clock and CA\n"
                     "certificates (or your proxy's), then try again.")
         else:
             hint = ("Check your internet connection, proxy settings (HTTPS_PROXY) and the\n"
