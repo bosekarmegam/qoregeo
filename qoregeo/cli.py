@@ -27,7 +27,7 @@ from typing import Any
 
 from ._version import __version__
 from .engine import GeoEngine
-from .exceptions import QOREgeoError
+from .exceptions import GeoFileNotFoundError, QOREgeoError
 from .map_builder import tile_presets
 
 _WHERE_RE = re.compile(
@@ -84,8 +84,11 @@ def _filter_args(ns: argparse.Namespace) -> dict[str, Any]:
     if ns.bbox:
         args["bbox"] = _floats(ns.bbox, 4, "--bbox (west,south,east,north)", "68,6,98,36")
     if ns.within:
-        with open(ns.within, encoding="utf-8-sig") as fh:
-            args["within"] = json.load(fh)
+        try:
+            with open(ns.within, encoding="utf-8-sig") as fh:
+                args["within"] = json.load(fh)
+        except ValueError as exc:   # not JSON (a missing file is reported like any other)
+            raise _UsageError(f"--within {ns.within}: not valid GeoJSON ({exc})") from None
     if ns.where:
         args["where"] = [_where(w) for w in ns.where]
     if ns.sort:
@@ -115,11 +118,14 @@ def _cmd_info(ns: argparse.Namespace) -> int:
     from .tools import ToolContext, call_tool
 
     path = os.path.abspath(ns.file)
+    if not os.path.isfile(path):
+        raise GeoFileNotFoundError(ns.file)
     args = {"path": os.path.basename(path), "lat_column": ns.lat_col, "lng_column": ns.lng_col}
     result = call_tool("describe_dataset", {k: v for k, v in args.items() if v is not None},
                        ToolContext(root=os.path.dirname(path), max_file_mb=float("inf")))
     if result.is_error:
-        raise _UsageError(result.data["error"])
+        print(f"qoregeo info: {result.data['error']}", file=sys.stderr)
+        return 1
     if ns.json:
         _print_json(result.data)
         return 0

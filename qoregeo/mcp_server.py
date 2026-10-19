@@ -217,17 +217,27 @@ class MCPServer:
             if not line:
                 continue
             try:
-                message = json.loads(line)
-            except json.JSONDecodeError as exc:
-                self._send(dst, _error(None, PARSE_ERROR, f"Parse error: {exc.msg}"))
+                message = json.loads(line, parse_constant=_reject_constant)
+            except (ValueError, RecursionError) as exc:   # bad JSON, NaN, huge ints, deep nesting
+                reason = exc.msg if isinstance(exc, json.JSONDecodeError) else type(exc).__name__
+                self._send(dst, _error(None, PARSE_ERROR, f"Parse error: {reason}"))
                 continue
-            reply = self.handle(message)
+            try:
+                reply = self.handle(message)
+            except RecursionError:
+                reply = _error(None, INVALID_REQUEST, "Request nested too deeply")
             if reply is not None:
                 self._send(dst, reply)
 
     def _send(self, dst: IO[str], reply: Json | list[Json]) -> None:
         # ensure_ascii keeps every message on one line whatever the payload.
-        text = json.dumps(reply, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+        try:
+            text = json.dumps(reply, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
+        except (ValueError, TypeError, RecursionError) as exc:
+            _log(f"could not encode a reply: {type(exc).__name__}: {exc}")
+            msg_id = reply.get("id") if isinstance(reply, dict) else None
+            text = json.dumps(_error(msg_id if isinstance(msg_id, (str, int)) else None,
+                                     INTERNAL_ERROR, "Internal error: unencodable result"))
         with self._write_lock:
             dst.write(text + "\n")
             dst.flush()
@@ -238,6 +248,10 @@ class _RpcError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not valid JSON")
 
 
 def _error(msg_id: Any, code: int, message: str, data: Any = None) -> Json:

@@ -28,7 +28,6 @@ import csv
 import json
 import os
 import re
-import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -177,6 +176,36 @@ def ctx(root: Path) -> ToolContext:
     return ToolContext(root=str(root))
 
 
+# A valid call of every tool (relative to the ``root`` fixture).
+VALID_ARGS: dict[str, dict[str, Any]] = {
+    "distance": {"from": DELHI, "to": MUMBAI},
+    "bearing": {"from": DELHI, "to": MUMBAI},
+    "destination": {"start": DELHI, "bearing": 90, "distance": 10},
+    "midpoint": {"a": DELHI, "b": MUMBAI},
+    "buffer": {"center": DELHI, "radius": 5, "num_points": 8},
+    "contains": {"point": DELHI, "area": square(77, 28, 78, 29)},
+    "intersects": {"a": square(0, 0, 1, 1), "b": square(0.5, 0.5, 2, 2)},
+    "measure": {"geometry": square(0, 0, 1, 1)},
+    "geohash": {"point": DELHI},
+    "list_files": {},
+    "describe_dataset": {"path": "cities.csv"},
+    "query_features": {"path": "cities.csv"},
+    "nearest": {"path": "cities.csv", "point": DELHI},
+    "preview_map": {"path": "cities.csv", "width": 64, "height": 64},
+    "make_map": {"path": "cities.csv", "output": "every.svg", "width": 64, "height": 64,
+                 "overwrite": True},
+    "export_features": {"path": "cities.csv", "output": "every.csv", "overwrite": True},
+    "geocode": {"query": "Pune"},
+    "reverse_geocode": {"point": DELHI},
+}
+
+
+@pytest.fixture
+def full_ctx(root: Path) -> ToolContext:
+    """Everything allowed, with a fake geocoder."""
+    return ToolContext(root=str(root), allow_network=True, geocoder=FakeGeocoder())
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # tool_definitions()
 # ─────────────────────────────────────────────────────────────────────────────
@@ -303,21 +332,15 @@ class TestToolDefinitions:
             tool_definitions(fmt)   # type: ignore[arg-type]
         assert info.value.name == "format"
 
-    @pytest.mark.xfail(strict=True, reason="BUG: an unknown name in names=[…] raises a bare "
-                       "KeyError instead of InvalidArgumentError (like an unknown format does)")
-    def test_unknown_name_in_filter(self):
+    @pytest.mark.parametrize("names", [["no_such_tool"], ["distance", "Distance"]])
+    def test_unknown_name_in_filter(self, names):
         with pytest.raises(InvalidArgumentError):
-            tool_definitions("mcp", names=["no_such_tool"])
+            tool_definitions("mcp", names=names)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: make_map's 'tiles' enum omits the 'satellite' "
-                       "preset that map()/tile_presets() offer (and the file notice recommends)")
     def test_tiles_enum_lists_every_preset(self):
         enum = TOOLS["make_map"].input_schema["properties"]["tiles"]["enum"]
-        assert set(tile_presets()) <= set(enum)
-
-    def test_tiles_enum_entries_are_presets(self):
-        enum = TOOLS["make_map"].input_schema["properties"]["tiles"]["enum"]
-        assert set(enum) <= set(tile_presets())
+        assert set(enum) == set(tile_presets())
+        assert "satellite" in enum
 
     def test_server_instructions(self):
         assert "lat" in SERVER_INSTRUCTIONS and "list_files" in SERVER_INSTRUCTIONS
@@ -339,9 +362,9 @@ class TestGeometryTools:
         assert data["unit"] == "miles" and data["method"] == "vincenty"
         assert data["distance"] == pytest.approx(1148.1 / 1.609344, rel=0.01)
 
-    def test_distance_accepts_lat_lng_pairs(self, ctx):
-        data = ok("distance", {"from": [0, 0], "to": [0, 1]}, ctx)
-        assert data["distance"] == pytest.approx(111.195, abs=0.01)
+    def test_distance_rejects_lat_lng_pairs(self, ctx):
+        message = err("distance", {"from": [0, 0], "to": [0, 1]}, ctx)
+        assert "from" in message and "object" in message
 
     def test_bearing(self, ctx):
         assert ok("bearing", {"from": {"lat": 0, "lng": 0}, "to": {"lat": 0, "lng": 1}}, ctx) == \
@@ -737,11 +760,14 @@ class TestCallErrors:
         err("contains", {"point": DELHI, "area": {"type": "LineString",
                                                   "coordinates": [[0, 0], [1, 1]]}}, ctx)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: call_tool does not enforce the schema maximum "
-                       "num_points=4096 — huge values return megabytes or hang the server")
     def test_buffer_num_points_above_schema_maximum(self, ctx):
         assert TOOLS["buffer"].input_schema["properties"]["num_points"]["maximum"] == 4096
-        err("buffer", {"center": DELHI, "radius": 1, "num_points": 4097}, ctx)
+        assert "num_points" in err("buffer", {"center": DELHI, "radius": 1,
+                                              "num_points": 4097}, ctx)
+        assert "num_points" in err("buffer", {"center": DELHI, "radius": 1,
+                                              "num_points": 10**12}, ctx)
+        assert len(ok("buffer", {"center": DELHI, "radius": 1,
+                                 "num_points": 4096}, ctx)["geometry"]["coordinates"][0]) == 4097
 
     def test_path_dot_dot_escape(self, tmp_path, ctx):
         (tmp_path / "outside.csv").write_text(CITIES_CSV, encoding="utf-8")
@@ -852,10 +878,6 @@ class TestCallErrors:
                                                   "overwrite": True}, ctx)
         assert (root / "zones.geojson").read_bytes() == before
 
-    @pytest.mark.xfail(sys.platform == "darwin", strict=True,
-                       reason="BUG: on macOS the input check compares paths case-sensitively "
-                              "(os.path.normcase is a no-op), so 'CITIES.csv' overwrites "
-                              "'cities.csv' on a case-insensitive volume")
     def test_output_is_input_other_case(self, ctx, root):
         probe = root / "CaseProbe.txt"
         probe.write_text("x", encoding="utf-8")
@@ -895,9 +917,7 @@ class TestCallErrors:
     def test_output_missing(self, ctx):
         assert "output" in err("make_map", {"path": "cities.csv"}, ctx)
 
-    @pytest.mark.xfail(strict=True, reason="BUG: an empty/non-string 'output' is reported as "
-                       "\"'path' must be a non-empty string\" — the wrong argument name")
-    @pytest.mark.parametrize("output", ["", 5])
+    @pytest.mark.parametrize("output", ["", "   ", 5, None])
     def test_bad_output_names_output(self, ctx, output):
         message = err("export_features", {"path": "cities.csv", "output": output}, ctx)
         assert "'output'" in message and "'path'" not in message
@@ -913,17 +933,17 @@ class TestCallErrors:
         err("preview_map", {"path": "cities.csv", "width": 1}, ctx)
         err("make_map", {"path": "cities.csv", "output": "s.png", "width": 10**6}, ctx)
 
-    def test_errors_never_raise(self, ctx):
-        weird: list[Any] = [None, 0, -1, 1.5, float("nan"), "", "x", [], [None], {}, True]
-        base = {"path": "cities.csv", "width": 64, "height": 64}   # keep previews small
+    def test_errors_never_raise(self, full_ctx):
+        weird: list[Any] = [None, 0, -1, 1.5, float("nan"), float("inf"), "", "x", "../x.csv",
+                            [], [None], [1, 2, 3, 4], {}, {"type": "Point"}, True]
         for name, tool in TOOLS.items():
             for key in tool.input_schema["properties"]:
-                if key in ("num_points", "width", "height"):
-                    continue
                 for value in weird:
-                    result = call_tool(name, {**base, key: value}, ctx)
+                    result = call_tool(name, {**VALID_ARGS[name], key: value}, full_ctx)
                     assert isinstance(result, ToolResult)
                     json.dumps(result.data, allow_nan=False)
+                    if result.is_error:
+                        assert result.data["error"]
 
     def test_bad_root(self, tmp_path):
         with pytest.raises(InvalidArgumentError):
@@ -938,6 +958,116 @@ class TestCallErrors:
         assert os.path.isabs(ctx.root)
         assert os.path.samefile(ctx.root, root)
         assert ToolContext().root == ctx.root   # default: the current directory
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Top-level schema validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSchemaValidation:
+    def test_every_tool_has_a_valid_call(self, full_ctx):
+        assert set(VALID_ARGS) == set(TOOLS)
+        for name, args in VALID_ARGS.items():
+            ok(name, dict(args), full_ctx)
+
+    @pytest.mark.parametrize("name", sorted(TOOLS))
+    def test_unknown_argument_rejected(self, full_ctx, root, name):
+        message = err(name, {**VALID_ARGS[name], "colour": "red"}, full_ctx)
+        assert "colour" in message and "Unknown" in message
+        assert not (root / "every.svg").exists() and not (root / "every.csv").exists()
+
+    @pytest.mark.parametrize("tool, key, value, words", [
+        ("distance", "unit", 5, ["unit", "string"]),
+        ("distance", "from", "Delhi", ["from", "object"]),
+        ("distance", "to", None, ["to", "object"]),
+        ("buffer", "num_points", True, ["num_points", "integer"]),
+        ("buffer", "num_points", 8.5, ["num_points", "integer"]),
+        ("buffer", "radius", "5", ["radius", "number"]),
+        ("buffer", "radius", False, ["radius", "number"]),
+        ("destination", "bearing", True, ["bearing", "number"]),
+        ("query_features", "descending", "yes", ["descending", "boolean"]),
+        ("query_features", "descending", 1, ["descending", "boolean"]),
+        ("query_features", "where", {"column": "x"}, ["where", "array"]),
+        ("query_features", "bbox", "68,6,98,36", ["bbox", "array"]),
+        ("geocode", "country_codes", "in", ["country_codes", "array"]),
+    ])
+    def test_wrong_json_type(self, full_ctx, tool, key, value, words):
+        message = err(tool, {**VALID_ARGS[tool], key: value}, full_ctx)
+        for word in words:
+            assert word in message
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_numbers(self, ctx, value):
+        message = err("buffer", {**VALID_ARGS["buffer"], "radius": value}, ctx)
+        assert "radius" in message and "finite" in message
+        assert "bearing" in err("destination", {**VALID_ARGS["destination"], "bearing": value},
+                                ctx)
+
+    @pytest.mark.parametrize("tool, key, value", [
+        ("distance", "unit", "parsec"),
+        ("distance", "unit", "KM"),
+        ("distance", "method", "euclid"),
+        ("measure", "area_unit", "km"),
+        ("make_map", "kind", "3d"),
+        ("make_map", "tiles", "google"),
+    ])
+    def test_enum(self, ctx, tool, key, value):
+        message = err(tool, {**VALID_ARGS[tool], key: value}, ctx)
+        assert key in message and "one of" in message
+
+    @pytest.mark.parametrize("tool, key, value, phrase", [
+        ("destination", "distance", -1, "at least 0"),
+        ("geohash", "precision", 0, "at least 1"),
+        ("geohash", "precision", 13, "at most 12"),
+        ("buffer", "radius", 0, "greater than 0"),
+        ("buffer", "radius", -2.5, "greater than 0"),
+        ("buffer", "num_points", 2, "at least 3"),
+        ("nearest", "k", 0, "at least 1"),
+        ("query_features", "limit", 0, "at least 1"),
+        ("query_features", "offset", -1, "at least 0"),
+        ("preview_map", "width", 63, "at least 64"),
+        ("preview_map", "height", 2049, "at most 2048"),
+        ("make_map", "width", 8193, "at most 8192"),
+        ("geocode", "limit", 51, "at most 50"),
+    ])
+    def test_bounds(self, full_ctx, tool, key, value, phrase):
+        message = err(tool, {**VALID_ARGS[tool], key: value}, full_ctx)
+        assert key in message and phrase in message
+
+    @pytest.mark.parametrize("bbox, phrase", [([1, 2, 3], "at least 4"),
+                                              ([1, 2, 3, 4, 5], "at most 4"),
+                                              ([], "at least 4")])
+    def test_array_length(self, ctx, bbox, phrase):
+        message = err("query_features", {"path": "cities.csv", "bbox": bbox}, ctx)
+        assert "bbox" in message and phrase in message
+
+    def test_boundary_values_pass(self, full_ctx):
+        ok("destination", {**VALID_ARGS["destination"], "distance": 0}, full_ctx)
+        ok("geohash", {"point": DELHI, "precision": 12}, full_ctx)
+        ok("geohash", {"point": DELHI, "precision": 1}, full_ctx)
+        ok("buffer", {**VALID_ARGS["buffer"], "radius": 0.001, "num_points": 3}, full_ctx)
+        ok("query_features", {"path": "cities.csv", "offset": 0, "limit": 1}, full_ctx)
+        ok("preview_map", {"path": "cities.csv", "width": 64, "height": 64}, full_ctx)
+        ok("geocode", {"query": "x", "limit": 50}, full_ctx)
+
+    def test_validation_runs_before_side_effects(self, root):
+        fake = FakeGeocoder()
+        ctx = ToolContext(root=str(root), allow_network=True, geocoder=fake)
+        err("geocode", {"query": "x", "limit": 0}, ctx)
+        err("make_map", {"path": "cities.csv", "output": "v.html", "tiles": "nope"}, ctx)
+        assert fake.calls == []
+        assert not (root / "v.html").exists()
+
+    @pytest.mark.parametrize("tool, args", [
+        ("buffer", {"center": DELHI, "radius": 10**400}),
+        ("destination", {"start": DELHI, "bearing": 10**400, "distance": 1}),
+    ], ids=["radius", "bearing"])
+    def test_huge_integer_for_number(self, ctx, tool, args):
+        err(tool, args, ctx)
+
+    def test_huge_integer_for_integer(self, ctx):
+        assert "num_points" in err("buffer", {**VALID_ARGS["buffer"], "num_points": 10**400},
+                                   ctx)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1011,16 +1141,16 @@ class TestPaging:
                                     "offset": data["next_offset"]}, ctx)
         assert nxt["features"][0]["properties"]["i"] == data["returned"]
 
-    @pytest.mark.xfail(strict=True, reason="BUG: a single feature larger than the 40,000-char "
-                       "page cap gives returned=0 and next_offset == offset, so paging never "
-                       "advances")
     def test_oversized_feature_does_not_stall_paging(self, ctx):
-        fc = points_fc(2)
-        fc["features"][0]["properties"]["pad"] = "y" * 50_000
-        result = call_tool("query_features", {"geojson": fc}, ctx)
-        if not result.is_error:
-            data = result.data
-            assert data["returned"] > 0 or data.get("next_offset", 1) > data["offset"]
+        fc = points_fc(3)
+        fc["features"][1]["properties"]["pad"] = "y" * 50_000
+        data = ok("query_features", {"geojson": fc}, ctx)
+        assert data["returned"] == 1 and data["next_offset"] == 1   # stops before the giant
+        data = ok("query_features", {"geojson": fc, "offset": 1}, ctx)
+        assert data["returned"] == 1 and data["next_offset"] == 2   # the giant on its own
+        assert len(data["features"][0]["properties"]["pad"]) == 50_000
+        data = ok("query_features", {"geojson": fc, "offset": 2}, ctx)
+        assert data["returned"] == 1 and data["truncated"] is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────

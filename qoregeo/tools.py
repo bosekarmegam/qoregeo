@@ -40,8 +40,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from .engine import GeoEngine
+from .engine import GeoEngine, _same_file
 from .exceptions import InvalidArgumentError, QOREgeoError
+from .map_builder import tile_presets
 from .utils import _json_safe
 
 Json = dict[str, Any]
@@ -81,10 +82,10 @@ class ToolContext:
             raise InvalidArgumentError("root", self.root, "an existing directory",
                                        "ToolContext(root='.')")
 
-    def resolve(self, path: Any, *, must_exist: bool) -> str:
+    def resolve(self, path: Any, *, must_exist: bool, name: str = "path") -> str:
         """``path`` (relative to root, or absolute inside it) as a real path inside root."""
-        if not isinstance(path, str) or not path.strip():
-            raise ToolError("'path' must be a non-empty string, e.g. \"data/cities.csv\".")
+        if not isinstance(path, str) or not path.strip() or "\0" in path:
+            raise ToolError(f"'{name}' must be a non-empty file path, e.g. \"data/cities.csv\".")
         candidate = os.path.realpath(os.path.join(self.root, os.path.expanduser(path.strip())))
         if os.path.commonpath([candidate, self.root]) != self.root:
             raise ToolError(f"'{path}' is outside the allowed directory {self.root}. "
@@ -163,7 +164,7 @@ class Tool:
 
 _DISTANCE_UNITS = ["km", "m", "miles", "ft", "yd", "nmi"]
 _AREA_UNITS = ["km2", "m2", "ha", "acres", "mi2", "ft2"]
-_TILES = ["light", "osm", "dark", "humanitarian", "topo", "cyclosm", "osm-de", "osm-fr", "none"]
+_TILES = list(tile_presets())
 
 
 def _point(description: str) -> Json:
@@ -331,7 +332,7 @@ def _feature_page(geo: GeoEngine, ctx: ToolContext, offset: Any = 0) -> Json:
     shown = _clean(features[offset: offset + ctx.max_features])
     sizes = [len(json.dumps(f, ensure_ascii=False, separators=(",", ":"))) + 1 for f in shown]
     total = sum(sizes)
-    while shown and total > MAX_RESULT_CHARS:
+    while len(shown) > 1 and total > MAX_RESULT_CHARS:   # always make progress
         total -= sizes.pop()
         shown.pop()
     page: Json = {
@@ -349,10 +350,10 @@ def _feature_page(geo: GeoEngine, ctx: ToolContext, offset: Any = 0) -> Json:
 def _output_path(ctx: ToolContext, args: Json, suffixes: tuple[str, ...], source: str | None) -> str:
     if not ctx.allow_write:
         raise ToolError("Writing files is disabled for this server (started without write access).")
-    real = ctx.resolve(args.get("output"), must_exist=False)
+    real = ctx.resolve(args.get("output"), must_exist=False, name="output")
     if not real.lower().endswith(suffixes):
         raise ToolError(f"'output' must end with {' or '.join(suffixes)}.")
-    if source is not None and os.path.normcase(real) == os.path.normcase(source):
+    if source is not None and _same_file(real, source):
         raise ToolError("'output' is the input data file; choose a different file name.")
     if os.path.isdir(real):
         raise ToolError(f"'{args.get('output')}' is a directory.")
@@ -722,6 +723,10 @@ def tool_definitions(
     if format not in _FORMATS:
         raise InvalidArgumentError("format", format, " | ".join(repr(f) for f in _FORMATS),
                                    "tool_definitions('anthropic')")
+    unknown = [n for n in names or [] if n not in TOOLS]
+    if unknown:
+        raise InvalidArgumentError("names", unknown, f"tool names from: {', '.join(TOOLS)}",
+                                   "tool_definitions('anthropic', names=['distance', 'nearest'])")
     selected = [TOOLS[n] for n in names] if names is not None else list(TOOLS.values())
     if not include_network:
         selected = [t for t in selected if not t.open_world]
@@ -758,10 +763,12 @@ def call_tool(name: str, arguments: Json | None = None, context: ToolContext | N
         arguments = {}
     if not isinstance(arguments, dict):
         return ToolResult({"error": "Arguments must be a JSON object."}, is_error=True)
-    missing = [k for k in tool.input_schema.get("required", []) if k not in arguments]
-    if missing:
-        return ToolResult({"error": f"Missing required argument(s): {', '.join(missing)}."},
-                          is_error=True)
+    # An explicit null means "not given" for optional arguments.
+    required = set(tool.input_schema.get("required", []))
+    arguments = {k: v for k, v in arguments.items() if v is not None or k in required}
+    problem = _schema_problem(tool.input_schema, arguments)
+    if problem:
+        return ToolResult({"error": problem}, is_error=True)
     try:
         return tool.handler(ctx, arguments)
     except ToolError as exc:
@@ -770,6 +777,58 @@ def call_tool(name: str, arguments: Json | None = None, context: ToolContext | N
         return ToolResult({"error": _plain(str(exc))}, is_error=True)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return ToolResult({"error": f"{type(exc).__name__}: {exc}"}, is_error=True)
+
+
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,), "integer": (int,), "number": (int, float), "boolean": (bool,),
+    "array": (list,), "object": (dict,),
+}
+
+
+def _finite(value: Any) -> bool:
+    try:
+        return math.isfinite(value) and abs(value) < 1e300
+    except OverflowError:   # an int too large for a float
+        return False
+
+
+def _schema_problem(schema: Json, arguments: Json) -> str | None:
+    """
+    Why ``arguments`` don't fit the top level of ``schema`` (None if they do):
+    unknown or missing keys, wrong types, values outside enum / bounds.
+    Nested structures are checked by the handlers.
+    """
+    props: Json = schema.get("properties", {})
+    unknown = sorted(k for k in arguments if k not in props)
+    if unknown and schema.get("additionalProperties") is False:
+        return (f"Unknown argument(s): {', '.join(unknown)}. "
+                f"Valid arguments: {', '.join(props) or 'none'}.")
+    missing = [k for k in schema.get("required", []) if k not in arguments]
+    if missing:
+        return f"Missing required argument(s): {', '.join(missing)}."
+    for key, value in arguments.items():
+        spec = props.get(key, {})
+        kind = spec.get("type")
+        if kind in _JSON_TYPES:
+            if not isinstance(value, _JSON_TYPES[kind]) or (kind != "boolean" and isinstance(value, bool)):
+                return f"'{key}' must be a{'n' if kind[0] in 'aeiou' else ''} {kind}, got {value!r:.60}."
+            if kind in ("number", "integer") and not _finite(arguments[key]):
+                return f"'{key}' must be a finite number of reasonable size."
+        if "enum" in spec and value not in spec["enum"]:
+            return f"'{key}' must be one of {', '.join(map(str, spec['enum']))}; got {value!r:.60}."
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if "minimum" in spec and value < spec["minimum"]:
+                return f"'{key}' must be at least {spec['minimum']}."
+            if "maximum" in spec and value > spec["maximum"]:
+                return f"'{key}' must be at most {spec['maximum']}."
+            if "exclusiveMinimum" in spec and value <= spec["exclusiveMinimum"]:
+                return f"'{key}' must be greater than {spec['exclusiveMinimum']}."
+        if isinstance(value, list):
+            if "minItems" in spec and len(value) < spec["minItems"]:
+                return f"'{key}' needs at least {spec['minItems']} item(s)."
+            if "maxItems" in spec and len(value) > spec["maxItems"]:
+                return f"'{key}' takes at most {spec['maxItems']} item(s)."
+    return None
 
 
 def _plain(message: str) -> str:
