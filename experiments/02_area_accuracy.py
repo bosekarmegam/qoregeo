@@ -41,14 +41,15 @@ import statistics
 import sys
 import time
 import timeit
+from collections.abc import Callable
+from itertools import pairwise
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-
 import pyproj  # noqa: E402
 from geographiclib.geodesic import Geodesic  # noqa: E402
 
@@ -210,7 +211,7 @@ def pyproj_area(ring: list[tuple[float, float]]) -> float:
 
 
 def gl_length(pts: list[tuple[float, float]]) -> float:
-    return sum(W.Inverse(a[0], a[1], b[0], b[1], Geodesic.DISTANCE)["s12"] for a, b in zip(pts, pts[1:]))
+    return sum(W.Inverse(a[0], a[1], b[0], b[1], Geodesic.DISTANCE)["s12"] for a, b in pairwise(pts))
 
 
 def richardson(a_n: float, a_2n: float) -> float:
@@ -551,12 +552,12 @@ def claim_check(squares: list[dict[str, Any]], circles: list[dict[str, Any]],
                 random_res: dict[str, Any]) -> dict[str, Any]:
     fine = [i / 10 for i in range(0, 901)]
     theory = [abs(small_area_error(x)) * 100 for x in fine]
-    low = max(t for x, t in zip(fine, theory) if x <= 55)
+    low = max(t for x, t in zip(fine, theory, strict=True) if x <= 55)
     high = max(theory)
     meas = squares + circles
     m_low = max(abs(r["error_pct"]) for r in meas if abs(r["lat"]) <= 55)
     m_all = max(abs(r["error_pct"]) for r in meas)
-    zero = next(x for x, y in zip(fine, (small_area_error(x) for x in fine)) if y < 0)
+    zero = next(x for x in fine if small_area_error(x) < 0)
     return {
         "claim": ("skills/qoregeo/SKILL.md: within about 0.5 % of WGS84 values up to ~55 degrees "
                   "latitude and up to ~0.9 % near the poles"),

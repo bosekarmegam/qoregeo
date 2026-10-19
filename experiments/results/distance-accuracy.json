@@ -53,10 +53,10 @@
     20000000.0
    ]
   },
-  "utc_timestamp": "2026-10-19T12:52:04+00:00",
+  "utc_timestamp": "2026-10-19T12:52:37+00:00",
   "command": "python experiments/01_distance_accuracy.py --quick",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
-  "runtime_seconds": 3.2,
+  "runtime_seconds": 4.0,
   "figures": [
    "docs/assets/experiments/distance-accuracy-relative-error.svg",
    "docs/assets/experiments/distance-accuracy-haversine-by-latitude.svg",
@@ -1282,8 +1282,8 @@
      }
     ],
     "time_per_call_us": {
-     "converged_median": 19.499000018186052,
-     "fallback_median": 145.90599994335207,
+     "converged_median": 29.255000072225812,
+     "fallback_median": 270.45799993175024,
      "note": "single-shot wall time per call, indicative only"
     }
    },
@@ -3075,52 +3075,52 @@
    "repeats": 3,
    "per_call": {
     "qoregeo distance(method='haversine')": {
-     "median_us": 3.16641000040363,
-     "min_us": 2.8205099999922822
+     "median_us": 3.1673399996634544,
+     "min_us": 3.106034999973417
     },
     "qoregeo distance(method='vincenty')": {
-     "median_us": 7.998705000318295,
-     "min_us": 7.919235000599657
+     "median_us": 8.896414999526314,
+     "min_us": 8.170419999942169
     },
     "qoregeo internal _haversine_km": {
-     "median_us": 0.6141699998352124,
-     "min_us": 0.5834199998844269
+     "median_us": 0.6825250000019878,
+     "min_us": 0.6723000001329638
     },
     "qoregeo internal _vincenty_km": {
-     "median_us": 4.6465999992051366,
-     "min_us": 4.629129999784709
+     "median_us": 5.155904999583072,
+     "min_us": 5.141259999845715
     },
     "geographiclib Geodesic.WGS84.Inverse (distance only)": {
-     "median_us": 71.42638000004808,
-     "min_us": 69.93183500071609
+     "median_us": 104.26396499951807,
+     "min_us": 79.96463499921447
     },
     "geopy geodesic": {
-     "median_us": 172.99982999929853,
-     "min_us": 132.30051999926218
+     "median_us": 193.15334499992787,
+     "min_us": 142.23881500015523
     },
     "geopy great_circle": {
-     "median_us": 8.450005000213423,
-     "min_us": 8.396115000550708
+     "median_us": 7.097580000845483,
+     "min_us": 6.102795000515471
     },
     "haversine package": {
-     "median_us": 1.576915000214285,
-     "min_us": 1.5216149995467276
+     "median_us": 1.3044699994679831,
+     "min_us": 1.1726400009592908
     },
     "pyproj Geod.inv (scalar call)": {
-     "median_us": 2.4005950001537713,
-     "min_us": 2.3002000000360567
+     "median_us": 1.573025000425332,
+     "min_us": 1.3751799997407943
     },
     "qoregeo distance(method='vincenty'), fallback pairs": {
-     "median_us": 263.6416449990975,
-     "min_us": 234.3962299994473
+     "median_us": 192.38597000025948,
+     "min_us": 161.11120499999743
     },
     "geographiclib Inverse, same fallback pairs": {
-     "median_us": 82.48468500028139,
-     "min_us": 73.53737500011448
+     "median_us": 99.80896999991273,
+     "min_us": 91.95054500082733
     },
     "pyproj Geod.inv (numpy arrays, per pair)": {
-     "median_us": 1.4202850002220657,
-     "min_us": 1.142935000189027
+     "median_us": 1.1590399992655875,
+     "min_us": 1.0956799997074995
     }
    },
    "near_antipodal_fallback_pairs": 200,
