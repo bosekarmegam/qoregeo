@@ -535,8 +535,8 @@ def measure() -> tuple[str, list[str]]:
     rings = []
     for city, t in (("Delhi", ring_delhi), ("Mumbai", ring_mumbai)):
         x, y = qmap.markers[names.index(city)]
-        rings.append(f'<circle class="{motion.appear(t)}" cx="{num(x)}" cy="{num(y)}" r="9" '
-                     f'fill="none" stroke="{AMBER}" stroke-width="2"/>')
+        rings.append(f'<circle class="{motion.appear(t)}" cx="{num(x)}" cy="{num(y)}" r="7.5" '
+                     f'fill="none" stroke="{AMBER}" stroke-width="1.75"/>')
     draw_css, dash = motion.draw(draw_at, draw_for, length(line_px))
     path = (f'<path class="{draw_css}" d="{line_el.get("d")}" fill="none" stroke="{AMBER}" '
             f'stroke-width="3" stroke-linecap="round" stroke-linejoin="round" {dash}/>')
@@ -622,7 +622,7 @@ def geofence() -> tuple[str, list[str]]:
             circles.append(f'<circle class="{css}" cx="{num(x)}" cy="{num(y)}" '
                            f'r="{num(qmap.radius)}" fill="{TEAL_DARK}"/>')
             halos.append(f'<circle class="{motion.appear(h, 0.6)}" cx="{num(x)}" cy="{num(y)}" '
-                         f'r="10"/>')
+                         f'r="9"/>')
         else:
             circles.append(f'<circle class="{motion.appear(t)}" cx="{num(x)}" cy="{num(y)}" '
                            f'r="{num(qmap.radius)}"/>')
@@ -639,15 +639,19 @@ def geofence() -> tuple[str, list[str]]:
             labels.append(label_text(t, motion.appear(shows[i] + 0.1, grow=False), GRAY))
 
     # The zone: qoregeo's dashed outline, uncovered by a mask whose solid stroke
-    # draws itself, so the dashes stay put while the circle closes.
+    # draws itself, so the dashes stay put while the circle closes. An unmasked
+    # copy fades in on top when the trace ends, so a browser that does not repaint
+    # an animated mask still shows the zone.
     trace_css, trace_dash = motion.draw(trace_at, trace_for, length(ring_px))
     defs = (f'<mask id="zone-trace" maskUnits="userSpaceOnUse" x="0" y="0" width="{MAP_W}" '
             f'height="{MAP_H}"><path class="{trace_css}" d="{zone_el.get("d")}" fill="none" '
             f'stroke="{WHITE}" stroke-width="8" {trace_dash}/></mask>')
     zone_fill = (f'<path class="{motion.appear(trace_at + trace_for - 0.4, 0.6, grow=False)}" '
                  f'd="{zone_el.get("d")}" fill="{AMBER}" fill-opacity=".08"/>')
-    zone_line = (f'<path d="{zone_el.get("d")}" fill="none" stroke="{AMBER}" stroke-width="2" '
-                 f'stroke-dasharray="{dashes}" stroke-linejoin="round" mask="url(#zone-trace)"/>')
+    outline = (f'd="{zone_el.get("d")}" fill="none" stroke="{AMBER}" stroke-width="2" '
+               f'stroke-dasharray="{dashes}" stroke-linejoin="round"')
+    zone_line = (f'<path {outline} mask="url(#zone-trace)"/>'
+                 f'<path class="{motion.appear(trace_at + trace_for, 0.3, grow=False)}" {outline}/>')
     hub_mark = (f'<g class="{motion.appear(hub_at)}"><circle cx="{num(hx)}" cy="{num(hy)}" r="7" '
                 f'fill="none" stroke="{INK}" stroke-width="1.5"/><circle cx="{num(hx)}" '
                 f'cy="{num(hy)}" r="2.5" fill="{INK}"/></g>')
@@ -734,7 +738,7 @@ def corridor() -> tuple[str, list[str]]:
             circles.append(f'<circle class="{css}" cx="{num(x)}" cy="{num(y)}" '
                            f'r="{num(qmap.radius)}" fill="{TEAL_DARK}"/>')
             halos.append(f'<circle class="{motion.appear(h, 0.6)}" cx="{num(x)}" cy="{num(y)}" '
-                         f'r="10"/>')
+                         f'r="9"/>')
         else:
             circles.append(f'<circle class="{motion.appear(shows[i])}" cx="{num(x)}" '
                            f'cy="{num(y)}" r="{num(qmap.radius)}"/>')

@@ -72,7 +72,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 import shapely  # noqa: E402
 import shapely.affinity  # noqa: E402
 from geographiclib.geodesic import Geodesic  # noqa: E402
-from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 from shapely.geometry import box as sbox  # noqa: E402
 from shapely.geometry import mapping  # noqa: E402
