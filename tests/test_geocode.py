@@ -1093,7 +1093,7 @@ class TestGeocodingError:
     def test_house_style(self) -> None:
         err = GeocodingError("Something broke.", "Do this.\nThen that.", 503)
         text = str(err)
-        assert "❌  QOREgeo — Geocoding Failed" in text
+        assert "❌  QOREgeo: Geocoding Failed" in text
         assert "Something broke." in text and "HTTP status: 503" in text
         assert "Fix it:\n    Do this.\n    Then that." in text
         assert err.status == 503 and err.hint == "Do this.\nThen that."

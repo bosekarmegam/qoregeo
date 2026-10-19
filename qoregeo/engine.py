@@ -1,7 +1,7 @@
 """
 qoregeo.engine
 ==============
-Core GeoEngine class — the single entry point for all spatial operations.
+Core GeoEngine class: the single entry point for all spatial operations.
 
 Usage:
     from qoregeo import GeoEngine
@@ -90,7 +90,7 @@ from .utils import (
 # ─────────────────────────────────────────────────────────────────────────────
 # Type aliases
 # ─────────────────────────────────────────────────────────────────────────────
-Coord = tuple[float, float]   # (lat, lng) — what methods return
+Coord = tuple[float, float]   # (lat, lng): what methods return
 Feature = dict[str, Any]      # GeoJSON Feature dict
 PathLike = str | os.PathLike[str]
 # What methods accept as a point: a (lat, lng) or (lat, lng, alt) sequence,
@@ -143,8 +143,8 @@ _INT_TEXT_RE = re.compile(r"^[+-]?\d+$")
 
 def _as_number(value: Any) -> int | float | None:
     """
-    Numeric view of a property value (None if not numeric). Integers — and
-    integer strings — stay ``int`` so large IDs compare exactly (Python
+    Numeric view of a property value (None if not numeric). Integers and
+    integer strings stay ``int`` so large IDs compare exactly (Python
     compares ``int`` with ``float`` exactly too).
     """
     if isinstance(value, bool) or value is None:
@@ -227,7 +227,7 @@ def _view_hint(path: str, tiles: str) -> str:
     """How to open a saved map whose basemap won't load from file://."""
     if not _tiles_config(tiles)["needsReferer"]:
         return ""
-    return f" — view it with: qoregeo serve {_shell_quote(path)}"
+    return f". View it with: qoregeo serve {_shell_quote(path)}"
 
 
 def _check_encoding(encoding: Any) -> str:
@@ -514,8 +514,8 @@ class GeoEngine:
         lng_col     : override longitude column name
         encoding    : file encoding (default utf-8-sig handles BOM)
         delimiter   : CSV delimiter; auto-detected if None (comma, semicolon,
-                      tab or pipe — quoting is honoured, and an Excel
-                      ``sep=;`` first line is understood)
+                      tab or pipe). Quoting is honoured, and an Excel
+                      ``sep=;`` first line is understood.
         infer_types : convert CSV values to int / float / bool / None where
                       unambiguous (values with leading zeros or a leading
                       '+' stay strings)
@@ -527,7 +527,7 @@ class GeoEngine:
 
         Returns
         -------
-        self — for method chaining
+        self, for method chaining
         """
         path_str = _fspath(path, "geo.load('cities.csv')")
         if os.path.isdir(path_str):
@@ -720,8 +720,8 @@ class GeoEngine:
         if problems:
             warnings.warn(
                 f"QOREgeo: skipped {len(problems)} row(s) in '{path}' with non-numeric or "
-                f"out-of-range coordinates (lat must be -90..90, lng -180..180 — are the "
-                f"columns swapped?): {_skip_summary(problems)}",
+                f"out-of-range coordinates (lat must be -90..90 and lng -180..180; check "
+                f"whether the columns are swapped): {_skip_summary(problems)}",
                 stacklevel=3,
             )
         if bad_geometry:
@@ -830,11 +830,12 @@ class GeoEngine:
         ----------
         path     : output path (.geojson, .json, .csv or .tsv)
         encoding : file encoding
-        csv_safe : for CSV/TSV, prefix text cells — values and header
-                   (property name) cells — that spreadsheet apps would run as
-                   a formula (starting with ``= + - @``, tab or CR) with
-                   ``'`` — protects files you share from CSV/formula
-                   injection. Real numbers such as ``-12.5`` are left alone.
+        csv_safe : for CSV/TSV, prefix ``'`` to each text cell that a
+                   spreadsheet app would run as a formula (one starting with
+                   ``= + - @``, tab or CR), in values and in header (property
+                   name) cells. This protects files you share from
+                   CSV/formula injection. Real numbers such as ``-12.5`` are
+                   left alone.
 
         Returns
         -------
@@ -971,7 +972,7 @@ class GeoEngine:
         ----------
         point_a    : (lat, lng) origin
         point_b    : (lat, lng) destination
-        as_degrees : if True, return numeric degrees (0–360) instead of a
+        as_degrees : if True, return numeric degrees (0 to 360) instead of a
                      16-point compass string
 
         Returns
@@ -1068,7 +1069,7 @@ class GeoEngine:
         if radius_km > half_circumference:
             raise InvalidArgumentError(
                 "radius", radius, f"at most {half_circumference:.0f} km (half the Earth's "
-                "circumference) — a larger circle covers the whole globe",
+                "circumference), since a larger circle covers the whole globe",
                 "geo.buffer(center, radius=500)",
             )
         coords = _generate_circle_polygon((lat, lng), radius_km, num_points)
@@ -1117,8 +1118,8 @@ class GeoEngine:
     def area(self, polygon: dict[str, Any], unit: str = "km2") -> float:
         """
         Area of a Polygon / MultiPolygon / Feature / buffer on a sphere of
-        mean Earth radius (Chamberlain & Duquette, as in Turf.js — not the
-        WGS-84 ellipsoid; within about 0.5% of ellipsoidal areas).
+        mean Earth radius, not the WGS-84 ellipsoid (Chamberlain & Duquette,
+        as in Turf.js). Results are within about 0.5% of ellipsoidal areas.
 
         Parameters
         ----------
@@ -1182,7 +1183,7 @@ class GeoEngine:
 
     def geohash(self, point: PointLike, precision: int = 9) -> str:
         """
-        Encode a point as a geohash string (precision 1–12 characters).
+        Encode a point as a geohash string (precision 1 to 12 characters).
 
         Examples
         --------
@@ -1485,8 +1486,8 @@ class GeoEngine:
     def filter_by_polygon(self, polygon: dict[str, Any]) -> GeoEngine:
         """
         Keep features whose location lies inside ``polygon`` (a buffer(),
-        Polygon, MultiPolygon or Feature) — e.g. all customers inside a
-        delivery zone.
+        Polygon, MultiPolygon or Feature), for example all customers inside
+        a delivery zone.
 
         Examples
         --------
@@ -1518,8 +1519,9 @@ class GeoEngine:
 
     def filter_intersects(self, geometry: Any) -> GeoEngine:
         """
-        Keep features whose *whole geometry* intersects ``geometry`` — e.g.
-        roads crossing a flood zone, or districts touching a delivery area.
+        Keep features whose *whole geometry* intersects ``geometry``, for
+        example roads crossing a flood zone, or districts touching a delivery
+        area.
         (``filter_by_polygon`` instead tests each feature's single
         representative point.)
 
@@ -1539,7 +1541,7 @@ class GeoEngine:
 
     def filter_by_line(self, line: Any, distance: float, unit: str = "km") -> GeoEngine:
         """
-        Keep features within ``distance`` of a path — a "line buffer", e.g.
+        Keep features within ``distance`` of a path (a "line buffer"), e.g.
         every store within 2 km of a highway. Results are sorted nearest-first
         with a ``_distance`` property (in ``unit``) injected.
 
@@ -1704,8 +1706,8 @@ class GeoEngine:
         if self._source_real is not None and _same_file(path, self._source_real):
             raise InvalidArgumentError(
                 "output_path", path,
-                "a different file — this is the data file that was loaded, and writing "
-                "here would overwrite it",
+                "a different file (this is the data file that was loaded, and writing "
+                "here would overwrite it)",
                 example,
             )
         return path
@@ -1758,7 +1760,7 @@ class GeoEngine:
 
         Points, lines and polygons are all drawn; property popups are
         HTML-escaped. The basemap is OpenStreetMap, whose tile servers only
-        serve web pages — view the file with ``geo.show()`` or
+        serve web pages, so view the file with ``geo.show()`` or
         ``qoregeo serve map.html`` (or pick ``tiles='topo'``, ``'satellite'``,
         ``'osm-de'`` or ``'none'``, which also work when opened from disk).
 
@@ -1769,7 +1771,7 @@ class GeoEngine:
         zoom        : with ``center``: the initial zoom (default 10);
                       without: the maximum zoom used when fitting the data
         center      : (lat, lng) initial center; fits all features if None
-        tiles       : basemap — 'light' (OpenStreetMap, softened; default) |
+        tiles       : basemap preset 'light' (OpenStreetMap, softened; default) |
                       'osm' | 'dark' | 'humanitarian' | 'topo' | 'satellite' |
                       'cyclosm' | 'osm-de' | 'osm-fr' | 'none', or a custom
                       ``https://…/{z}/{x}/{y}.png`` URL template.
@@ -1864,7 +1866,7 @@ class GeoEngine:
                         non-numeric values get no weight
         zoom          : see map()
         center        : (lat, lng) initial center; fits all points if None
-        tiles         : basemap — see map()
+        tiles         : basemap (see map())
         radius, blur  : heat point radius and blur in pixels
         attribution   : attribution HTML (required for a custom tile URL)
 
@@ -1927,7 +1929,7 @@ class GeoEngine:
     ) -> bytes:
         """
         A static PNG map of the features (no basemap, no browser, no
-        dependencies) — for reports, e-mails, notebooks and AI vision models.
+        dependencies) for reports, e-mails, notebooks and AI vision models.
 
         ``labels`` names a property drawn next to each feature (e.g. "name");
         ``grid`` draws a lat/lng graticule and ``scale_bar`` a distance scale.
@@ -1969,7 +1971,7 @@ class GeoEngine:
         scale_bar: bool = True,
     ) -> GeoEngine:
         """
-        Save a static map image — ``.png`` or ``.svg`` by file extension.
+        Save a static map image: ``.png`` or ``.svg``, chosen by file extension.
 
         Unlike ``map()`` it needs no browser or internet: points, lines and
         polygons are drawn on a plain background in the same colours, with a
@@ -2003,7 +2005,7 @@ class GeoEngine:
         """
         Open the map (or heatmap) in the browser via a local web server.
 
-        The page is served from ``http://127.0.0.1`` — never from disk —
+        The page is served from ``http://127.0.0.1``, never from disk,
         because OpenStreetMap's tile servers only serve web pages. Nothing is
         written to disk and only this machine can connect.
 
@@ -2037,9 +2039,9 @@ class GeoEngine:
         """Jupyter / IPython display: an interactive map of the features."""
         if self._data is None or self.count() > self._NOTEBOOK_MAP_LIMIT:
             return None
-        try:
+        try:   # display must never raise in a notebook
             page = self.map_html(title=f"QOREgeo · {self.count()} features")
-        except Exception:   # noqa: BLE001 — display must never raise in a notebook
+        except Exception:   # noqa: BLE001
             return None
         return (
             '<iframe srcdoc="' + html.escape(page, quote=True) + '" '

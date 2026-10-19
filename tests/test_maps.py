@@ -1100,7 +1100,7 @@ class TestHeatmapIntensity:
     def test_dropped_rows_warning(self, tmp_path):
         with pytest.warns(UserWarning, match=r"2 rows .* 'w' value \(-1, 'x'\) add no heat\.$"):
             render(weighted(10, -1, "x"), tmp_path, "heatmap", intensity_col="w")
-        with pytest.warns(UserWarning, match=r"1 row .* adds no heat — the heatmap is empty"):
+        with pytest.warns(UserWarning, match=r"1 row .* adds no heat, so the heatmap is empty"):
             render(weighted(0), tmp_path, "heatmap", intensity_col="w")
 
     def test_unweighted_points_are_lat_lng_one(self, geo, tmp_path):

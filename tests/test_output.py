@@ -955,7 +955,7 @@ class TestViewHint:
             pytest.skip("not a valid Windows file name")
         monkeypatch.chdir(tmp_path)
         GeoEngine(verbose=True).add_point(1, 2).map(name)
-        cmd = capsys.readouterr().out.split("view it with: ", 1)[1].strip()
+        cmd = capsys.readouterr().out.split("View it with: ", 1)[1].strip()
         assert cmd.startswith("qoregeo serve ")
         if os.name != "nt":   # POSIX shell syntax
             assert posix_words(cmd) == ["qoregeo", "serve", name]
