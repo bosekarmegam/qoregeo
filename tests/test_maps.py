@@ -23,11 +23,13 @@ import base64
 import csv
 import datetime
 import decimal
+import html
 import io
 import json
 import math
 import random
 import re
+import shlex
 import sys
 import warnings
 from pathlib import Path
@@ -50,7 +52,10 @@ from qoregeo.map_builder import (
     _TILES,
     _announce,
     _json_safe,
+    _nesting_depth,
+    _spans_world,
     _to_js,
+    map_page,
     tile_presets,
 )
 
@@ -752,15 +757,118 @@ class TestFileNotice:
         assert "`geo.show()`" in notice
         assert "'satellite'" in notice and "'topo'" in notice
 
-    def test_tiles_not_requested_from_file_protocol(self, geo, tmp_path):
-        page = render(geo, tmp_path)
-        assert 'var blocked = t.needsReferer && location.protocol === "file:";' in page
+    @pytest.mark.parametrize("builder", BUILDERS)
+    def test_tiles_not_requested_without_a_referer(self, geo, tmp_path, builder):
+        page = render(geo, tmp_path, builder)
+        assert "var blocked = t.needsReferer && !sendsReferer();" in page
         assert "if (blocked) showNotice(CONFIG.fileNotice);" in page
         assert "else if (t.url) L.tileLayer(t.url, t.options).addTo(map);" in page
         assert "textContent = part" in page   # never innerHTML
 
+    def test_referer_check_uses_origin_and_base_url(self, geo):
+        # A notebook's srcdoc iframe has location.protocol "about:" but the base
+        # URL (and so the Referer, if any) of its parent: a file:// parent sends
+        # none. A sandboxed iframe has an opaque origin and sends none either.
+        # (Verified in Chromium: file page, http page, srcdoc in file/http parents.)
+        page = geo.map_html()
+        assert ('return self.origin !== "null" && '
+                '/^https?:$/.test(new URL(document.baseURI).protocol);') in page
+        assert 'location.protocol === "file:"' not in page
+
+    def test_notebook_display_uses_the_same_check(self, geo):
+        frame = geo._repr_html_()
+        assert frame is not None and frame.startswith("<iframe srcdoc=")
+        assert "!sendsReferer()" in html.unescape(frame)
+
     def test_html_string_notice_defaults_to_map_html(self, geo):
         assert "`qoregeo serve map.html`" in parse_config(geo.map_html())["fileNotice"]
+
+
+def notice_command(notice: str) -> str:
+    """The code span holding the ``qoregeo serve …`` command in a file notice."""
+    mark = "\0" if "\0" in notice else "`"
+    spans = notice.split(mark)[1::2]
+    assert spans[1] == "geo.show()", spans
+    return spans[0]
+
+
+class TestFileNoticeQuoting:
+    @pytest.mark.parametrize(("name", "shown"), [
+        ("map.html", "map.html"),
+        ("café_2026-v1.2.html", "café_2026-v1.2.html"),
+        ("50%+a=b,c@d.html", "50%+a=b,c@d.html"),
+        ("my map.html", '"my map.html"'),
+        ("sales(2026).html", '"sales(2026).html"'),
+        ("bob's.html", '"bob\'s.html"'),
+        ("a&b|c;d<e>.html", '"a&b|c;d<e>.html"'),
+        ("~home*?.html", '"~home*?.html"'),
+        ("=x.html", '"=x.html"'),                  # zsh expands a leading '='
+        ("a$HOME.html", "'a$HOME.html'"),
+        ("a!b.html", "'a!b.html'"),                # bash history expansion
+        ('say "hi".html', "'say \"hi\".html'"),
+        ("it's $5.html", "'it'\"'\"'s $5.html'"),
+        ("-x.html", "./-x.html"),                  # never read as an option
+    ])
+    def test_command_can_be_pasted(self, geo, name, shown):
+        # Only the name is used, so no file is written (several of these
+        # names are not valid on Windows).
+        page, _ = map_page(geo.get_features(), output_path=f"out/{name}")
+        command = notice_command(parse_config(page)["fileNotice"])
+        assert command == f"qoregeo serve {shown}"
+        expected = "./" + name if name.startswith("-") else name
+        assert shlex.split(command) == ["qoregeo", "serve", expected]   # POSIX shell words
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    @pytest.mark.parametrize(("name", "shown"), [
+        ("sales(2026).html", '"sales(2026).html"'),
+        ("bob's $5.html", "'bob'\"'\"'s $5.html'"),
+        ("-x.html", "./-x.html"),
+    ])
+    def test_written_file_notice(self, geo, tmp_path, builder, name, shown):
+        out = tmp_path / name
+        getattr(geo, builder)(out)
+        notice = parse_config(read_page(out))["fileNotice"]
+        assert notice_command(notice) == f"qoregeo serve {shown}"
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    def test_backtick_in_name_switches_the_code_marker(self, geo, tmp_path, builder):
+        out = tmp_path / "a`b.html"
+        getattr(geo, builder)(out)
+        page = read_page(out)
+        notice = parse_config(page)["fileNotice"]
+        assert "\0" in notice and notice.count("`") == 1
+        assert notice_command(notice) == "qoregeo serve 'a`b.html'"
+        assert 'text.split(text.indexOf("\\u0000") >= 0 ? "\\u0000" : "`")' in page
+
+    def test_name_with_spaces_still_double_quoted(self, geo, tmp_path):
+        out = tmp_path / "india cities.html"
+        geo.map(out)
+        assert '`qoregeo serve "india cities.html"`' in parse_config(read_page(out))["fileNotice"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# The title panel never covers the basemap credit
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBrandPanel:
+    @pytest.mark.parametrize("builder", BUILDERS)
+    def test_brand_kept_above_the_attribution(self, geo, tmp_path, builder):
+        # On phones the credit wraps onto 2-3 lines; the fixed panel would sit
+        # on top of it. (Verified in Chromium at 320-1280 px for every preset.)
+        page = render(geo, tmp_path, builder)
+        assert "function keepBrandClear(map) {" in page
+        assert "map.attributionControl.getContainer()" in page
+        assert "brand.style.bottom = (document.documentElement.clientHeight - c.top + 6)" in page
+        assert 'window.addEventListener("resize", place);' in page
+        assert "new ResizeObserver(place).observe(credit)" in page
+        init = page.index("function baseMap(L) {")
+        assert page.index("keepBrandClear(map);", init) < page.index("return map;", init)
+
+    def test_brand_is_smaller_on_narrow_screens(self, geo):
+        page = geo.map_html()
+        media = page[page.index("@media (max-width: 480px) {"):]
+        assert media.index("#brand {") < media.index("}")
+        assert "font-size:12px" in media[:media.index("}")]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -825,6 +933,56 @@ class TestCustomTiles:
     def test_tile_api_key_parameter_removed(self, geo, tmp_path, builder):
         with pytest.raises(TypeError):
             getattr(geo, builder)(tmp_path / "t.html", tile_api_key="k")
+
+
+class TestCustomUrlOnOsmServers:
+    """OpenStreetMap's own servers given as a custom URL get the presets' safeguards."""
+
+    @pytest.mark.parametrize("builder", BUILDERS)
+    @pytest.mark.parametrize("url", [
+        OSM_URL,
+        "  HTTPS://Tile.OpenStreetMap.org/{z}/{x}/{y}.png  ",
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://tile.openstreetmap.org./{z}/{x}/{y}.png?x=1",
+    ])
+    def test_osm_url_needs_referer_and_credits_osm(self, geo, tmp_path, builder, url):
+        tiles = parse_config(render(geo, tmp_path, builder, tiles=url))["tiles"]
+        assert tiles["name"] == "custom"
+        assert tiles["url"] == url.strip()
+        assert tiles["needsReferer"] is True
+        assert tiles["options"]["referrerPolicy"] == "strict-origin-when-cross-origin"
+        assert tiles["options"]["attribution"] == OSM_ATTRIBUTION
+
+    def test_users_attribution_appended_to_osm_credit(self, geo, tmp_path):
+        tiles = parse_config(render(geo, tmp_path, tiles=OSM_URL, attribution="Data: Acme"))["tiles"]
+        assert tiles["options"]["attribution"] == f"{OSM_ATTRIBUTION}, Data: Acme"
+
+    def test_openstreetmap_fr_servers(self, geo, tmp_path):
+        url = "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png"
+        tiles = parse_config(render(geo, tmp_path, tiles=url))["tiles"]
+        assert tiles["needsReferer"] is True
+        assert tiles["options"]["subdomains"] == "abc"
+        attribution = tiles["options"]["attribution"]
+        assert attribution.startswith(f"&copy; {OSM_COPYRIGHT_LINK} contributors")
+        assert "https://openstreetmap.fr/" in attribution
+
+    @pytest.mark.parametrize("url", [
+        "https://tile.openstreetmap.org.example.com/{z}/{x}/{y}.png",
+        "https://notopenstreetmap.org/{z}/{x}/{y}.png",
+        "https://tile.openstreetmap.org@tiles.example.com/{z}/{x}/{y}.png",
+        "https://tiles.example.com/tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://tile.openstreetmap.de/{z}/{x}/{y}.png",
+        "https://[tile.openstreetmap.org/{z}/{x}/{y}.png",
+    ])
+    def test_other_hosts_untouched(self, geo, tmp_path, url):
+        tiles = parse_config(render(geo, tmp_path, tiles=url))["tiles"]
+        assert tiles["needsReferer"] is False
+        assert tiles["options"] == {"maxZoom": 19, "attribution": ""}
+
+    def test_saved_map_prints_how_to_view_it(self, tmp_path, capsys):
+        out = tmp_path / "osm.html"
+        GeoEngine(verbose=True).add_point(28.6, 77.2).map(out, tiles=OSM_URL)
+        assert "qoregeo serve" in capsys.readouterr().out
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1294,3 +1452,206 @@ class TestToJs:
             text = _to_js(obj)
             assert not set(text) & set("<>&\n\u2028\u2029"), repr(s)
             assert json.loads(unwrap(text)) == obj
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Deeply nested values
+# ─────────────────────────────────────────────────────────────────────────────
+
+def nested(depth: int, kind: str = "dict") -> Any:
+    value: Any = 1
+    for _ in range(depth):
+        value = {"a": value} if kind == "dict" else [value]
+    return value
+
+
+def deep_error(call: Any) -> InvalidArgumentError:
+    """
+    Run ``call`` and return the InvalidArgumentError it raises. A RecursionError
+    fails the test at once: pytest takes ~1 minute to format one whose frames
+    hold a deeply nested value.
+    """
+    try:
+        call()
+    except InvalidArgumentError as e:
+        return e
+    except RecursionError:
+        escaped = "a bare RecursionError"
+    else:
+        escaped = "no error"
+    pytest.fail(f"expected InvalidArgumentError, got {escaped}")
+
+
+class TestDeepNesting:
+    """Values too deep to serialise raise a clean error naming them (not RecursionError)."""
+
+    @pytest.mark.parametrize("kind", ["dict", "list"])
+    def test_deep_property_named_in_error(self, kind):
+        geo = single(ok=1, deep=nested(5000, kind))
+        error = deep_error(geo.map_html)
+        assert error.name == "features[0]['properties']['deep']"
+        message = str(error)
+        assert "more than 1000 levels deep" in message
+        assert "del geo.get_features()[0]['properties']['deep']" in message
+
+    def test_map_writes_nothing(self, tmp_path):
+        out = tmp_path / "deep.html"
+        deep_error(lambda: single(deep=nested(5000)).map(out))
+        assert not out.exists()
+
+    def test_self_referencing_property(self):
+        loop: dict[str, Any] = {"x": 1}
+        loop["self"] = loop
+        error = deep_error(single(loop=loop).map_html)
+        assert error.name == "features[0]['properties']['loop']"
+        assert "containing itself" in str(error)
+
+    def test_reports_the_deepest_of_several_features(self):
+        geo = GeoEngine(verbose=False).add_point(1, 2, a=nested(200)).add_point(3, 4, b=nested(5000))
+        assert deep_error(geo.map_html).name == "features[1]['properties']['b']"
+
+    def test_deep_foreign_member(self):
+        geo = GeoEngine(verbose=False).load_data([{
+            "type": "Feature", "geometry": {"type": "Point", "coordinates": [77.2, 28.6]},
+            "properties": {},
+        }])
+        geo.get_features()[0]["meta"] = nested(5000)
+        assert deep_error(geo.map_html).name == "features[0]['meta']"
+
+    def test_deep_overlay(self, geo):
+        overlay = {"type": "Feature", "geometry": {"type": "Point", "coordinates": [77.2, 28.6]},
+                   "properties": {"deep": nested(5000)}}
+        assert deep_error(lambda: geo.map_html(overlays=[overlay])).name == "overlays[0]"
+
+    def test_fixing_the_property_as_suggested_works(self):
+        geo = single(ok=1, deep=nested(5000))
+        deep_error(geo.map_html)
+        del geo.get_features()[0]["properties"]["deep"]
+        assert props_of(geo.map_html()) == {"ok": 1}
+
+    def test_moderately_deep_values_round_trip(self):
+        value = nested(150, "list")
+        assert props_of(single(v=value).map_html())["v"] == value
+
+    def test_heatmap_does_not_embed_properties(self):
+        assert "L.heatLayer" in single(deep=nested(5000)).heatmap_html()
+
+    def test_notebook_display_falls_back_to_text(self):
+        assert single(deep=nested(5000))._repr_html_() is None
+
+    def test_unrelated_recursion_error_is_not_masked(self, geo, monkeypatch):
+        def boom(obj: Any) -> str:
+            raise RecursionError("elsewhere")
+        monkeypatch.setattr("qoregeo.map_builder._to_js", boom)
+        with pytest.raises(RecursionError, match="elsewhere"):
+            geo.map_html()
+
+    @pytest.mark.parametrize(("value", "depth"), [
+        (1, 0), ("abc", 0), ([], 1), ({}, 1), ([1, [2, [3]]], 3),
+        ({"a": {"b": [1]}, "c": 2}, 3), ({1, 2}, 1), ((1, (2,)), 2),
+    ])
+    def test_nesting_depth(self, value, depth):
+        assert _nesting_depth(value) == depth
+
+    def test_nesting_depth_is_capped_and_iterative(self):
+        assert _nesting_depth(nested(50_000)) == 1001
+        assert _nesting_depth(nested(50_000), cap=10) == 11
+        loop: list[Any] = []
+        loop.append(loop)
+        assert _nesting_depth(loop) == 1001
+
+    def test_nesting_depth_of_shared_containers_is_fast(self):
+        shared: Any = 1
+        for _ in range(400):              # 2**400 paths, 800 containers
+            shared = [shared, {"k": shared}]
+        assert _nesting_depth(shared) == 800
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Near-world-wide shapes vs shapes crossing the antimeridian
+# ─────────────────────────────────────────────────────────────────────────────
+
+def box(west: float, east: float, south: float = -85.0, north: float = 85.0) -> dict[str, Any]:
+    ring = [[west, south], [east, south], [east, north], [west, north], [west, south]]
+    return {"type": "Polygon", "coordinates": [ring]}
+
+
+def lngs_of(geometry: dict[str, Any]) -> list[float]:
+    out: list[float] = []
+
+    def walk(c: Any) -> None:
+        if isinstance(c, list) and c and not isinstance(c[0], list):
+            out.append(c[0])
+        elif isinstance(c, list):
+            for x in c:
+                walk(x)
+
+    walk(geometry["coordinates"])
+    return out
+
+
+def feature(geometry: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "Feature", "geometry": geometry, "properties": {}}
+
+
+# A track crossing 180° with a vertex every 0.1°, and an island straddling it:
+# both have vertices within 0.1° of ±180°, so their raw span is ~359.9°.
+DATELINE_TRACK = {"type": "LineString", "coordinates": [
+    [round(179.0 + i / 10 - (360 if i > 10 else 0), 1), -17.0] for i in range(25)]}
+TAVEUNI = {"type": "Polygon", "coordinates": [[
+    [179.83, -16.7], [179.95, -16.65], [-179.97, -16.75], [-179.87, -16.9], [179.9, -17.05],
+    [179.83, -16.7]]]}
+
+
+class TestNearWorldShapes:
+    @pytest.mark.parametrize("inset", [1e-4, 1e-2, 0.4])
+    def test_extent_box_inset_from_180_stays_world_wide(self, inset):
+        shape = box(-180 + inset, 180 - inset)
+        cfg = parse_config(GeoEngine(verbose=False).load_data([feature(shape)]).map_html())
+        assert cfg["worldCopyJump"] is True
+        assert cfg["data"]["features"][0]["geometry"] == shape
+
+    def test_extent_box_with_cities_stays_world_wide(self):
+        shape = box(-179.9999, 179.9999)
+        geo = GeoEngine(verbose=False).load_data([feature(shape)])
+        geo.add_point(48.85, 2.35).add_point(35.7, 139.7)          # Paris, Tokyo
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is True
+        assert cfg["data"]["features"][0]["geometry"] == shape
+
+    def test_extent_box_overlay_stays_world_wide(self):
+        geo = GeoEngine(verbose=False).add_point(-17.0, 179.5).add_point(-17.5, -179.5)
+        cfg = parse_config(geo.map_html(overlays=[box(-179.9999, 179.9999)]))
+        assert cfg["worldCopyJump"] is True
+        assert sorted(lngs_of(cfg["data"]["features"][0]["geometry"])
+                      + lngs_of(cfg["data"]["features"][1]["geometry"])) == [-179.5, 179.5]
+
+    @pytest.mark.parametrize("shape", [DATELINE_TRACK, TAVEUNI], ids=["track", "island"])
+    def test_shapes_crossing_180_are_still_one_cluster(self, shape):
+        cfg = parse_config(GeoEngine(verbose=False).load_data([feature(shape)]).map_html())
+        assert cfg["worldCopyJump"] is False
+        drawn = lngs_of(cfg["data"]["features"][0]["geometry"])
+        assert 178.9 <= min(drawn) and max(drawn) <= 181.5
+
+    def test_narrow_box_across_180_is_still_one_cluster(self):
+        # Only two meridians, but 20° wide across ±180°, not 340° the other way.
+        cfg = parse_config(GeoEngine(verbose=False).load_data([feature(box(170, -170))]).map_html())
+        assert cfg["worldCopyJump"] is False
+        assert sorted(set(lngs_of(cfg["data"]["features"][0]["geometry"]))) == [170, 190]
+
+    @pytest.mark.parametrize(("geometry", "expected"), [
+        (box(-180, 180), True),
+        (box(-179.9999, 179.9999), True),
+        (box(-179.5, 179.5), True),
+        (box(-179.4, 179.4), False),                     # 358.8°: a 1.2° box across 180°
+        (box(170, -170), False),
+        ({"type": "LineString", "coordinates": [[-179.9, 10], [179.9, 10]]}, True),
+        ({"type": "MultiLineString", "coordinates": [[[170, 0], [180, 0]], [[-180, 0], [-170, 0]]]},
+         False),
+        (DATELINE_TRACK, False),
+        (TAVEUNI, False),
+        ({"type": "Point", "coordinates": [179.9, 0]}, False),
+        ({"type": "GeometryCollection", "geometries": [box(-179.9999, 179.9999)]}, True),
+    ])
+    def test_spans_world(self, geometry, expected):
+        assert _spans_world([geometry]) is expected

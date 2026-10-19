@@ -17,8 +17,9 @@ Safety
   never overwrite the data file they read from.
 * Geocoding sends queries to a public server, so it is off unless
   ``allow_network=True``.
-* Results are capped (``max_features``) so a large file cannot flood the
-  model's context.
+* Results are capped (``max_features`` and ``MAX_RESULT_CHARS``) so a large
+  file cannot flood the model's context: a feature too big to show is
+  summarised, and the full data can always be written with export_features.
 
 Usage
 -----
@@ -27,7 +28,7 @@ Usage
     tools = tool_definitions("anthropic")          # pass to client.messages.create(tools=...)
     result = call_tool("distance", {"from": {"lat": 28.61, "lng": 77.21},
                                     "to": {"lat": 19.08, "lng": 72.88}})
-    result.data      # {'distance': 1148.1, 'unit': 'km', 'method': 'haversine'}
+    result.data      # {'distance': 1147.2349, 'unit': 'km', 'method': 'haversine'}
 """
 
 from __future__ import annotations
@@ -36,14 +37,15 @@ import base64
 import json
 import math
 import os
-from collections.abc import Callable
+import warnings
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
 from .engine import GeoEngine, _same_file
 from .exceptions import InvalidArgumentError, QOREgeoError
 from .map_builder import tile_presets
-from .utils import _json_safe
+from .utils import _geometry_problem, _json_safe
 
 Json = dict[str, Any]
 
@@ -81,23 +83,65 @@ class ToolContext:
         if not os.path.isdir(self.root):
             raise InvalidArgumentError("root", self.root, "an existing directory",
                                        "ToolContext(root='.')")
+        limit = self.max_features
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise InvalidArgumentError("max_features", limit,
+                                       "a whole number >= 1 (most features in one result)",
+                                       "ToolContext(root='.', max_features=200)")
+
+    def contains(self, real_path: str) -> bool:
+        """Whether the (already resolved) ``real_path`` is root or inside it."""
+        try:
+            return os.path.commonpath([real_path, self.root]) == self.root
+        except ValueError:   # another drive (Windows) or a mix of absolute and relative
+            return False
 
     def resolve(self, path: Any, *, must_exist: bool, name: str = "path") -> str:
-        """``path`` (relative to root, or absolute inside it) as a real path inside root."""
+        """
+        ``path`` (relative to root, or absolute inside it) as a real path inside
+        root. '~' is not expanded: '~data/x.csv' is a folder named '~data' in root.
+        """
         if not isinstance(path, str) or not path.strip() or "\0" in path:
             raise ToolError(f"'{name}' must be a non-empty file path, e.g. \"data/cities.csv\".")
-        candidate = os.path.realpath(os.path.join(self.root, os.path.expanduser(path.strip())))
-        if os.path.commonpath([candidate, self.root]) != self.root:
+        candidate = os.path.realpath(os.path.join(self.root, path.strip()))
+        if not self.contains(candidate):
             raise ToolError(f"'{path}' is outside the allowed directory {self.root}. "
                             "Use a path inside it (relative paths are resolved from it).")
         if must_exist and not os.path.isfile(candidate):
-            raise ToolError(f"No file at '{path}' (looked in {self.root}). "
+            tilde = (" '~' is not expanded: paths are relative to the allowed directory."
+                     if path.strip().startswith("~") else "")
+            raise ToolError(f"No file at '{path}' (looked in {self.root}).{tilde} "
                             "Use list_files to see what is available.")
         return candidate
 
     def display(self, real_path: str) -> str:
         """``real_path`` relative to root, with forward slashes."""
         return os.path.relpath(real_path, self.root).replace(os.sep, "/")
+
+
+def _valid_text(text: str) -> str:
+    """``text`` with lone UTF-16 surrogates replaced by U+FFFD (valid pairs are joined)."""
+    try:
+        text.encode("utf-8")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le", "replace")
+
+
+def _text_safe(obj: Any) -> Any:
+    """
+    ``obj`` with every string — keys and values — encodable as UTF-8. Lone
+    surrogates come from undecodable file names (``os.listdir`` on bytes that
+    aren't UTF-8) or from ``"\\ud800"`` escapes in data files; serialised, they
+    are JSON that strict parsers (the MCP SDKs, the Claude API) reject.
+    """
+    if isinstance(obj, str):
+        return obj if obj.isascii() else _valid_text(obj)
+    if isinstance(obj, dict):
+        return {_text_safe(k) if isinstance(k, str) else k: _text_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_text_safe(v) for v in obj]
+    return obj
 
 
 @dataclass
@@ -110,7 +154,8 @@ class ToolResult:
 
     @property
     def text(self) -> str:
-        return json.dumps(self.data, ensure_ascii=False, separators=(",", ":"))
+        """``data`` as compact JSON text (valid UTF-8: lone surrogates become U+FFFD)."""
+        return json.dumps(_text_safe(self.data), ensure_ascii=False, separators=(",", ":"))
 
     def to_mcp(self) -> Json:
         """An MCP ``tools/call`` result."""
@@ -120,7 +165,7 @@ class ToolResult:
                             "mimeType": mime})
         result: Json = {"content": content, "isError": self.is_error}
         if not self.is_error:
-            result["structuredContent"] = self.data
+            result["structuredContent"] = _text_safe(self.data)
         return result
 
     def to_anthropic(self, tool_use_id: str) -> Json:
@@ -326,9 +371,103 @@ def _clean(obj: Any) -> Any:
     return _json_safe(obj)
 
 
-# Largest JSON text a feature page may take: Claude Code warns above ~10k tokens
-# and moves results over 50,000 characters out of the conversation.
+# Largest JSON text a successful result may take: Claude Code warns above ~10k
+# tokens and moves results over 50,000 characters out of the conversation.
 MAX_RESULT_CHARS = 40_000
+# What a result's main payload (features, files, columns …) may use, leaving
+# room for its other keys and a note.
+_BUDGET = MAX_RESULT_CHARS - 2_000
+# Strings are cut to this many characters when a result has to be shortened.
+_MAX_TEXT = 500
+
+
+def _full_data(ctx: ToolContext) -> str:
+    """How the model can get data a result had to leave out."""
+    if ctx.allow_write:
+        return "Use export_features to write the complete data to a file"
+    return ("The complete data can be written to a file with export_features, which this "
+            "read-only server does not offer")
+
+
+def _json_len(obj: Any) -> int:
+    """Characters ``obj`` takes as compact JSON text."""
+    return len(json.dumps(obj, ensure_ascii=False, separators=(",", ":")))
+
+
+def _short(value: Any) -> Any:
+    """A string longer than _MAX_TEXT cut down (with its full length noted); others as-is."""
+    if isinstance(value, str) and len(value) > _MAX_TEXT:
+        return f"{value[:_MAX_TEXT]}… [{len(value):,} characters]"
+    return value
+
+
+def _fit_dict(values: Json, budget: int) -> tuple[Json, bool]:
+    """
+    ``values`` cut to fit ``budget`` JSON characters: long strings shortened,
+    then trailing keys left out. Returns (the dict, whether anything was cut).
+    """
+    if _json_len(values) <= budget:
+        return values, False
+    out: Json = {}
+    used = 2
+    for key, value in values.items():
+        value = _short(value)
+        size = _json_len(key) + _json_len(value) + 2
+        if used + size > budget:
+            break
+        out[key] = value
+        used += size
+    return out, True
+
+
+def _positions(geometry: Any) -> Iterator[list[Any]]:
+    """Every [lng, lat, …] position in a GeoJSON geometry (any depth, collections too)."""
+    stack: list[Any] = [geometry]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, dict):
+            stack.append(item.get("geometries") if item.get("type") == "GeometryCollection"
+                         else item.get("coordinates"))
+        elif isinstance(item, list) and item:
+            if all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in item[:2]):
+                yield item
+            else:
+                stack.extend(reversed(item))
+
+
+def _geometry_summary(geometry: Json) -> Json:
+    """Type, vertex count and bounding box of a geometry too large to return."""
+    positions = [p for p in _positions(geometry) if len(p) >= 2]
+    summary: Json = {"type": geometry.get("type"), "vertices": len(positions)}
+    if positions:
+        lngs, lats = [p[0] for p in positions], [p[1] for p in positions]
+        summary["bbox"] = [min(lngs), min(lats), max(lngs), max(lats)]
+    return summary
+
+
+def _compact_feature(feature: Json, budget: int, ctx: ToolContext) -> tuple[Json, str]:
+    """A feature too large for one result, cut down to fit ``budget``; plus a note saying how."""
+    out = dict(feature)
+    cuts: list[str] = []
+    props = feature.get("properties")
+    if isinstance(props, dict):
+        fitted, cut = _fit_dict(props, budget // 2)
+        if cut:
+            out["properties"] = fitted
+            if len(fitted) < len(props):
+                cuts.append(f"only {len(fitted):,} of {len(props):,} properties are shown")
+            if any(fitted[k] is not props[k] for k in fitted):
+                cuts.append(f"property values longer than {_MAX_TEXT} characters are cut short")
+    geometry = feature.get("geometry")
+    if isinstance(geometry, dict) and _json_len(out) > budget:
+        summary = _geometry_summary(geometry)
+        out["geometry"] = None
+        out["geometry_summary"] = summary
+        cuts.append(f"its {summary['type']} geometry ({summary['vertices']:,} vertices) is "
+                    "replaced by 'geometry_summary' (type, vertex count, bbox)")
+    note = ("This feature is too large to show in full: " + "; ".join(cuts or ["it is shortened"])
+            + f". {_full_data(ctx)}; preview_map shows it as an image.")
+    return out, note
 
 
 def _feature_page(geo: GeoEngine, ctx: ToolContext, offset: Any = 0) -> Json:
@@ -337,11 +476,14 @@ def _feature_page(geo: GeoEngine, ctx: ToolContext, offset: Any = 0) -> Json:
         raise ToolError("'offset' must be a non-negative integer.")
     features = geo.get_features()
     shown = _clean(features[offset: offset + ctx.max_features])
-    sizes = [len(json.dumps(f, ensure_ascii=False, separators=(",", ":"))) + 1 for f in shown]
+    sizes = [_json_len(f) + 1 for f in shown]
     total = sum(sizes)
-    while len(shown) > 1 and total > MAX_RESULT_CHARS:   # always make progress
+    while len(shown) > 1 and total > _BUDGET:   # always make progress
         total -= sizes.pop()
         shown.pop()
+    note = None
+    if shown and total > _BUDGET:   # one feature, too large on its own: summarise it
+        shown[0], note = _compact_feature(shown[0], _BUDGET, ctx)
     page: Json = {
         "count": len(features),
         "offset": offset,
@@ -351,6 +493,8 @@ def _feature_page(geo: GeoEngine, ctx: ToolContext, offset: Any = 0) -> Json:
     }
     if page["truncated"]:
         page["next_offset"] = offset + len(shown)
+    if note:
+        page["note"] = note
     return page
 
 
@@ -381,8 +525,24 @@ def _round(x: float, digits: int = 6) -> float:
 
 def _distance(ctx: ToolContext, a: Json) -> ToolResult:
     unit, method = a.get("unit", "km"), a.get("method", "haversine")
-    d = _engine().distance(_get_point(a, "from"), _get_point(a, "to"), unit=unit, method=method)
-    return ToolResult({"distance": d, "unit": unit, "method": method})
+    geo, p, q = _engine(), _get_point(a, "from"), _get_point(a, "to")
+    if method != "vincenty":
+        return ToolResult({"distance": geo.distance(p, q, unit=unit, method=method),
+                           "unit": unit, "method": method})
+    # For nearly antipodal points Vincenty's iteration does not converge and the
+    # engine falls back to haversine with a warning (on stderr, unseen by the
+    # model): report the method actually used.
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        d = geo.distance(p, q, unit=unit, method="vincenty")
+    out: Json = {"distance": d, "unit": unit, "method": "vincenty"}
+    if any("converge" in str(w.message) for w in caught) and \
+            d == geo.distance(p, q, unit=unit, method="haversine"):
+        out["method"] = "haversine"
+        out["note"] = ("Vincenty's ellipsoidal formula does not converge for nearly antipodal "
+                       "points, so this is the spherical (haversine) distance, accurate to "
+                       "about 0.5%.")
+    return ToolResult(out)
 
 
 def _bearing(ctx: ToolContext, a: Json) -> ToolResult:
@@ -402,10 +562,16 @@ def _midpoint(ctx: ToolContext, a: Json) -> ToolResult:
     return ToolResult({"lat": lat, "lng": lng})
 
 
+# Most vertices a buffer ring may have: with positions rounded to 9 decimals
+# (0.1 mm) the ring stays well under MAX_RESULT_CHARS.
+_MAX_BUFFER_POINTS = 1024
+
+
 def _buffer(ctx: ToolContext, a: Json) -> ToolResult:
     zone = _engine().buffer(_get_point(a, "center"), _arg(a, "radius"), unit=_arg(a, "unit", "km"),
                             num_points=a.get("num_points", 64))
-    geometry = {"type": zone["type"], "coordinates": zone["coordinates"]}
+    rings = [[[_round(x, 9) for x in pos] for pos in ring] for ring in zone["coordinates"]]
+    geometry = {"type": zone["type"], "coordinates": rings}
     return ToolResult({"geometry": _clean(geometry), "radius": a.get("radius"),
                        "unit": a.get("unit", "km")})
 
@@ -428,6 +594,13 @@ def _measure(ctx: ToolContext, a: Json) -> ToolResult:
         geometry = geometry.get("geometry")
         gtype = geometry.get("type") if isinstance(geometry, dict) else None
     out: Json = {"type": gtype}
+    if gtype in ("Polygon", "MultiPolygon", "LineString", "MultiLineString"):
+        problem = _geometry_problem(geometry)
+        if problem:
+            raise ToolError(f"Invalid Coordinate in 'geometry': {problem}. GeoJSON positions are "
+                            "[lng, lat] (longitude first), e.g. {\"type\": \"Polygon\", "
+                            "\"coordinates\": [[[77.1, 28.5], [77.3, 28.5], [77.3, 28.7], "
+                            "[77.1, 28.5]]]}.")
     if gtype in ("Polygon", "MultiPolygon"):
         out["area"], out["area_unit"] = geo.area(geometry, unit=area_unit), area_unit
     elif gtype in ("LineString", "MultiLineString"):
@@ -445,21 +618,38 @@ def _geohash(ctx: ToolContext, a: Json) -> ToolResult:
     return ToolResult({"geohash": h, "center": {"lat": lat, "lng": lng}})
 
 
+_MAX_FILES = 500
+
+
 def _list_files(ctx: ToolContext, a: Json) -> ToolResult:
     sub = a.get("directory", ".")
     base = ctx.resolve(sub, must_exist=False)
     if not os.path.isdir(base):
         raise ToolError(f"'{sub}' is not a directory inside {ctx.root}.")
     found: list[Json] = []
+    used = _json_len(ctx.root)
     for dirpath, dirnames, filenames in os.walk(base):
         dirnames[:] = sorted(d for d in dirnames if not d.startswith(".") and d not in
                              ("node_modules", "__pycache__", "venv", ".venv"))
         for name in sorted(filenames):
-            if name.lower().endswith((".csv", ".tsv", ".txt", ".geojson", ".json")):
-                real = os.path.join(dirpath, name)
-                found.append({"path": ctx.display(real), "bytes": os.path.getsize(real)})
-                if len(found) >= 500:
-                    return ToolResult({"root": ctx.root, "files": found, "truncated": True})
+            if not name.lower().endswith((".csv", ".tsv", ".txt", ".geojson", ".json")):
+                continue
+            path = os.path.join(dirpath, name)
+            real = os.path.realpath(path)
+            # Skip what the other tools would refuse: dangling symlinks (editor lock
+            # files) and links to files outside the root.
+            if not ctx.contains(real) or not os.path.isfile(real):
+                continue
+            try:
+                entry: Json = {"path": ctx.display(path), "bytes": os.path.getsize(real)}
+            except OSError:
+                continue
+            used += _json_len(entry) + 1
+            if len(found) >= _MAX_FILES or used > _BUDGET:
+                return ToolResult({"root": ctx.root, "files": found, "truncated": True,
+                                   "note": f"Only the first {len(found)} files are listed. Pass "
+                                           "'directory' to list a sub-directory."})
+            found.append(entry)
     return ToolResult({"root": ctx.root, "files": found, "truncated": False})
 
 
@@ -476,14 +666,26 @@ def _describe(ctx: ToolContext, a: Json) -> ToolResult:
         g = f.get("geometry")
         t = g.get("type", "?") if isinstance(g, dict) else "none"
         types[t] = types.get(t, 0) + 1
-    out: Json = {"count": len(features), "columns": columns, "geometry_types": types}
+    listed, columns_cut = _fit_dict(columns, _BUDGET // 3)
+    out: Json = {"count": len(features), "columns": listed, "geometry_types": types}
+    if columns_cut:
+        out["columns_total"] = len(columns)
     try:
         out["bbox"] = geo.bbox()
         lat, lng = geo.centroid()
         out["centroid"] = {"lat": lat, "lng": lng}
     except QOREgeoError:
         out["bbox"] = out["centroid"] = None
-    out["sample"] = _clean([f.get("properties") for f in features[:5]])
+    sample = _clean([f.get("properties") for f in features[:5]])
+    rows = [_fit_dict(row, _BUDGET // 10) if isinstance(row, dict) else (row, False)
+            for row in sample]
+    out["sample"] = [row for row, _ in rows]
+    cuts = [f"only {len(listed):,} of {len(columns):,} columns are listed"] if columns_cut else []
+    if any(cut for _, cut in rows):
+        cuts.append("the sample rows are shortened")
+    if cuts:
+        out["note"] = (f"This dataset is too large to describe in full: {' and '.join(cuts)}. "
+                       f"Use query_features to read particular features. {_full_data(ctx)}.")
     return ToolResult(out)
 
 
@@ -591,9 +793,18 @@ def _geocode(ctx: ToolContext, a: Json) -> ToolResult:
     query = a.get("query")
     if not isinstance(query, str) or not query.strip():
         raise ToolError("'query' must be a non-empty address or place name.")
-    results = _geocoder(ctx).search(query, limit=a.get("limit", 5),
-                                    country_codes=a.get("country_codes"))
-    return ToolResult({"query": query, "results": _clean(results)})
+    results = _clean(_geocoder(ctx).search(query, limit=a.get("limit", 5),
+                                           country_codes=a.get("country_codes")))
+    out: Json = {"query": query, "results": results}
+    used = _json_len(query)
+    for i, item in enumerate(results):
+        used += _json_len(item) + 1
+        if used > _BUDGET:   # a server returning very long results: keep what fits
+            out["results"] = results[:i]
+            out["note"] = (f"Only the first {i} of {len(results)} results fit in one reply; "
+                           "ask for a lower 'limit' or a more specific query.")
+            break
+    return ToolResult(out)
 
 
 def _reverse(ctx: ToolContext, a: Json) -> ToolResult:
@@ -632,8 +843,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
     Tool("buffer", "Circular zone", "A GeoJSON polygon approximating a circle of 'radius' around a "
          "point — use it as a geofence or delivery zone with contains / query_features.within.",
          _schema({"center": _point("Circle centre"), "radius": {"type": "number", "exclusiveMinimum": 0},
-                  "unit": _unit(), "num_points": {"type": "integer", "minimum": 3, "maximum": 4096,
-                                                  "default": 64}},
+                  "unit": _unit(), "num_points": {"type": "integer", "minimum": 3,
+                                                  "maximum": _MAX_BUFFER_POINTS, "default": 64}},
                  ["center", "radius"]),
          _buffer),
     Tool("contains", "Point in area", "Whether a point lies inside a GeoJSON Polygon/MultiPolygon "
@@ -645,7 +856,8 @@ TOOLS: dict[str, Tool] = {t.name: t for t in [
          "features or collections) touch or overlap.",
          _schema({"a": _GEOJSON, "b": _GEOJSON}, ["a", "b"]),
          _intersects),
-    Tool("measure", "Area or length", "Geodesic area of a polygon or length of a line.",
+    Tool("measure", "Area or length", "Area of a polygon (spherical, mean Earth radius — as in "
+         "Turf.js) or great-circle length of a line.",
          _schema({"geometry": _GEOJSON,
                   "area_unit": {"type": "string", "enum": _AREA_UNITS, "default": "km2"},
                   "length_unit": _unit()}, ["geometry"]),
@@ -795,23 +1007,51 @@ def call_tool(name: str, arguments: Json | None = None, context: ToolContext | N
     # An explicit null means "not given" for optional arguments.
     required = set(tool.input_schema.get("required", []))
     arguments = {k: v for k, v in arguments.items() if v is not None or k in required}
+    # JSON Schema counts 5.0 as an integer: accept it, and hand the tool an int.
+    props = tool.input_schema.get("properties", {})
+    arguments = {k: int(v) if _whole_float(v) and props.get(k, {}).get("type") == "integer" else v
+                 for k, v in arguments.items()}
     problem = _schema_problem(tool.input_schema, arguments)
     if problem:
         return ToolResult({"error": problem}, is_error=True)
     try:
-        return tool.handler(ctx, arguments)
+        result = tool.handler(ctx, arguments)
     except ToolError as exc:
         return ToolResult({"error": str(exc)}, is_error=True)
     except QOREgeoError as exc:
         return ToolResult({"error": _plain(str(exc))}, is_error=True)
     except (ValueError, TypeError, KeyError, OSError) as exc:
         return ToolResult({"error": f"{type(exc).__name__}: {exc}"}, is_error=True)
+    return result if result.is_error else _checked(name, result, ctx)
+
+
+def _checked(name: str, result: ToolResult, ctx: ToolContext) -> ToolResult:
+    """``result`` if it is valid JSON within MAX_RESULT_CHARS; otherwise an explanatory error."""
+    try:
+        size = len(json.dumps(_text_safe(result.data), ensure_ascii=False,
+                              separators=(",", ":"), allow_nan=False))
+    except ValueError:   # NaN / Infinity: not JSON
+        return ToolResult({"error": f"{name} produced a non-finite number (NaN or Infinity); "
+                                    "check that the input coordinates and values are valid."},
+                          is_error=True)
+    if size > MAX_RESULT_CHARS:
+        return ToolResult({"error": f"The {name} result is too large to return ({size:,} "
+                                    f"characters; the limit is {MAX_RESULT_CHARS:,}). Narrow the "
+                                    "request (filters, 'limit', a smaller area). "
+                                    f"{_full_data(ctx)}."},
+                          is_error=True)
+    return result
 
 
 _JSON_TYPES: dict[str, tuple[type, ...]] = {
     "string": (str,), "integer": (int,), "number": (int, float), "boolean": (bool,),
     "array": (list,), "object": (dict,),
 }
+
+
+def _whole_float(value: Any) -> bool:
+    """A float with no fractional part (e.g. 5.0), which JSON Schema counts as an integer."""
+    return isinstance(value, float) and value.is_integer()
 
 
 def _finite(value: Any) -> bool:

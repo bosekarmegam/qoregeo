@@ -7,6 +7,15 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Planned
+- Interactive maps inside AI chats (MCP Apps)
+- Offline reverse geocoding (country / region)
+- Choropleth maps
+- Spatial index for large files
+- QORE OS integration (v2.0)
+
 ## [1.1.0] — 2026-10-19
 
 ### ⚠️ Compatibility notes
@@ -126,8 +135,10 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Static PNG / SVG maps** in pure Python: `geo.image("map.png" | "map.svg")`,
   `to_png()`, `to_svg()`, `qoregeo.render_png()` / `render_svg()`.
 - **Geocoding**: `qoregeo.Geocoder` for OpenStreetMap Nominatim, Photon or a self-hosted
-  server — 1 request/second per public server, identifying User-Agent, LRU cache,
-  `GeocodingError` with actionable hints.
+  server — at most 1 request/second per public server across all processes (a shared SQLite
+  file in the user cache folder, which also keeps answers for 30 days; `cache_dir=` /
+  `QOREGEO_CACHE_DIR`), identifying User-Agent, in-memory LRU cache, `GeocodingError` with
+  actionable hints.
 - **`intersects()`** and **`filter_intersects()`** for any GeoJSON (exact for buffers).
 - `save(csv_safe=True)` escapes spreadsheet formulas (CSV injection).
 - **Command line**: `qoregeo info | distance | map | image | export | serve | geocode |
@@ -144,6 +155,8 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `FileReadError`. `GeoFileNotFoundError` is the new name of `FileNotFoundError`,
   which is no longer exported by `from qoregeo import *`, so it can't shadow the
   built-in.
+- Points can be `(lat, lng)` / `(lat, lng, alt)` sequences, `{"lat": …, "lng": …}` dicts,
+  GeoJSON Points or Point Features everywhere a method takes a point.
 - `py.typed` marker and a public `PointLike` type — the inline type hints are now
   visible to type checkers (the package passes `mypy --strict`; `bearing()` has
   precise overloads).
@@ -212,13 +225,3 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Python 3.8–3.12 compatible  
 - Fully typed (PEP 484)  
 - MIT licensed  
-
----
-
-## [Unreleased] — planned
-
-### Planned
-- Street address geocoding (opt-in, network)
-- PNG / SVG static map export
-- `intersects()` — test if two polygons overlap
-- QORE OS integration (v2.0)

@@ -18,11 +18,12 @@ The ``qoregeo`` command.
 from __future__ import annotations
 
 import argparse
+import codecs
 import json
 import os
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from ._version import __version__
@@ -42,6 +43,28 @@ class _UsageError(Exception):
 # ─────────────────────────────────────────────────────────────────────────────
 # Argument parsing helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+class _Parser(argparse.ArgumentParser):
+    """
+    argparse that reads ``-33.9,18.4`` or ``-10,-5,10,5`` as a value, not an
+    unknown option, on every Python version (3.14 does this already; 3.10-3.13
+    only accept plain negative numbers such as ``-33.9``).
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._negative_number_matcher = re.compile(r"^-\.?\d")
+
+
+def _positive_int(text: str) -> int:
+    try:
+        value = int(text)
+    except ValueError:
+        value = 0
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"must be a whole number >= 1, e.g. 200 (got {text!r})")
+    return value
+
 
 def _floats(text: str, n: int, what: str, example: str) -> list[float]:
     parts = [p for p in re.split(r"[,\s]+", text.strip()) if p]
@@ -106,8 +129,26 @@ def _load(ns: argparse.Namespace) -> GeoEngine:
     return _apply_filters(geo, _filter_args(ns))
 
 
+def _utf8(stream: Any) -> bool:
+    try:
+        return codecs.lookup(getattr(stream, "encoding", None) or "ascii").name == "utf-8"
+    except LookupError:
+        return False
+
+
 def _print_json(obj: Any) -> None:
-    print(json.dumps(obj, indent=2, ensure_ascii=False, default=str))
+    """
+    Print strict JSON: NaN / Infinity become null, and the text is pure ASCII
+    (\\uXXXX escapes) unless stdout is UTF-8, so any reader can decode it.
+    """
+    from .tools import _text_safe
+    from .utils import _json_safe
+
+    # Lone surrogates (undecodable file names, bad data) become U+FFFD so the
+    # output is valid UTF-8 JSON for every parser.
+    text = json.dumps(_text_safe(_json_safe(obj)), indent=2, ensure_ascii=not _utf8(sys.stdout),
+                      allow_nan=False)
+    print(text)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -117,7 +158,7 @@ def _print_json(obj: Any) -> None:
 def _cmd_info(ns: argparse.Namespace) -> int:
     from .tools import ToolContext, call_tool
 
-    path = os.path.abspath(ns.file)
+    path = os.path.realpath(ns.file)   # a symlinked file is read from its real folder
     if not os.path.isfile(path):
         raise GeoFileNotFoundError(ns.file)
     args = {"path": os.path.basename(path), "lat_column": ns.lat_col, "lng_column": ns.lng_col}
@@ -159,9 +200,10 @@ def _cmd_map(ns: argparse.Namespace) -> int:
                         + ("_heatmap.html" if ns.heatmap else "_map.html"))
     title = ns.title or os.path.basename(ns.file)
     if ns.heatmap:
-        geo.heatmap(out, title=title, intensity_col=ns.intensity, tiles=ns.tiles)
+        geo.heatmap(out, title=title, intensity_col=ns.intensity, tiles=ns.tiles,
+                    attribution=ns.attribution)
     else:
-        geo.map(out, title=title, tiles=ns.tiles)
+        geo.map(out, title=title, tiles=ns.tiles, attribution=ns.attribution)
     if ns.serve:
         from .serve import serve_file
         serve_file(out, port=ns.port, block=True, verbose=not ns.quiet)
@@ -249,7 +291,12 @@ def _usable_env(name: str) -> str | None:
 
 def _default_root(cli_root: str | None) -> str:
     """--root, else $QOREGEO_ROOT, else $CLAUDE_PROJECT_DIR, else the current directory."""
-    return cli_root or _usable_env("QOREGEO_ROOT") or _usable_env("CLAUDE_PROJECT_DIR") or os.getcwd()
+    if cli_root is not None:
+        if not cli_root.strip():   # e.g. --root "$DATA_DIR" with the variable unset
+            raise _UsageError("--root is empty; pass the folder the tools may use, "
+                              "e.g. --root ./data (or leave --root out to use the current folder)")
+        return cli_root
+    return _usable_env("QOREGEO_ROOT") or _usable_env("CLAUDE_PROJECT_DIR") or os.getcwd()
 
 
 def _network_allowed(flag: bool) -> bool:
@@ -271,10 +318,22 @@ def _tool_context(ns: argparse.Namespace) -> Any:
                        max_features=ns.max_features, geocoder=geocoder)
 
 
+def _read_stdin() -> str:
+    """Standard input as UTF-8 (JSON's encoding), whatever the console's code page is."""
+    buffer = getattr(sys.stdin, "buffer", None)
+    if buffer is None:   # a text-only stream, e.g. in an IDE
+        return sys.stdin.read()
+    data: bytes = buffer.read()
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode(getattr(sys.stdin, "encoding", None) or "utf-8", "replace")
+
+
 def _cmd_call(ns: argparse.Namespace) -> int:
     from .tools import call_tool
 
-    raw = sys.stdin.read() if ns.arguments == "-" else ns.arguments
+    raw = _read_stdin() if ns.arguments == "-" else ns.arguments
     try:
         arguments = json.loads(raw) if raw else {}
     except json.JSONDecodeError as exc:
@@ -288,7 +347,7 @@ def _cmd_call(ns: argparse.Namespace) -> int:
             path = f"{ns.tool}_{i}{ext}" if len(result.images) > 1 else f"{ns.tool}{ext}"
             with open(path, "wb") as fh:
                 fh.write(blob)
-            print(f"image saved → {path}", file=sys.stderr)
+            print(f"image saved -> {path}", file=sys.stderr)
     return 1 if result.is_error else 0
 
 
@@ -326,13 +385,41 @@ def _zip_skill(source: str, output: str) -> int:
                         continue
                     full = os.path.join(dirpath, name)
                     zf.write(full, prefix + "/" + os.path.relpath(full, folder).replace(os.sep, "/"))
-    print(f"Skill bundle written → {output}  (upload it in Claude: Settings → Capabilities → Skills)")
+    print(f"Skill bundle written -> {output}  "
+          "(upload it in Claude: Settings > Capabilities > Skills)")
     return 0
 
 
-def _cmd_skill(ns: argparse.Namespace) -> int:
-    import shutil
+def _is_link(path: str) -> bool:
+    """A symlink, or a Windows directory junction (what `npx skills` makes there)."""
+    isjunction: Callable[[str], bool] = getattr(os.path, "isjunction", lambda p: False)
+    return os.path.islink(path) or isjunction(path)
 
+
+def _install_skill(source: str, target: str) -> None:
+    """
+    Copy the skill to ``target``, replacing whatever is there. The copy is made
+    next to it first, so a failed copy never leaves a half-written skill behind.
+    """
+    import shutil
+    import tempfile
+
+    parent = os.path.dirname(target)
+    os.makedirs(parent, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".qoregeo-skill-", dir=parent)
+    try:
+        copy = os.path.join(staging, "qoregeo")
+        shutil.copytree(source, copy, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        if _is_link(target) or os.path.isfile(target):
+            os.unlink(target)   # remove the link itself, never the folder it points to
+        elif os.path.isdir(target):
+            shutil.rmtree(target)
+        os.replace(copy, target)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def _cmd_skill(ns: argparse.Namespace) -> int:
     source = _skill_source()
     if ns.action == "path":
         print(source)
@@ -343,13 +430,13 @@ def _cmd_skill(ns: argparse.Namespace) -> int:
     folders = {"claude": ".claude", "agents": ".agents"}
     targets = [os.path.join(base, folders[a], "skills", "qoregeo")
                for a in (["claude", "agents"] if ns.agent == "all" else [ns.agent])]
-    for target in targets:
-        if os.path.exists(target):
-            if not ns.force:
+    if not ns.force:   # check every target before installing into any of them
+        for target in targets:
+            if os.path.lexists(target):
                 raise _UsageError(f"{target} already exists (use --force to replace it)")
-            shutil.rmtree(target)
-        shutil.copytree(source, target, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-        print(f"Installed the qoregeo skill → {target}")
+    for target in targets:
+        _install_skill(source, target)
+        print(f"Installed the qoregeo skill -> {target}")
     return 0
 
 
@@ -398,13 +485,14 @@ def _add_sandbox(p: argparse.ArgumentParser) -> None:
                    help="API of --geocoder-url (default: nominatim)")
     p.add_argument("--geocoder-email", help="contact e-mail sent with Nominatim requests "
                                             "(also QOREGEO_GEOCODER_EMAIL)")
-    p.add_argument("--max-features", type=int, default=200, help="most features returned per call")
+    p.add_argument("--max-features", type=_positive_int, default=200,
+                   help="most features returned per call (at least 1)")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="qoregeo",
-        description="Zero-dependency geospatial toolkit: distances, filters, maps, geocoding — "
+        description="Zero-dependency geospatial toolkit: distances, filters, maps, geocoding - "
                     "and an MCP server for AI assistants.",
     )
     parser.add_argument("--version", action="version", version=f"qoregeo {__version__}")
@@ -429,6 +517,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", help="HTML file (default: <file>_map.html)")
     p.add_argument("--title")
     p.add_argument("--tiles", default="light", help=f"basemap: {', '.join(tile_presets())} or a URL")
+    p.add_argument("--attribution", metavar="HTML",
+                   help="credit for a custom --tiles URL, e.g. '&copy; Example Maps'")
     p.add_argument("--heatmap", action="store_true", help="draw a heatmap")
     p.add_argument("--intensity", metavar="COLUMN", help="heatmap weight column")
     p.add_argument("--serve", action="store_true", help="open it via a local web server")
@@ -464,14 +554,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-browser", action="store_true", help="don't open a browser")
     p.set_defaults(func=_cmd_serve)
 
-    p = sub.add_parser("geocode", help="address or place → coordinates (OpenStreetMap)")
+    p = sub.add_parser("geocode", help="address or place -> coordinates (OpenStreetMap)")
     p.add_argument("query")
     p.add_argument("--limit", type=int, default=1)
     p.add_argument("--country", help="ISO country code(s), e.g. 'in' or 'de,fr'")
     _add_geocoder(p)
     p.set_defaults(func=_cmd_geocode)
 
-    p = sub.add_parser("reverse", help="coordinates → address (OpenStreetMap)")
+    p = sub.add_parser("reverse", help="coordinates -> address (OpenStreetMap)")
     p.add_argument("point", metavar="LAT,LNG")
     _add_geocoder(p)
     p.set_defaults(func=_cmd_reverse)
@@ -491,11 +581,12 @@ def build_parser() -> argparse.ArgumentParser:
     _add_sandbox(p)
     p.set_defaults(func=_cmd_call)
 
-    p = sub.add_parser("mcp", help="run the MCP server on stdio (for Claude, Codex, Cursor, …)")
+    p = sub.add_parser("mcp", help="run the MCP server on stdio (for Claude, Codex, Cursor, ...)")
     _add_sandbox(p)
     p.set_defaults(func=_cmd_mcp)
 
-    p = sub.add_parser("skill", help="install the qoregeo Agent Skill for Claude Code, Codex, Gemini, …")
+    p = sub.add_parser("skill",
+                       help="install the qoregeo Agent Skill for Claude Code, Codex, Gemini, ...")
     p.add_argument("action", choices=["install", "zip", "path"],
                    help="install: copy into agent skill folders; zip: build an uploadable bundle "
                         "(includes the package, for sandboxes without pip); path: print its location")
@@ -510,7 +601,68 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# What a console shows for symbols its code page lacks (Windows pipes use the
+# ANSI code page, e.g. cp1252); anything else becomes a \uXXXX escape.
+_CONSOLE_FALLBACKS = {"✅": "[OK]", "❌": "[X]", "→": "->", "—": "-", "─": "-",
+                      "…": "...", "×": "x", "•": "*"}
+
+
+def _console_fallback(exc: UnicodeError) -> tuple[str, int]:
+    """A codecs error handler: ASCII stand-ins for common symbols, escapes for the rest."""
+    if not isinstance(exc, UnicodeEncodeError):
+        raise exc
+    text = exc.object[exc.start:exc.end]
+    out = "".join(_CONSOLE_FALLBACKS.get(ch) or ch.encode("ascii", "backslashreplace").decode()
+                  for ch in text)
+    return out, exc.end
+
+
+def _tolerant_output() -> Callable[[], None]:
+    """
+    Make stdout / stderr show characters the console can't encode (see
+    _console_fallback) instead of raising UnicodeEncodeError. Returns a
+    function that restores the previous setting.
+    """
+    codecs.register_error("qoregeo.console", _console_fallback)
+    changed: list[tuple[Any, str]] = []
+    for stream in (sys.stdout, sys.stderr):
+        errors = getattr(stream, "errors", None)
+        if errors in ("strict", "backslashreplace") and hasattr(stream, "reconfigure"):
+            try:
+                stream.reconfigure(errors="qoregeo.console")
+            except (OSError, ValueError):   # closed or detached
+                continue
+            changed.append((stream, errors))
+
+    def restore() -> None:
+        for stream, errors in changed:
+            try:
+                stream.reconfigure(errors=errors)
+            except (OSError, ValueError):
+                pass
+
+    return restore
+
+
+def _discard_stdout() -> None:
+    """After a broken pipe, send stdout to os.devnull so the flush at exit stays quiet."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        os.close(devnull)
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    restore = _tolerant_output()
+    try:
+        return _main(argv)
+    finally:
+        restore()
+
+
+def _main(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     ns = parser.parse_args(argv)
     if not getattr(ns, "func", None):
@@ -524,8 +676,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     except QOREgeoError as exc:
         print(str(exc), file=sys.stderr)
         return 1
-    except FileNotFoundError as exc:
+    except BrokenPipeError:   # the reader stopped early, e.g. `qoregeo tools | head`
+        _discard_stdout()
+        return 1
+    except OSError as exc:   # permission denied, a folder where a file should be, disk full, …
         print(f"qoregeo {ns.command}: {exc}", file=sys.stderr)
+        return 1
+    except UnicodeEncodeError as exc:
+        print(f"qoregeo {ns.command}: {exc} (set PYTHONIOENCODING=utf-8 and try again)",
+              file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         return 130

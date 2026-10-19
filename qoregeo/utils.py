@@ -11,6 +11,7 @@ Conventions
 
 from __future__ import annotations
 
+import bisect
 import contextlib
 import csv
 import datetime
@@ -20,10 +21,12 @@ import math
 import os
 import re
 import secrets
+import shlex
 import shutil
 import threading
 import warnings
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from functools import cached_property
 from typing import IO, Any
 
 from .exceptions import (
@@ -130,27 +133,38 @@ def _validate_coord(lat: Any, lng: Any, context: str | None = None) -> tuple[flo
     return lat_f, lng_f
 
 
+_LAT_KEYS = ("lat", "latitude")
+_LNG_KEYS = ("lng", "lon", "longitude")
+_POINT_EXPECTED = "expected a (lat, lng) tuple or a {'lat': …, 'lng': …} dict"
+
+
 def _coerce_point(point: Any, context: str | None = None) -> tuple[float, float]:
     """
     Turn a point-like value into a validated ``(lat, lng)`` float tuple.
 
-    Accepts ``(lat, lng)`` / ``(lat, lng, alt)`` sequences, GeoJSON Point
-    geometries and Features with a Point geometry.
+    Accepts ``(lat, lng)`` / ``(lat, lng, alt)`` sequences, ``{"lat": …,
+    "lng": …}`` mappings (also ``"lon"`` or ``"latitude"`` / ``"longitude"``),
+    GeoJSON Point geometries and Features with a Point geometry.
     """
-    if isinstance(point, dict):
+    if isinstance(point, Mapping):
         geom = point.get("geometry") if point.get("type") == "Feature" else point
-        if isinstance(geom, dict) and geom.get("type") == "Point":
+        if isinstance(geom, Mapping) and geom.get("type") == "Point":
             coords = geom.get("coordinates")
             if isinstance(coords, (list, tuple)) and len(coords) >= 2:
                 return _validate_coord(coords[1], coords[0], context)
-        raise InvalidCoordinateError(point, None, context or "expected a (lat, lng) tuple")
+        lat_key = next((k for k in _LAT_KEYS if k in point), None)
+        lng_key = next((k for k in _LNG_KEYS if k in point), None)
+        is_geojson = point.get("type") == "Feature" or point.get("type") in GEOMETRY_TYPES
+        if lat_key is not None and lng_key is not None and not is_geojson:
+            return _validate_coord(point[lat_key], point[lng_key], context)
+        raise InvalidCoordinateError(point, None, context or _POINT_EXPECTED)
 
     if isinstance(point, (str, bytes)):
-        raise InvalidCoordinateError(point, None, context or "expected a (lat, lng) tuple")
+        raise InvalidCoordinateError(point, None, context or _POINT_EXPECTED)
     try:
         lat, lng = point[0], point[1]
     except (TypeError, IndexError, KeyError):
-        raise InvalidCoordinateError(point, None, context or "expected a (lat, lng) tuple") from None
+        raise InvalidCoordinateError(point, None, context or _POINT_EXPECTED) from None
     return _validate_coord(lat, lng, context)
 
 
@@ -521,9 +535,22 @@ def _polygon_parts(polygon: Any) -> list[list[list[list[float]]]]:
             if not isinstance(ring, list) or len(ring) < 3:
                 raise InvalidBufferError("each ring needs at least 3 [lng, lat] positions")
             try:
-                checked.append([[float(p[0]), float(p[1])] for p in ring])
-            except (TypeError, ValueError, IndexError):
+                positions = [[float(p[0]), float(p[1])] for p in ring]
+            except (TypeError, ValueError, IndexError, OverflowError):
                 raise InvalidBufferError("ring positions must be [lng, lat] number pairs") from None
+            # Longitudes up to ±360 are allowed for rings drawn continuously
+            # across the antimeridian. (A NaN or ±inf makes the sum non-finite.)
+            xs, ys = zip(*positions, strict=True)
+            if not (math.isfinite(sum(xs) + sum(ys)) and -90.0 <= min(ys) and max(ys) <= 90.0
+                    and -360.0 <= min(xs) and max(xs) <= 360.0):
+                bad = next(q for q in positions
+                           if not (-90.0 <= q[1] <= 90.0 and -360.0 <= q[0] <= 360.0))
+                raise InvalidBufferError(
+                    f"position [{bad[0]!r}, {bad[1]!r}] is out of range — positions are "
+                    "[lng, lat] with latitude -90..90 and longitude -180..180 "
+                    "(are lng/lat swapped?)"
+                )
+            checked.append(positions)
         clean.append(checked)
     return clean
 
@@ -551,11 +578,26 @@ def _buffer_circle(polygon: Any) -> tuple[float, float, float] | None:
     return lat, lng, radius_f
 
 
-def _point_in_geometry(lat: float, lng: float, polygon: Any) -> bool:
-    """Point-in-polygon for buffers, Polygons, MultiPolygons and Features."""
+def _polygon_tester(polygon: Any) -> Callable[[float, float], bool]:
+    """
+    Validate ``polygon`` once and return a ``(lat, lng) -> inside`` test
+    giving the same answers as ``_point_in_geometry`` — use it to test many
+    points against one polygon.
+    """
     circle = _buffer_circle(polygon)
     if circle is not None:
         # Exact geodesic test — also correct near the poles and antimeridian.
+        c_lat, c_lng, radius_km = circle
+        return lambda lat, lng: _haversine_km((lat, lng), (c_lat, c_lng)) <= radius_km
+    indexes = [_PolygonIndex([[(p[0], p[1]) for p in ring] for ring in rings])
+               for rings in _polygon_parts(polygon)]
+    return lambda lat, lng: any(ix.contains(lng, lat) for ix in indexes)
+
+
+def _point_in_geometry(lat: float, lng: float, polygon: Any) -> bool:
+    """Point-in-polygon for buffers, Polygons, MultiPolygons and Features (one point)."""
+    circle = _buffer_circle(polygon)
+    if circle is not None:
         c_lat, c_lng, radius_km = circle
         return _haversine_km((lat, lng), (c_lat, c_lng)) <= radius_km
     return any(_point_in_polygon_rings(lat, lng, rings) for rings in _polygon_parts(polygon))
@@ -613,13 +655,31 @@ def _ring_centroid(ring: list[list[float]]) -> tuple[tuple[float, float] | None,
     return (oy + cy / (3 * area2), ox + cx / (3 * area2)), abs(area2) / 2
 
 
+def _seam_west(rings: list[list[list[float]]]) -> float | None:
+    """
+    If the rings form one cluster across ±180° — their tightest longitude
+    span crosses the antimeridian and is under 180° wide, and no ring runs
+    round the whole globe — return the span's western edge (longitudes below
+    it belong east of 180°); else None.
+    """
+    lngs = [p[0] for ring in rings for p in ring]
+    if not lngs or any(ring and max(p[0] for p in ring) - min(p[0] for p in ring) >= 360.0
+                       for ring in rings):
+        return None
+    west, east = _lng_span(lngs)
+    if west <= east or east + 360.0 - west >= 180.0:
+        return None
+    return west
+
+
 def _representative_point(geometry: Any) -> tuple[float, float] | None:
     """
     Return a ``(lat, lng)`` point standing in for ``geometry``.
 
     Points return themselves; polygons return the area centroid of their
-    outer rings; everything else returns the spherical mean of its vertices.
-    Returns None for null / empty / malformed geometries.
+    outer rings (parts cut at the antimeridian are joined first); everything
+    else returns the spherical mean of its vertices. Returns None for null /
+    empty / malformed geometries.
     """
     if not isinstance(geometry, dict):
         return None
@@ -639,6 +699,12 @@ def _representative_point(geometry: Any) -> tuple[float, float] | None:
             rings = [[[float(q[0]), float(q[1])] for q in r] for r in rings]
         except (TypeError, ValueError, IndexError):
             return None
+        west = _seam_west(rings)
+        if west is not None:
+            # Parts cut at ±180° (RFC 7946 §3.1.9): put them side by side
+            # before averaging, or the centroid lands on the far side of the globe.
+            rings = [[[_normalize_lng(x) + (360.0 if _normalize_lng(x) < west else 0.0), y]
+                      for x, y in ring] for ring in rings]
         total = lat_acc = lng_acc = 0.0
         for ring in rings:
             if len(ring) < 3:
@@ -680,17 +746,123 @@ def _spherical_mean(points: list[tuple[float, float]]) -> tuple[float, float]:
 # Intersection test
 # ─────────────────────────────────────────────────────────────────────────────
 
-_XY = tuple[float, float]   # (lng, lat) — planar GeoJSON order
+_XY = tuple[float, float]                        # (lng, lat) — planar GeoJSON order
+_Box = tuple[float, float, float, float]         # (min_x, min_y, max_x, max_y)
+_Edge = tuple[float, float, float, float, int]   # (x_i, y_i, x_j, y_j, ring number)
+_Seg = tuple[float, float, float, float, _XY, _XY]   # (min_x, max_x, min_y, max_y, start, end)
+_Circle = tuple[float, float, float]             # (lat, lng, radius_km)
+
+_EPS = 1e-12
+# Slack for bounding-box rejection: much larger than _EPS, so a box test
+# never rejects a pair the exact tests below would accept.
+_BOX_EPS = 1e-9
+
+
+def _boxes_meet(a: _Box, b: _Box, dx: float = 0.0) -> bool:
+    """True if box ``a`` and box ``b`` moved ``dx`` in longitude overlap (with slack)."""
+    return (a[0] - _BOX_EPS <= b[2] + dx and b[0] + dx - _BOX_EPS <= a[2]
+            and a[1] - _BOX_EPS <= b[3] and b[1] - _BOX_EPS <= a[3])
+
+
+class _EdgeIndex:
+    """
+    Edges bucketed into horizontal bands, so a point query only visits the
+    edges whose latitude range can reach the point instead of all of them.
+    """
+
+    def __init__(self, edges: list[_Edge]) -> None:
+        self._bands: list[list[_Edge]] = []
+        self._long: list[_Edge] = []   # edges spanning many bands: checked for every query
+        self._y0 = 0.0
+        self._step = 1.0
+        if not edges:
+            return
+        lo = min(min(e[1], e[3]) for e in edges)
+        hi = max(max(e[1], e[3]) for e in edges)
+        count = max(1, min(len(edges) // 4, 4096))
+        self._y0 = lo
+        self._step = max((hi - lo) / count, 1e-9)
+        self._bands = [[] for _ in range(count)]
+        for e in edges:
+            first = self._band(min(e[1], e[3]) - _BOX_EPS)
+            last = self._band(max(e[1], e[3]) + _BOX_EPS)
+            if last - first > 8:
+                self._long.append(e)
+            else:
+                for k in range(first, last + 1):
+                    self._bands[k].append(e)
+
+    def _band(self, y: float) -> int:
+        k = int((y - self._y0) / self._step)
+        return 0 if k < 0 else min(k, len(self._bands) - 1)
+
+    def near(self, y: float) -> list[_Edge]:
+        """Every edge whose latitude range contains ``y`` (plus a few others)."""
+        if not self._bands:
+            return []
+        band = self._bands[self._band(y)]
+        return band + self._long if self._long else band
+
+
+def _ring_edges(rings: list[list[_XY]]) -> list[_Edge]:
+    """Edges ``(ring[i], ring[i - 1])`` of every ring, closing edge included."""
+    return [(ring[i][0], ring[i][1], ring[i - 1][0], ring[i - 1][1], k)
+            for k, ring in enumerate(rings) for i in range(len(ring))]
+
+
+class _PolygonIndex:
+    """One polygon (outer ring + holes) prepared for many point tests."""
+
+    def __init__(self, rings: list[list[_XY]]) -> None:
+        self.rings = rings
+        outer = rings[0] if rings else []
+        self._lo = min((p[0] for p in outer), default=0.0)
+        self._hi = max((p[0] for p in outer), default=0.0)
+        self._edges = _EdgeIndex(_ring_edges(rings))
+
+    def contains(self, x: float, y: float) -> bool:
+        """
+        Ray-casting test of the point (lng ``x``, lat ``y``): inside the outer
+        ring and outside every hole. Same answers as ``_point_in_polygon_rings``
+        (rings drawn across the antimeridian are tested at lng ± 360 too).
+        """
+        if not self.rings or not self.rings[0]:
+            return False
+        for cand in (x, x + 360.0, x - 360.0):
+            if self._lo <= cand <= self._hi:
+                x = cand
+                break
+        inside = [False] * len(self.rings)
+        for xi, yi, xj, yj, k in self._edges.near(y):
+            # (yi > y) != (yj > y) guarantees yj != yi, so no division by zero.
+            if (yi > y) != (yj > y) and x < (xj - xi) * (y - yi) / (yj - yi) + xi:
+                inside[k] = not inside[k]
+        return inside[0] and not any(inside[1:])
+
+    def touches(self, p: _XY) -> bool:
+        """True if ``p`` lies inside the polygon or on one of its rings."""
+        x = p[0]
+        for xi, yi, xj, yj, _ in self._edges.near(p[1]):
+            if (min(xi, xj) - _EPS <= x <= max(xi, xj) + _EPS
+                    and _on_segment((xj, yj), (xi, yi), p)):
+                return True
+        return self.contains(x, p[1])
 
 
 class _Shape:
-    """A geometry decomposed into points, line strings and polygons (lng, lat)."""
+    """
+    A geometry decomposed into points, line strings and polygons (lng, lat)
+    plus exact circles (buffers). The indexes used by the intersection tests
+    are built on first use and kept, so a shape tested against many others
+    (filter_intersects) is prepared only once.
+    """
 
     def __init__(self) -> None:
         self.points: list[_XY] = []
         self.lines: list[list[_XY]] = []
         self.polygons: list[list[list[_XY]]] = []
-        self.circles: list[tuple[float, float, float]] = []   # (lat, lng, radius_km)
+        self.circles: list[_Circle] = []
+        self._shifted: dict[float, _Shape] = {}
 
     def segments(self) -> Iterator[tuple[_XY, _XY]]:
         for line in self.lines:
@@ -713,6 +885,69 @@ class _Shape:
 
     def is_empty(self) -> bool:
         return not (self.points or self.lines or self.polygons or self.circles)
+
+    def is_planar_empty(self) -> bool:
+        return not (self.points or self.lines or self.polygons)
+
+    @cached_property
+    def box(self) -> _Box | None:
+        """Bounding box of the points, lines and polygons (None if there are none)."""
+        xs = [p[0] for p in self.vertices()]
+        if not xs:
+            return None
+        ys = [p[1] for p in self.vertices()]
+        return min(xs), min(ys), max(xs), max(ys)
+
+    @cached_property
+    def wraps(self) -> bool:
+        """True if a vertex lies on or beyond ±180° (compare on the other world copy too)."""
+        return any(abs(p[0]) >= 180.0 for p in self.vertices())
+
+    @cached_property
+    def sweep(self) -> list[_Seg]:
+        """Every segment with its bounding box, sorted by min-x."""
+        segs = [(min(a[0], b[0]), max(a[0], b[0]), min(a[1], b[1]), max(a[1], b[1]), a, b)
+                for a, b in self.segments()]
+        segs.sort(key=lambda s: s[0])
+        return segs
+
+    @cached_property
+    def sweep_x(self) -> list[float]:
+        """The min-x of each ``sweep`` segment (for bisecting)."""
+        return [s[0] for s in self.sweep]
+
+    def segments_near(self, box: _Box) -> list[_Seg]:
+        """The ``sweep`` segments whose bounding boxes overlap ``box`` (still sorted)."""
+        segs = self.sweep
+        west, south, east, north = box[0] - _BOX_EPS, box[1] - _BOX_EPS, box[2] + _BOX_EPS, box[3] + _BOX_EPS
+        return [s for s in segs[:bisect.bisect_right(self.sweep_x, east)]
+                if s[1] >= west and s[2] <= north and s[3] >= south]
+
+    @cached_property
+    def polygon_index(self) -> list[_PolygonIndex]:
+        return [_PolygonIndex(rings) for rings in self.polygons]
+
+    @cached_property
+    def line_index(self) -> _EdgeIndex:
+        return _EdgeIndex([(line[i][0], line[i][1], line[i - 1][0], line[i - 1][1], 0)
+                           for line in self.lines for i in range(1, len(line))])
+
+    @cached_property
+    def sorted_points(self) -> tuple[list[float], list[_XY]]:
+        pts = sorted(self.points)
+        return [p[0] for p in pts], pts
+
+    def shifted(self, dx: float) -> _Shape:
+        """The points, lines and polygons moved ``dx`` degrees in longitude (cached)."""
+        out = self._shifted.get(dx)
+        if out is None:
+            out = _Shape()
+            out.points = [(x + dx, y) for x, y in self.points]
+            out.lines = [[(x + dx, y) for x, y in line] for line in self.lines]
+            out.polygons = [[[(x + dx, y) for x, y in ring] for ring in rings]
+                            for rings in self.polygons]
+            self._shifted[dx] = out
+        return out
 
 
 def _decompose(obj: Any, name: str = "geometry") -> _Shape:
@@ -764,15 +999,13 @@ def _decompose(obj: Any, name: str = "geometry") -> _Shape:
                     shape.lines.append(pts)
         elif gtype in ("Polygon", "MultiPolygon"):
             for rings in ([coords] if gtype == "Polygon" else coords):
-                clean = [[pos(c) for c in ring] for ring in rings if len(ring) >= 3]
-                if clean:
-                    shape.polygons.append(clean)
+                # An empty polygon is skipped; _geometry_problem() has already
+                # refused holes without an exterior ring.
+                if rings and len(rings[0]) >= 3:
+                    shape.polygons.append([[pos(c) for c in ring] for ring in rings if ring])
 
     add(obj)
     return shape
-
-
-_EPS = 1e-12
 
 
 def _orient(a: _XY, b: _XY, c: _XY) -> float:
@@ -798,102 +1031,208 @@ def _segments_intersect(p1: _XY, p2: _XY, q1: _XY, q2: _XY) -> bool:
             or _on_segment(p1, p2, q1) or _on_segment(p1, p2, q2))
 
 
-def _point_in_rings_or_boundary(p: _XY, rings: list[list[_XY]]) -> bool:
-    for ring in rings:
-        for i in range(len(ring)):
-            if _on_segment(ring[i - 1], ring[i], p):
-                return True
-    return _point_in_polygon_rings(p[1], p[0], [[list(c) for c in r] for r in rings])
-
-
-def _point_in_shape(p: _XY, shape: _Shape) -> bool:
-    """True if point ``p`` touches ``shape`` (inside a polygon or circle, on a line, or equal)."""
-    if any(_haversine_km((p[1], p[0]), (c[0], c[1])) <= c[2] for c in shape.circles):
-        return True
-    if any(abs(p[0] - q[0]) <= _EPS and abs(p[1] - q[1]) <= _EPS for q in shape.points):
-        return True
-    for line in shape.lines:
-        if any(_on_segment(line[i - 1], line[i], p) for i in range(1, len(line))):
+def _point_touches(p: _XY, shape: _Shape) -> bool:
+    """True if point ``p`` touches the planar part of ``shape`` (inside, on a line, or equal)."""
+    box = shape.box
+    if box is None or not _boxes_meet((p[0], p[1], p[0], p[1]), box):
+        return False
+    xs, pts = shape.sorted_points
+    for i in range(bisect.bisect_left(xs, p[0] - _EPS), len(xs)):
+        q = pts[i]
+        if q[0] > p[0] + _EPS:
+            break
+        if abs(p[1] - q[1]) <= _EPS:
             return True
-    return any(_point_in_rings_or_boundary(p, rings) for rings in shape.polygons)
-
-
-def _circle_as_polygon(c: tuple[float, float, float]) -> list[list[_XY]]:
-    ring = _generate_circle_polygon((c[0], c[1]), c[2], 128)
-    return [[(x, y) for x, y in ring]]
-
-
-def _planar_intersect(pa: _Shape, pb: _Shape) -> bool:
-    """Straight-edge lng/lat intersection of two shapes without circles."""
-    for p in pa.points:
-        if _point_in_shape(p, pb):
+    for xi, yi, xj, yj, _ in shape.line_index.near(p[1]):
+        if min(xi, xj) - _EPS <= p[0] <= max(xi, xj) + _EPS and _on_segment((xj, yj), (xi, yi), p):
             return True
-    for p in pb.points:
-        if _point_in_shape(p, pa):
-            return True
+    return any(ix.touches(p) for ix in shape.polygon_index)
 
-    seg_b = list(pb.segments())
-    for s1 in pa.segments():
-        for s2 in seg_b:
-            if _segments_intersect(s1[0], s1[1], s2[0], s2[1]):
-                return True
 
-    # No crossing edges: one shape may still lie entirely inside the other.
-    for inner, outer in ((pa, pb), (pb, pa)):
-        for part in inner.lines + [rings[0] for rings in inner.polygons]:
-            if part and any(_point_in_rings_or_boundary(part[0], rings) for rings in outer.polygons):
-                return True
+def _segments_cross(sa: list[_Seg], sb: list[_Seg]) -> bool:
+    """
+    True if a segment of ``sa`` meets a segment of ``sb``. Both lists are
+    sorted by min-x; a sweep from west to east only compares segments whose
+    bounding boxes overlap.
+    """
+    i = j = 0
+    active_a: list[_Seg] = []
+    active_b: list[_Seg] = []
+    while i < len(sa) or j < len(sb):
+        from_a = j >= len(sb) or (i < len(sa) and sa[i][0] <= sb[j][0])
+        if from_a:
+            s = sa[i]
+            i += 1
+            own, other = active_a, active_b
+        else:
+            s = sb[j]
+            j += 1
+            own, other = active_b, active_a
+        left = s[0] - _BOX_EPS
+        still_open: list[_Seg] = []
+        for t in other:
+            if t[1] < left:
+                continue   # ended west of this segment, and of every later one
+            still_open.append(t)
+            if t[2] - _BOX_EPS <= s[3] and s[2] - _BOX_EPS <= t[3]:
+                a, b = (s, t) if from_a else (t, s)
+                if _segments_intersect(a[4], a[5], b[4], b[5]):
+                    return True
+        other[:] = still_open
+        own.append(s)
     return False
 
 
-def _shifted(shape: _Shape, dx: float) -> _Shape:
-    """``shape`` moved ``dx`` degrees in longitude."""
-    out = _Shape()
-    out.points = [(x + dx, y) for x, y in shape.points]
-    out.lines = [[(x + dx, y) for x, y in line] for line in shape.lines]
-    out.polygons = [[[(x + dx, y) for x, y in ring] for ring in rings] for rings in shape.polygons]
-    return out
+def _planar_intersect(pa: _Shape, pb: _Shape) -> bool:
+    """Straight-edge lng/lat intersection of the points, lines and polygons of two shapes."""
+    box_a, box_b = pa.box, pb.box
+    if box_a is None or box_b is None or not _boxes_meet(box_a, box_b):
+        return False
+    if any(_point_touches(p, pb) for p in pa.points):
+        return True
+    if any(_point_touches(p, pa) for p in pb.points):
+        return True
+
+    # Only segments inside the other shape's bounding box can meet it.
+    if pa.sweep and pb.sweep:
+        seg_a, seg_b = pa.segments_near(box_b), pb.segments_near(box_a)
+        if seg_a and seg_b and _segments_cross(seg_a, seg_b):
+            return True
+
+    # No crossing edges: one shape may still lie entirely inside the other.
+    for inner, outer in ((pa, pb), (pb, pa)):
+        if outer.polygons:
+            for part in inner.lines + [rings[0] for rings in inner.polygons]:
+                if part and any(ix.touches(part[0]) for ix in outer.polygon_index):
+                    return True
+    return False
+
+
+# Long straight lng/lat edges are compared with a circle in pieces of at most
+# this many degrees, each taken as a great-circle arc (≲ 10 m apart).
+_ARC_STEP_DEG = 0.25
+
+
+def _unit_vector(lat: float, lng: float) -> tuple[float, float, float]:
+    la, lo = math.radians(lat), math.radians(lng)
+    return math.cos(la) * math.cos(lo), math.cos(la) * math.sin(lo), math.sin(la)
+
+
+def _cross(u: tuple[float, float, float], v: tuple[float, float, float]) -> tuple[float, float, float]:
+    return u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]
+
+
+def _dot(u: tuple[float, float, float], v: tuple[float, float, float]) -> float:
+    return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+
+def _angle(u: tuple[float, float, float], v: tuple[float, float, float]) -> float:
+    """Angle in radians between two unit vectors (accurate for tiny angles too)."""
+    c = _cross(u, v)
+    return math.atan2(math.sqrt(_dot(c, c)), _dot(u, v))
+
+
+def _arc_distance_km(p: tuple[float, float], a: tuple[float, float], b: tuple[float, float]) -> float:
+    """Great-circle distance from ``p`` to the (shorter) arc ``a``–``b``; all (lat, lng)."""
+    vp, va, vb = _unit_vector(*p), _unit_vector(*a), _unit_vector(*b)
+    n = _cross(va, vb)
+    norm = math.sqrt(_dot(n, n))
+    if norm < 1e-15:   # a and b are (almost) the same point
+        return min(_angle(vp, va), _angle(vp, vb)) * EARTH_RADIUS_KM
+    if _dot(_cross(va, vp), n) >= 0 and _dot(_cross(vp, vb), n) >= 0:
+        # The closest point of the great circle lies between a and b.
+        return math.asin(min(1.0, abs(_dot(vp, n)) / norm)) * EARTH_RADIUS_KM
+    return min(_angle(vp, va), _angle(vp, vb)) * EARTH_RADIUS_KM
+
+
+def _circle_box(c: _Circle) -> _Box:
+    """Lng/lat bounding box of a circle (longitudes continuous around its centre)."""
+    lat, lng, radius_km = c
+    d = radius_km / EARTH_RADIUS_KM
+    pad = 1e-7
+    south, north = lat - math.degrees(d) - pad, lat + math.degrees(d) + pad
+    if north >= 90.0 or south <= -90.0:   # the circle contains a pole: every longitude
+        return -math.inf, max(south, -90.0), math.inf, min(north, 90.0)
+    half = math.degrees(math.asin(min(1.0, math.sin(d) / math.cos(math.radians(lat))))) + pad
+    return lng - half, south, lng + half, north
+
+
+def _circle_meets(c: _Circle, shape: _Shape) -> bool:
+    """
+    Exact test of a circle (lat, lng, radius_km) against the points, lines
+    and polygons of ``shape``: it meets them if a point or an edge comes within
+    the radius of its centre, or if its centre lies inside a polygon. Correct
+    near the poles and across the antimeridian.
+    """
+    lat, lng, radius_km = c
+    centre = (lat, lng)
+    if any(_haversine_km((y, x), centre) <= radius_km for x, y in shape.points):
+        return True
+    box = _circle_box(c)
+
+    def near(x0: float, y0: float, x1: float, y1: float) -> bool:
+        seg_box = (min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1))
+        return any(_boxes_meet(seg_box, box, dx) for dx in (0.0, 360.0, -360.0))
+
+    for _, _, _, _, a, b in shape.sweep:
+        if not near(a[0], a[1], b[0], b[1]):
+            continue
+        # Edges are straight in lng/lat: follow them in short great-circle pieces.
+        pieces = max(1, math.ceil(max(abs(b[0] - a[0]), abs(b[1] - a[1])) / _ARC_STEP_DEG))
+        x0, y0 = a
+        for k in range(1, pieces + 1):
+            if k == pieces:
+                x1, y1 = b
+            else:
+                x1, y1 = a[0] + (b[0] - a[0]) * k / pieces, a[1] + (b[1] - a[1]) * k / pieces
+            if (pieces == 1 or near(x0, y0, x1, y1)) \
+                    and _arc_distance_km(centre, (y0, x0), (y1, x1)) <= radius_km:
+                return True
+            x0, y0 = x1, y1
+    return any(ix.contains(lng, lat) for ix in shape.polygon_index)
+
+
+def _prepare_shape(value: Any, name: str) -> _Shape:
+    """Validate and decompose one argument of intersects() / filter_intersects()."""
+    if value is None:
+        raise InvalidArgumentError(name, value, "a GeoJSON geometry, Feature or FeatureCollection",
+                                   "geo.intersects(zone, {'type': 'Point', 'coordinates': [77.2, 28.6]})")
+    return _decompose(value, name)
+
+
+def _shapes_intersect(sa: _Shape, sb: _Shape) -> bool:
+    """True if two decomposed shapes share at least one point (see _geometries_intersect)."""
+    if sa.is_empty() or sb.is_empty():
+        return False
+
+    # Circles are tested exactly on the sphere.
+    for ca in sa.circles:
+        for cb in sb.circles:
+            if _haversine_km((ca[0], ca[1]), (cb[0], cb[1])) <= ca[2] + cb[2]:
+                return True
+    for first, second in ((sa, sb), (sb, sa)):
+        if any(_circle_meets(c, second) for c in first.circles):
+            return True
+
+    if sa.is_planar_empty() or sb.is_planar_empty():
+        return False
+    # Longitudes 180 and -180 are the same meridian, and rings may be drawn
+    # beyond ±180: then also compare against the other world copies.
+    offsets = (0.0, 360.0, -360.0) if sa.wraps or sb.wraps else (0.0,)
+    return any(_planar_intersect(sa, sb.shifted(dx) if dx else sb) for dx in offsets)
 
 
 def _geometries_intersect(a: Any, b: Any) -> bool:
     """
     True if two geometries share at least one point (touching counts), using
     straight edges in lng/lat like point_in_polygon(). Buffers are tested as
-    exact circles where possible. Shapes drawn with continuous longitudes
-    across the antimeridian (e.g. 175° → 185°) also meet shapes written in
-    the usual -180°…180° range.
+    exact circles on the sphere. Shapes drawn with continuous longitudes
+    across the antimeridian (e.g. 175° → 185°), or meeting on it (180° and
+    -180°), also meet shapes written in the usual -180°…180° range.
     """
-    for value, name in ((a, "geometry_a"), (b, "geometry_b")):
-        if value is None:
-            raise InvalidArgumentError(name, value, "a GeoJSON geometry, Feature or FeatureCollection",
-                                       "geo.intersects(zone, {'type': 'Point', 'coordinates': [77.2, 28.6]})")
-    sa = _decompose(a, "geometry_a")
-    sb = _decompose(b, "geometry_b")
-    if sa.is_empty() or sb.is_empty():
-        return False
-
-    # Circle–circle and circle–point tests are exact on the sphere.
-    for ca in sa.circles:
-        for cb in sb.circles:
-            if _haversine_km((ca[0], ca[1]), (cb[0], cb[1])) <= ca[2] + cb[2]:
-                return True
-    for first, second in ((sa, sb), (sb, sa)):
-        for c in first.circles:
-            if any(_haversine_km((p[1], p[0]), (c[0], c[1])) <= c[2] for p in second.points):
-                return True
-
-    # Other combinations with circles use a fine polygon approximation.
-    def with_circles_as_polygons(shape: _Shape) -> _Shape:
-        out = _Shape()
-        out.points, out.lines = shape.points, shape.lines
-        out.polygons = shape.polygons + [_circle_as_polygon(c) for c in shape.circles]
-        return out
-
-    pa, pb = with_circles_as_polygons(sa), with_circles_as_polygons(sb)
-    offsets = [0.0]
-    if any(abs(x) > 180.0 for shape in (pa, pb) for x, _ in shape.vertices()):
-        offsets += [360.0, -360.0]   # compare on the other world copy too
-    return any(_planar_intersect(pa, _shifted(pb, dx) if dx else pb) for dx in offsets)
+    sa = _prepare_shape(a, "geometry_a")
+    sb = _prepare_shape(b, "geometry_b")
+    return _shapes_intersect(sa, sb)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1192,6 +1531,11 @@ def _coords_problem(coords: Any, depth: int, gtype: str) -> str | None:
         return f"{gtype} 'coordinates' must be nested {depth + 1} level(s) deep"
     if gtype in ("Polygon", "MultiPolygon") and depth == 1 and 0 < len(coords) < 3:
         return f"a {gtype} ring needs at least 3 positions"
+    if gtype in ("Polygon", "MultiPolygon") and depth == 2 and len(coords) > 1 \
+            and isinstance(coords[0], (list, tuple)) and not coords[0] \
+            and any(isinstance(r, (list, tuple)) and r for r in coords[1:]):
+        # Holes need an exterior ring; never promote a hole to the exterior.
+        return f"a {gtype} has holes but an empty exterior ring"
     for c in coords:
         problem = _coords_problem(c, depth - 1, gtype)
         if problem:
@@ -1348,6 +1692,26 @@ def _atomic_write(path: str, text: str | bytes, encoding: str = "utf-8", errors:
         with contextlib.suppress(OSError):
             os.unlink(tmp)
         raise
+
+
+_SHELL_SAFE_RE = re.compile(r"[A-Za-z0-9._/:@%+=,-]+")
+
+
+def _shell_quote(path: str) -> str:
+    """
+    ``path`` as one argument that can be pasted into a shell: unchanged when
+    it only has characters no shell treats specially, else in double quotes
+    (understood by sh, bash, zsh, cmd and PowerShell). On POSIX, names with
+    ``$`` `` ` `` ``"`` ``\\`` or ``!`` — special even inside double quotes —
+    use single quotes instead.
+    """
+    if path.startswith("-"):
+        path = os.path.join(os.curdir, path)   # not an option
+    if _SHELL_SAFE_RE.fullmatch(path):
+        return path
+    if os.name == "nt" or not any(ch in path for ch in '$`"\\!'):
+        return f'"{path}"'
+    return shlex.quote(path)
 
 
 # csv.field_size_limit is process-wide; raise it only while QOREgeo is reading

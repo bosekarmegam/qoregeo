@@ -2,7 +2,7 @@
 
 > Zero-dependency, pure-Python GIS toolkit (Python 3.10+): distances, bearings, buffers, point-in-polygon, intersections, area/length, nearest-neighbour and attribute filters over CSV/GeoJSON, interactive OpenStreetMap maps and heatmaps, static PNG/SVG map images and OpenStreetMap geocoding — plus a CLI, a zero-dependency MCP server and an Agent Skill for AI assistants.
 
-Install with `pip install qoregeo` (or run `uvx qoregeo …`). Python API: `from qoregeo import GeoEngine`; points are `(lat, lng)`, GeoJSON coordinates are `[lng, lat]`. MCP server: `qoregeo mcp` (stdio; tools take `{"lat", "lng"}` objects; files confined to a root folder; geocoding only with `--allow-network`). HTML maps use OpenStreetMap tiles, which need the page served over http: `qoregeo serve map.html` or `geo.show()`.
+Install with `pip install qoregeo` (or run `uvx qoregeo …`). Python API: `from qoregeo import GeoEngine`; points are `(lat, lng)` (or `{"lat": …, "lng": …}` dicts), GeoJSON coordinates are `[lng, lat]`. MCP server: `qoregeo mcp` (stdio; tools take `{"lat", "lng"}` objects; files confined to a root folder; geocoding only with `--allow-network` or `--geocoder-url`). HTML maps use OpenStreetMap tiles by default, which need the page served over http: `qoregeo serve map.html` or `geo.show()` (in a script both serve until Ctrl+C). Only `tiles="satellite"`, `"topo"`, `"osm-de"` and `"none"` work when the file is opened from disk.
 
 ## Docs
 

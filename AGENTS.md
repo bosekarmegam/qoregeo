@@ -9,13 +9,15 @@ contributing to this repository. To *use* qoregeo from an agent, see
 ```bash
 python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
 pip install -e . --group dev                      # pip >= 25.1 (PEP 735 groups)
-pytest                                            # ~3,000 tests, a few seconds, fully offline
+pytest                                            # 3,000+ tests, well under a minute, offline
 ruff check qoregeo tests
 mypy                                              # strict, configured in pyproject.toml
 python -m build && twine check dist/*            # packaging
 ```
 
-All four must pass before a commit. CI runs them on Linux/macOS/Windows × Python 3.10–3.15.
+All four must pass before a commit. CI (`.github/workflows/tests.yml`) runs the tests on
+Linux/macOS/Windows × Python 3.10–3.15, and ruff, mypy and the build + `twine check --strict`
+once, on Ubuntu with Python 3.14.
 
 ## Hard rules
 
@@ -23,8 +25,9 @@ All four must pass before a commit. CI runs them on Linux/macOS/Windows × Pytho
   in `[dependency-groups]`.
 - **Python 3.10+.** `from __future__ import annotations`, PEP 604/585 types, strict mypy.
 - **Tests never touch the network.** Fake HTTP by monkeypatching `Geocoder._fetch`; servers in
-  tests bind 127.0.0.1 only. Use `tmp_path`. No cross-imports between test modules (CI uses
-  `--import-mode=importlib`).
+  tests bind 127.0.0.1 only. Use `tmp_path`. No cross-imports between test modules: each file
+  must run on its own (`pytest tests/test_tools.py`), including against the installed wheel,
+  which only the release workflow tests (with `--import-mode=importlib`).
 - **Coordinate conventions.** Python API: `(lat, lng)`. GeoJSON: `[lng, lat]`. Tool/MCP
   arguments: `{"lat": …, "lng": …}` objects. Bounding boxes: `[west, south, east, north]`
   (west > east crosses the antimeridian — keep that working).

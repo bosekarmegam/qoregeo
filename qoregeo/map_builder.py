@@ -23,9 +23,11 @@ import json
 import math
 import os
 import re
+import shlex
 import sys
 import warnings
 from typing import Any
+from urllib.parse import urlsplit
 
 from ._version import __version__
 from .exceptions import InvalidArgumentError
@@ -189,12 +191,19 @@ _TILE_ALIASES = {
 }
 
 # Shown (instead of requesting tiles) when a page using a needsReferer
-# basemap is opened from disk.
+# basemap is opened from disk. {c} marks code (see _file_notice).
 _FILE_NOTICE = (
     "OpenStreetMap only serves map tiles to web pages, not to files opened from disk, so "
-    "the basemap is hidden. Run `qoregeo serve {file}` (or `geo.show()` in Python) to see it, "
-    "or create the map with tiles='satellite' or 'topo', which work from disk."
+    "the basemap is hidden. Run {c}qoregeo serve {file}{c} (or {c}geo.show(){c} in Python) "
+    "to see it, or create the map with tiles='satellite', 'topo', 'osm-de' or 'none', which work "
+    "from disk."
 )
+
+# File names that need no quoting in POSIX shells, cmd or PowerShell (a
+# leading '=' is special in zsh), and characters that "…" leaves special in
+# a POSIX shell (plus bash's history '!' and control characters).
+_SHELL_PLAIN_RE = re.compile(r"[\w.,:@%+/-][\w.,:@%+=/-]*")
+_SHELL_SPECIAL_RE = re.compile(r'["$`\\!\x00-\x1f\x7f]')
 
 # Placeholders Leaflet's TileLayer understands in a URL template.
 _TILE_PLACEHOLDERS = {"s", "z", "x", "y", "-y", "r"}
@@ -255,13 +264,31 @@ def tile_presets() -> dict[str, str]:
     return {name: preset["label"] for name, preset in _TILES.items()}
 
 
+def _osm_policy_credit(url: str) -> str | None:
+    """
+    The credit a custom tile URL needs if it points at a server that follows
+    the OpenStreetMap tile policy (tile.openstreetmap.org, *.openstreetmap.fr),
+    which requires a Referer and attribution; None for any other server.
+    """
+    try:
+        host = (urlsplit(url).hostname or "").rstrip(".")
+    except ValueError:   # e.g. an unbalanced '[' in the host
+        return None
+    if host == "openstreetmap.org" or host.endswith(".openstreetmap.org"):
+        return str(_OSM_OPTIONS["attribution"])
+    if host == "openstreetmap.fr" or host.endswith(".openstreetmap.fr"):
+        return f"{_OSM_ATTR}, tiles hosted by {_OSM_FR}"
+    return None
+
+
 def _tiles_config(tiles: Any, attribution: str | None = None) -> dict[str, Any]:
     """
     Resolve a basemap name (or a custom ``https://…/{z}/{x}/{y}…`` URL
     template) to the page's tile config.
 
     Every preset is open and keyless. ``attribution`` is trusted HTML; for
-    presets it is appended to the provider's required credit.
+    presets (and custom URLs on OpenStreetMap's own tile servers) it is
+    appended to the provider's required credit.
     """
     presets = " | ".join(repr(k) for k in _TILES)
     if attribution is not None and not isinstance(attribution, str):
@@ -289,7 +316,13 @@ def _tiles_config(tiles: Any, attribution: str | None = None) -> dict[str, Any]:
         options: dict[str, Any] = {"maxZoom": 19, "attribution": attribution or ""}
         if "s" in names:
             options["subdomains"] = "abc"
-        return {"name": "custom", "url": url, "options": options, "needsReferer": False}
+        credit = _osm_policy_credit(url)
+        if credit is None:
+            return {"name": "custom", "url": url, "options": options, "needsReferer": False}
+        # OpenStreetMap's own servers get the same safeguards as the presets:
+        # the Referer their policy requires (no tiles from disk) and the credit.
+        options.update(_REFERRER, attribution=f"{credit}, {attribution}" if attribution else credit)
+        return {"name": "custom", "url": url, "options": options, "needsReferer": True}
 
     name = tiles.strip().lower()
     name = _TILE_ALIASES.get(name, name)
@@ -343,10 +376,22 @@ def _paths(geometry: Any) -> list[Any]:
 
 
 def _spans_world(geometries: list[Any]) -> bool:
-    """True if a line or ring runs all the way round the globe (e.g. -180° to 180°)."""
+    """
+    True if a line or ring runs (all but) the whole way round the globe: its
+    longitudes span 360° (e.g. -180° to 180°), or at least 359° with every
+    vertex on one of its two extreme meridians — an extent box from
+    -179.9999° to 179.9999°, whose edges are straight in lon/lat (RFC 7946).
+
+    A path that merely crosses ±180° (a dateline-straddling island or track,
+    with vertices spread on both sides) is not world-spanning.
+    """
     for path in (p for g in geometries for p in _paths(g)):
         xs = [float(c[0]) for c in path if isinstance(c, list) and c and isinstance(c[0], (int, float))]
-        if xs and max(xs) - min(xs) >= 360.0:
+        if not xs:
+            continue
+        west, east = min(xs), max(xs)
+        if east - west >= 360.0 or (
+                east - west >= 359.0 and all(min(x - west, east - x) <= 1e-9 for x in xs)):
             return True
     return False
 
@@ -472,6 +517,10 @@ _PAGE = """\
   #brand { bottom:24px; left:16px; padding:10px 16px; max-width:calc(100vw - 32px);
            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #brand strong { color:#00D4AA; font-size:14px; }
+  @media (max-width: 480px) {
+    #brand { left:10px; padding:6px 10px; font-size:12px; max-width:calc(100vw - 20px); }
+    #brand strong { font-size:13px; }
+  }
   #count { top:16px; right:16px; padding:8px 16px; }
   #count span { color:#00D4AA; font-weight:600; }
   #qg-error {
@@ -549,7 +598,8 @@ __EXTRA_HTML__
     box.id = "qg-notice";
     box.className = "qg-panel";
     box.setAttribute("role", "status");
-    text.split("`").forEach(function (part, i) {
+    // `…` marks code; NUL does when the file name itself contains a backtick.
+    text.split(text.indexOf("\\u0000") >= 0 ? "\\u0000" : "`").forEach(function (part, i) {
       var node = document.createElement(i % 2 ? "code" : "span");
       node.textContent = part;
       box.appendChild(node);
@@ -563,15 +613,46 @@ __EXTRA_HTML__
     document.body.appendChild(box);
   }
 
+  // Whether tile requests carry the Referer (the page's origin) that the
+  // OpenStreetMap policy requires. A page opened from disk sends none; nor
+  // does a srcdoc iframe (notebook output) inside one, as its base URL is its
+  // parent's, nor a sandboxed iframe with an opaque origin.
+  function sendsReferer() {
+    try {
+      return self.origin !== "null" && /^https?:$/.test(new URL(document.baseURI).protocol);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Keep the title panel above the basemap credit, which must stay visible
+  // and wraps onto several lines on narrow screens.
+  function keepBrandClear(map) {
+    var brand = document.getElementById("brand");
+    var credit = map.attributionControl && map.attributionControl.getContainer();
+    if (!brand || !credit) return;
+    function place() {
+      brand.style.bottom = "";
+      var b = brand.getBoundingClientRect(), c = credit.getBoundingClientRect();
+      if (c.height && b.right > c.left && b.bottom > c.top) {
+        brand.style.bottom = (document.documentElement.clientHeight - c.top + 6) + "px";
+      }
+    }
+    place();
+    window.addEventListener("resize", place);
+    if (window.ResizeObserver) new ResizeObserver(place).observe(credit);
+  }
+
   function baseMap(L) {
     var map = L.map("map", { zoomControl: true, preferCanvas: true,
                              worldCopyJump: CONFIG.worldCopyJump });
     var t = CONFIG.tiles;
-    var blocked = t.needsReferer && location.protocol === "file:";
+    var blocked = t.needsReferer && !sendsReferer();
     var background = blocked ? "#f4f5f7" : t.background;
     if (background) map.getContainer().style.background = background;
     if (blocked) showNotice(CONFIG.fileNotice);
     else if (t.url) L.tileLayer(t.url, t.options).addTo(map);
+    keepBrandClear(map);
     return map;
   }
 
@@ -661,11 +742,29 @@ _MAP_INIT = """\
 """
 
 
+def _shell_arg(name: str) -> str:
+    """
+    ``name`` as one shell argument that can be pasted as printed: bare if it
+    has only plain characters, else in double quotes (POSIX shells, cmd and
+    PowerShell all accept them), else — when it holds a character "…" leaves
+    special, such as $ ` " \\ or ! — single-quoted for POSIX shells.
+    """
+    if _SHELL_PLAIN_RE.fullmatch(name):
+        return name
+    if not _SHELL_SPECIAL_RE.search(name):
+        return f'"{name}"'
+    return shlex.quote(name)
+
+
 def _file_notice(output_path: str | None) -> str:
-    name = os.path.basename(output_path) if output_path else "map.html"
-    if any(ch.isspace() for ch in name):
-        name = f'"{name}"'
-    return _FILE_NOTICE.format(file=name)
+    """
+    The page's "how to view this map" notice, naming the file. Code is
+    marked with backticks, or with NUL (which no file name can contain) if
+    the quoted name has a backtick of its own.
+    """
+    name = (os.path.basename(output_path) if output_path else "") or "map.html"
+    arg = _shell_arg("./" + name if name.startswith("-") else name)   # not an option
+    return _FILE_NOTICE.format(file=arg, c="\0" if "`" in arg else "`")
 
 
 def _shell(title: str, extra_html: str, config: dict[str, Any], init: str) -> str:
@@ -732,10 +831,92 @@ def map_page(
         "style": _STYLE,
         "scripts": [_LEAFLET_JS],
     }
-    page = _shell(title, '<div id="count" class="qg-panel"><span id="n">0</span> features</div>',
-                  config, _MAP_INIT)
+    try:
+        page = _shell(title, '<div id="count" class="qg-panel"><span id="n">0</span> features</div>',
+                      config, _MAP_INIT)
+    except RecursionError:
+        error = _too_deep_error(features, overlay_list)
+        if error is None:
+            raise
+        raise error from None
     located = sum(1 for f in features if _representative_point(f.get("geometry")) is not None)
     return page, located
+
+
+# Values nested deeper than this are reported as the cause of a RecursionError
+# while the page's data is serialised (Python's default limit is 1000 frames);
+# depths are counted up to _DEPTH_CAP.
+_REPORT_DEPTH = 100
+_DEPTH_CAP = 1000
+
+
+def _nesting_depth(value: Any, cap: int = _DEPTH_CAP) -> int:
+    """
+    How many dict / list levels deep ``value`` goes, counted without
+    recursion and stopping above ``cap`` (so a value that contains itself
+    returns ``cap + 1``). A container shared by several parents is walked
+    again only when reached at a deeper level.
+    """
+    deepest = 0
+    reached: dict[int, int] = {}   # id(container) -> deepest level it was reached at
+    stack: list[tuple[Any, int]] = [(value, 1)]
+    while stack:
+        item, level = stack.pop()
+        if isinstance(item, dict):
+            children: Any = item.values()
+        elif isinstance(item, (list, tuple, set, frozenset)):
+            children = item
+        else:
+            continue
+        if level > cap:
+            return cap + 1
+        if reached.get(id(item), 0) >= level:
+            continue
+        reached[id(item)] = level
+        deepest = max(deepest, level)
+        stack.extend((child, level + 1) for child in children)
+    return deepest
+
+
+def _too_deep_error(features: list[Feature], overlays: list[Any]) -> InvalidArgumentError | None:
+    """
+    An error naming the most deeply nested value in ``features`` / ``overlays``
+    (the reason the page data could not be serialised), or None if nothing is
+    nested more than _REPORT_DEPTH levels.
+    """
+    worst: tuple[int, str, str] = (0, "", "")
+    for i, feat in enumerate(features):
+        if not isinstance(feat, dict):
+            continue
+        for key, value in feat.items():
+            items = value.items() if key == "properties" and isinstance(value, dict) else [(None, value)]
+            for prop, item in items:
+                depth = _nesting_depth(item)
+                if depth > worst[0]:
+                    if prop is None:
+                        where = f"features[{i}][{key!r}]"
+                        fix = f"del geo.get_features()[{i}][{key!r}]"
+                    else:
+                        where = f"features[{i}]['properties'][{prop!r}]"
+                        fix = f"del geo.get_features()[{i}]['properties'][{prop!r}]"
+                    worst = (depth, where, fix)
+    for i, shape in enumerate(overlays):
+        depth = _nesting_depth(shape)
+        if depth > worst[0]:
+            worst = (depth, f"overlays[{i}]", "geo.map('out.html', overlays=[geo.buffer((28.61, 77.20), 10)])")
+    depth, where, fix = worst
+    if depth <= _REPORT_DEPTH:
+        return None
+    if depth > _DEPTH_CAP:
+        nested = f"more than {_DEPTH_CAP} levels deep, or containing itself"
+    else:
+        nested = f"{depth} levels deep"
+    return InvalidArgumentError(
+        where, f"<a value nested {nested}>",
+        "dicts / lists nested at most a few hundred levels deep, so the map page can embed "
+        "them (flatten a deeper value, or leave it out)",
+        f"{fix}   # then map again",
+    )
 
 
 def build_map(

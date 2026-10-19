@@ -38,13 +38,13 @@ whenever none matches your platform or Python version, pip has to compile them; 
 also drop older Pythons (shapely 2.2 needs 3.11+, pyproj 3.8 needs 3.12+).
 
 QOREgeo covers the everyday 80 % — distance, nearest, radius / polygon / attribute filters,
-geofencing, maps — with a ~125 KB pure-Python wheel and no dependencies at all.
+geofencing, maps — with a ~160 KB pure-Python wheel and no dependencies at all.
 
 | You need | QOREgeo | Typical alternative |
 |---|---|---|
 | Distance, bearing, buffers, point-in-polygon, area | ✅ stdlib only | shapely + pyproj (compiled) |
 | Load CSV / GeoJSON, filter, nearest, export | ✅ | geopandas (+ numpy, pandas, pyogrio, GDAL) |
-| Interactive maps with no API key | ✅ OpenStreetMap, 10 open basemaps | folium (+ jinja2, requests, numpy …) |
+| Interactive maps with no API key | ✅ OpenStreetMap, 9 open basemaps (+ `none`) | folium (+ jinja2, requests, numpy …) |
 | Static map images without a browser | ✅ PNG / SVG, pure Python | matplotlib / contextily |
 | Geocoding | ✅ Nominatim / Photon / self-hosted | geopy |
 | Tools for AI assistants | ✅ MCP server, Agent Skill, Claude/OpenAI schemas | — |
@@ -122,11 +122,13 @@ print(big.count()) # 2
 geo.map("output.html", title="India Cities")          # interactive (OpenStreetMap)
 geo.heatmap("heat.html", intensity_col="population")
 geo.image("cities.png", title="India Cities")          # static PNG/SVG, works offline
-geo.show()                                             # open in the browser
 
 # ── Save data ─────────────────────────────────────────
 geo.save("output.geojson")
 geo.save("output.csv")
+
+# ── View the map in the browser ───────────────────────
+geo.show()   # serves it on http://127.0.0.1 — a script keeps serving until Ctrl+C, so call it last
 ```
 
 <details>
@@ -147,13 +149,14 @@ Hyderabad,Telangana,10500000,17.3850,78.4867
 
 > **Viewing maps:** the default basemap is OpenStreetMap, whose tile servers only serve web pages —
 > open maps with `geo.show()` or `qoregeo serve output.html` rather than double-clicking the file.
-> See [Basemaps](#basemaps).
+> In a script both keep serving until you press Ctrl+C. Only `tiles="satellite"`, `"topo"`,
+> `"osm-de"` and `"none"` work when the file is opened from disk. See [Basemaps](#basemaps).
 
 ---
 
 ## Method Chaining
 
-Loaders (`load`, `load_data`, `add_point`) and outputs (`save`, `map`, `heatmap`) return `self`; filters return a **new** `GeoEngine` and never modify the original. Together that gives Pandas-style pipelines:
+Loaders (`load`, `load_data`, `add_point`) and outputs (`save`, `map`, `heatmap`, `image`) return `self`; filters return a **new** `GeoEngine` and never modify the original. Together that gives Pandas-style pipelines:
 
 ```python
 from qoregeo import GeoEngine
@@ -184,10 +187,10 @@ qoregeo info stores.csv                                    # rows, columns, bbox
 qoregeo distance 28.6139,77.2090 19.0760,72.8777 --unit miles
 qoregeo export stores.csv -o near.geojson --near 28.61,77.21,5 --sort revenue --desc --limit 20
 qoregeo export stores.csv -o big.csv --where "revenue>=100000" --where 'city in ["Delhi","Pune"]'
-qoregeo map stores.csv -o stores.html --tiles topo --serve # interactive map, opened in the browser
+qoregeo map stores.csv -o stores.html --tiles topo --serve # interactive map, served until Ctrl+C
 qoregeo map stores.csv -o heat.html --heatmap --intensity revenue
 qoregeo image stores.csv -o stores.png --within zone.geojson --labels name
-qoregeo serve stores.html                                  # view any saved map
+qoregeo serve stores.html                                  # view any saved map (until Ctrl+C)
 qoregeo geocode "Gateway of India, Mumbai" --country in
 qoregeo reverse 18.9220,72.8347
 qoregeo tiles                                              # list basemaps
@@ -299,8 +302,9 @@ Without `uv`, use `"command": "qoregeo"` (after `pip install qoregeo`) or
 
 ### Agent Skill
 
-The [`qoregeo` skill](skills/qoregeo/SKILL.md) teaches an agent when and how to use QOREgeo —
-CLI, MCP tools or Python — including the coordinate-order and tile/geocoding policy pitfalls.
+The [`qoregeo` skill](https://github.com/bosekarmegam/qoregeo/blob/main/skills/qoregeo/SKILL.md)
+teaches an agent when and how to use QOREgeo — CLI, MCP tools or Python — including the
+coordinate-order and tile/geocoding policy pitfalls.
 
 ```bash
 qoregeo skill install                 # ~/.claude/skills (Claude Code) + ~/.agents/skills (Codex, Gemini CLI, Copilot)
@@ -324,13 +328,16 @@ result = call_tool(block.name, block.input, ctx)
 tool_result = result.to_anthropic(block.id)  # text + the PNG from preview_map
 ```
 
-Complete, runnable loops: [`examples/claude_tools.py`](examples/claude_tools.py) (Messages API)
-and [`examples/claude_mcp.py`](examples/claude_mcp.py) (MCP + the SDK's tool runner). Any agent
-with a shell can also run a tool directly: `qoregeo call nearest '{"path": "stores.csv", "point":
-{"lat": 28.6, "lng": 77.2}, "k": 3}'`.
+Complete, runnable loops:
+[`examples/claude_tools.py`](https://github.com/bosekarmegam/qoregeo/blob/main/examples/claude_tools.py)
+(Messages API) and
+[`examples/claude_mcp.py`](https://github.com/bosekarmegam/qoregeo/blob/main/examples/claude_mcp.py)
+(MCP + the SDK's tool runner). Any agent with a shell can also run a tool directly:
+`qoregeo call nearest '{"path": "stores.csv", "point": {"lat": 28.6, "lng": 77.2}, "k": 3}'`.
 
-Also in the repository: [`AGENTS.md`](AGENTS.md) (for coding agents contributing here),
-[`llms.txt`](llms.txt), and the MCP Registry manifest [`server.json`](server.json).
+Also in the repository: [`AGENTS.md`](https://github.com/bosekarmegam/qoregeo/blob/main/AGENTS.md)
+(for coding agents contributing here), [`llms.txt`](https://github.com/bosekarmegam/qoregeo/blob/main/llms.txt),
+and the MCP Registry manifest [`server.json`](https://github.com/bosekarmegam/qoregeo/blob/main/server.json).
 
 ---
 
@@ -346,7 +353,7 @@ delhi  = (28.6139, 77.2090)
 mumbai = (19.0760, 72.8777)
 ```
 
-Points are always `(lat, lng)` tuples (a `(lat, lng, alt)` tuple, a GeoJSON `Point` or a Point `Feature` also work). GeoJSON coordinates are `[lng, lat]`, as RFC 7946 requires.
+Points are always `(lat, lng)` tuples (a `(lat, lng, alt)` tuple, a `{"lat": …, "lng": …}` dict, a GeoJSON `Point` or a Point `Feature` also work). GeoJSON coordinates are `[lng, lat]`, as RFC 7946 requires.
 
 ### `GeoEngine(verbose=True)`
 
@@ -759,20 +766,23 @@ geo.heatmap("heat.html", intensity_col="population", radius=30, blur=20)
 
 OpenStreetMap's tile servers require an HTTP `Referer`, which browsers never send for pages
 opened straight from disk (`file://`). So QOREgeo serves maps from your own machine:
+`geo.show()` serves `map_html()` on `http://127.0.0.1`, opens it in the browser and returns
+the URL. In a script it keeps serving until you press Ctrl+C, so make it the last line; in a
+notebook or the REPL it serves in the background and returns at once.
 
 ```python
-geo.show()                                   # serves map_html() on http://127.0.0.1 and opens it
-geo.show(heatmap=True, intensity_col="population", tiles="dark")
-url = geo.show(block=False)                  # keep working while it serves (default in notebooks)
+url = geo.show(block=False)   # serve in the background and carry on (stops when Python exits)
+geo.show(heatmap=True, intensity_col="population", tiles="dark")   # in a script: until Ctrl+C
 ```
 
 ```bash
-qoregeo serve output.html                    # any saved map; re-read on every reload
+qoregeo serve output.html                    # any saved map, re-read on every reload; Ctrl+C stops
 ```
 
 Only that one page is served, only to `127.0.0.1`. A map using an OpenStreetMap-hosted basemap
 that *is* opened from disk doesn't request tiles at all (that would break the tile policy);
-it shows the data on a plain background with a note explaining how to view it.
+it shows the data on a plain background with a note explaining how to view it. Only
+`tiles="satellite"`, `"topo"`, `"osm-de"` and `"none"` work when the file is opened from disk.
 
 **Jupyter / notebooks:** a `GeoEngine` displays itself as an interactive map (up to 20,000
 features). **Web apps / reports:** `geo.map_html()` and `geo.heatmap_html()` return the page as
@@ -790,10 +800,10 @@ Every preset is open and needs no API key:
 | `"humanitarian"` | Humanitarian OSM Team style (OSM France) | needs http |
 | `"cyclosm"` | CyclOSM cycling map (OSM France) | needs http |
 | `"osm-fr"` | OpenStreetMap France style | needs http |
-| `"osm-de"` | OpenStreetMap Germany style (FOSSGIS) | non-commercial / small sites only |
-| `"topo"` | OpenTopoMap topographic | up to zoom 17 |
-| `"satellite"` | NASA Blue Marble imagery (public domain) | overview only (zoom ≤ 10) |
-| `"none"` | no basemap | nothing is downloaded |
+| `"osm-de"` | OpenStreetMap Germany style (FOSSGIS) | non-commercial / small sites only; works from disk |
+| `"topo"` | OpenTopoMap topographic | up to zoom 17; works from disk |
+| `"satellite"` | NASA Blue Marble imagery (public domain) | overview only (zoom ≤ 10); works from disk |
+| `"none"` | no basemap | nothing is downloaded; works from disk |
 
 `qoregeo tiles` or `qoregeo.tile_presets()` list them. Attribution required by each provider is
 always shown. Please respect the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
@@ -840,8 +850,11 @@ Geocoder(url="http://localhost:8080")             # your own Nominatim server �
 ```
 
 The public servers are run by volunteers: QOREgeo enforces **at most 1 request per second** per
-server, sends an identifying `User-Agent`, caches results and maps errors (403 blocked, 429 too
-many requests, …) to `GeocodingError` with a hint. Their policies forbid bulk jobs, autocomplete
+server — across every process on your machine, through a small shared SQLite file in your user
+cache folder that also remembers answers for 30 days — sends an identifying `User-Agent` and maps
+errors (403 blocked, 429 too many requests, …) to `GeocodingError` with a hint. Move the cache
+with `Geocoder(cache_dir=…)` / `QOREGEO_CACHE_DIR=<folder>`, or turn it off with
+`cache_dir=None` / `QOREGEO_CACHE_DIR=off`; self-hosted servers (`url=…`) never use it. Their policies forbid bulk jobs, autocomplete
 and systematic queries — for more than a handful of addresses, run
 [Nominatim](https://github.com/mediagis/nominatim-docker) or Photon yourself. Results carry the
 required "© OpenStreetMap contributors, ODbL" attribution; keep it with anything you publish.
@@ -1013,7 +1026,7 @@ geo.filter_by_radius(*patient, 5).map("nearby_hospitals.html")
 | v2.0   | 📋 Planned | QORE OS integration, quantum nearest-neighbour |
 | v3.0   | 🔮 Future | Quantum routing, GeoAI, WebAssembly |
 
-See the [CHANGELOG](CHANGELOG.md) for details.
+See the [CHANGELOG](https://github.com/bosekarmegam/qoregeo/blob/main/CHANGELOG.md) for details.
 
 ---
 

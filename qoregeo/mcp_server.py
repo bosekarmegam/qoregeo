@@ -26,7 +26,7 @@ from collections.abc import Callable
 from typing import IO, Any
 
 from ._version import __version__
-from .tools import SERVER_INSTRUCTIONS, TOOLS, ToolContext, call_tool, tool_definitions
+from .tools import SERVER_INSTRUCTIONS, TOOLS, ToolContext, _text_safe, call_tool, tool_definitions
 
 # Newest first. A client asking ``initialize`` for a version we don't know is
 # offered the first entry (the client then decides whether it can continue).
@@ -86,36 +86,50 @@ class MCPServer:
 
     def _handle_one(self, message: Any) -> Json | None:
         if not isinstance(message, dict) or message.get("jsonrpc") != "2.0":
-            return _error(message.get("id") if isinstance(message, dict) else None,
+            return _error(_id_or_none(message.get("id") if isinstance(message, dict) else None),
                           INVALID_REQUEST, "Expected a JSON-RPC 2.0 message")
         method = message.get("method")
         msg_id = message.get("id")
         if not isinstance(method, str):
             # A response to a request we never sent, or garbage: nothing to answer.
             return None if "result" in message or "error" in message else \
-                _error(msg_id, INVALID_REQUEST, "Missing 'method'")
+                _error(_id_or_none(msg_id), INVALID_REQUEST, "Missing 'method'")
         if "id" not in message:
             return None   # notifications/initialized, notifications/cancelled, … need no reply
-        params = message.get("params") or {}
+        if not _valid_id(msg_id):
+            # MCP: "Requests MUST include a string or integer ID … MUST NOT be null."
+            return _error(None, INVALID_REQUEST, "'id' must be a string or an integer, "
+                                                 f"e.g. \"id\": 1 (got {msg_id!r:.40})")
+        params = message.get("params")
+        params = {} if params is None else params
         if not isinstance(params, dict):
             return _error(msg_id, INVALID_PARAMS, "'params' must be an object")
 
+        # The stateless era is chosen by the envelope key's presence (a malformed
+        # value is then rejected, not served as legacy). initialize always means
+        # the handshake era, even when a client stamps the envelope on it.
         meta = params.get("_meta")
-        requested = meta.get(_META_VERSION) if isinstance(meta, dict) else None
-        if requested is not None or method == "server/discover":
-            return self._handle_modern(msg_id, method, params, requested)
+        if method != "initialize" and (
+                (isinstance(meta, dict) and _META_VERSION in meta) or method == "server/discover"):
+            return self._handle_modern(msg_id, method, params)
 
         handler = _HANDSHAKE_METHODS.get(method)
         if handler is None:
             return _error(msg_id, METHOD_NOT_FOUND, f"Method not found: {method}")
         return self._run(msg_id, method, lambda: handler(self, params, self.protocol_version))
 
-    def _handle_modern(self, msg_id: Any, method: str, params: Json, requested: Any) -> Json:
+    def _handle_modern(self, msg_id: Any, method: str, params: Json) -> Json:
         """A stateless-era request: the protocol version travels with every request."""
         meta = params.get("_meta")
-        if requested is None or not isinstance(meta, dict) or not isinstance(meta.get(_META_CAPABILITIES), dict):
+        if not isinstance(meta, dict) or _META_VERSION not in meta or \
+                not isinstance(meta.get(_META_CAPABILITIES), dict):
             return _error(msg_id, INVALID_PARAMS,
                           f"Requests must carry _meta['{_META_VERSION}'] and _meta['{_META_CAPABILITIES}']")
+        requested = meta[_META_VERSION]
+        if not isinstance(requested, str):
+            return _error(msg_id, INVALID_PARAMS,
+                          f"_meta['{_META_VERSION}'] must be a string, e.g. "
+                          f"\"{MODERN_PROTOCOL_VERSIONS[0]}\"")
         if requested not in MODERN_PROTOCOL_VERSIONS:
             return _error(msg_id, UNSUPPORTED_PROTOCOL_VERSION,
                           f"Unsupported protocol version: {requested}",
@@ -230,14 +244,9 @@ class MCPServer:
                 self._send(dst, reply)
 
     def _send(self, dst: IO[str], reply: Json | list[Json]) -> None:
-        # ensure_ascii keeps every message on one line whatever the payload.
-        try:
-            text = json.dumps(reply, ensure_ascii=True, separators=(",", ":"), allow_nan=False)
-        except (ValueError, TypeError, RecursionError) as exc:
-            _log(f"could not encode a reply: {type(exc).__name__}: {exc}")
-            msg_id = reply.get("id") if isinstance(reply, dict) else None
-            text = json.dumps(_error(msg_id if isinstance(msg_id, (str, int)) else None,
-                                     INTERNAL_ERROR, "Internal error: unencodable result"))
+        # Batch replies are encoded one by one, so one bad reply can't sink the rest.
+        text = "[" + ",".join(_encode(r) for r in reply) + "]" if isinstance(reply, list) \
+            else _encode(reply)
         with self._write_lock:
             dst.write(text + "\n")
             dst.flush()
@@ -248,6 +257,31 @@ class _RpcError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+def _encode(reply: Json) -> str:
+    """
+    One reply as a line of JSON that strict parsers accept: ASCII only (so it
+    stays on one line whatever the payload), no NaN, no lone surrogates.
+    """
+    try:
+        return json.dumps(_text_safe(reply), ensure_ascii=True, separators=(",", ":"),
+                          allow_nan=False)
+    except (ValueError, TypeError, RecursionError) as exc:
+        _log(f"could not encode a reply: {type(exc).__name__}: {exc}")
+        msg_id = _id_or_none(reply.get("id")) if isinstance(reply, dict) else None
+        return json.dumps(_text_safe(_error(msg_id, INTERNAL_ERROR,
+                                            "Internal error: unencodable result")),
+                          ensure_ascii=True, separators=(",", ":"))
+
+
+def _valid_id(msg_id: Any) -> bool:
+    """A request id MCP allows: a string or an integer (not null, a float or a bool)."""
+    return isinstance(msg_id, (str, int)) and not isinstance(msg_id, bool)
+
+
+def _id_or_none(msg_id: Any) -> Any:
+    return msg_id if _valid_id(msg_id) else None
 
 
 def _reject_constant(name: str) -> Any:
@@ -287,7 +321,14 @@ _Method = Callable[[MCPServer, Json, "str | None"], Json]
 
 def _no_items(key: str) -> _Method:
     # Advertised capabilities are tools only, but answer these listings politely.
-    return lambda server, params, version: {key: []}
+    def listing(server: MCPServer, params: Json, version: str | None) -> Json:
+        result: Json = {key: []}
+        if version in MODERN_PROTOCOL_VERSIONS:
+            # 2026-07-28: list results MUST carry caching hints.
+            result.update(ttlMs=0, cacheScope="private")
+        return result
+
+    return listing
 
 
 _HANDSHAKE_METHODS: dict[str, _Method] = {

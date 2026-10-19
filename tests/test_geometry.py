@@ -147,14 +147,42 @@ class TestCoordinateCoercion:
             {"type": "Point", "coordinates": [77.2090, 28.6139]},
             {"type": "Point", "coordinates": [77.2090, 28.6139, 216.0]},
             _feature({"type": "Point", "coordinates": [77.2090, 28.6139]}),
+            {"lat": 28.6139, "lng": 77.2090},                  # the MCP tools' shape
+            {"lat": 28.6139, "lon": 77.2090},
+            {"latitude": 28.6139, "longitude": 77.2090, "name": "Delhi"},
+            {"lat": "28.6139", "lng": "77.2090"},
         ],
         ids=[
             "tuple", "list", "strings", "padded-strings", "decimals", "3-tuple",
             "geojson-point", "geojson-point-3d", "point-feature",
+            "lat-lng-dict", "lat-lon-dict", "latitude-longitude-dict", "lat-lng-strings",
         ],
     )
     def test_accepted_point_forms(self, geo, point):
         assert geo.distance(point, MUMBAI) == pytest.approx(1148.0965, abs=1e-4)
+
+    @pytest.mark.parametrize(
+        "call",
+        [
+            lambda g, p: g.bearing(p, MUMBAI, as_degrees=True),
+            lambda g, p: g.destination(p, 10, 90),
+            lambda g, p: g.midpoint(p, MUMBAI),
+            lambda g, p: g.geohash(p, precision=7),
+            lambda g, p: g.point_in_polygon(p, g.buffer(DELHI, 1)),
+            lambda g, p: g.distance_to_line(p, [MUMBAI, AGRA]),
+            lambda g, p: g.buffer(p, 5)["_center"],
+        ],
+        ids=["bearing", "destination", "midpoint", "geohash", "point_in_polygon",
+             "distance_to_line", "buffer"],
+    )
+    def test_lat_lng_dict_same_as_tuple(self, geo, call):
+        # The docs and the MCP tools use {"lat": …, "lng": …}; every method takes it.
+        assert call(geo, {"lat": DELHI[0], "lng": DELHI[1]}) == call(geo, DELHI)
+
+    def test_lat_lng_dict_errors_name_both_forms(self, geo):
+        with pytest.raises(InvalidCoordinateError) as info:
+            geo.distance({"lat": 28.6}, MUMBAI)
+        assert "{'lat': …, 'lng': …}" in str(info.value)
 
     def test_geojson_point_uses_lng_lat_order(self, geo):
         point = {"type": "Point", "coordinates": [10.0, 50.0]}   # lng=10, lat=50
@@ -180,7 +208,9 @@ class TestCoordinateCoercion:
             5,
             ("north", "east"),
             (None, 1.0),
-            {"lat": 1.0, "lng": 2.0},
+            {"lat": 1.0},
+            {"lat": 95.0, "lng": 2.0},
+            {"type": "Point", "lat": 1.0, "lng": 2.0},
             {"type": "Point", "coordinates": [1.0]},
             {"type": "Point", "coordinates": [200.0, 0.0]},   # lng out of range
             {"type": "LineString", "coordinates": [[0, 0], [1, 1]]},
@@ -189,7 +219,8 @@ class TestCoordinateCoercion:
         ids=[
             "bool-lat", "bool-lng", "nan-lat", "nan-lng", "inf-lat", "neg-inf-lng",
             "lat>90", "lat<-90", "lng>180", "lng<-180", "none", "1-tuple", "empty-tuple",
-            "string", "int", "words", "none-lat", "lat-lng-dict", "short-point",
+            "string", "int", "words", "none-lat", "lat-only-dict", "lat-lng-dict-out-of-range",
+            "point-with-lat-lng-keys", "short-point",
             "point-lng-out-of-range", "linestring", "null-feature",
         ],
     )
@@ -908,6 +939,33 @@ class TestPointInPolygon:
     def test_fiji_split_at_antimeridian(self, geo, point, inside):
         assert geo.point_in_polygon(point, FIJI_SPLIT) is inside
 
+    def test_docstring_describes_the_antimeridian_rule(self):
+        # A ring that jumps from 177 to -178 is read planarly (see JUMP_BOX), so
+        # the docstring must not promise that crossing polygons "are handled".
+        doc = " ".join((GeoEngine.point_in_polygon.__doc__ or "").split())
+        assert "are handled" not in doc
+        assert "continuous longitudes" in doc
+        assert "MultiPolygon at ±180°" in doc
+
+    def test_many_points_against_a_large_polygon(self, geo):
+        # filter_by_polygon prepares the polygon once; answers match the
+        # one-point-at-a-time test, holes and all.
+        n = 360
+        outer = [[10 * math.cos(2 * math.pi * k / n) * (1 + 0.3 * math.sin(9 * 2 * math.pi * k / n)),
+                  10 * math.sin(2 * math.pi * k / n)] for k in range(n)]
+        hole = [[-2, -2], [2, -2], [2, 2], [-2, 2], [-2, -2]]
+        star = {"type": "Polygon", "coordinates": [outer + [outer[0]], hole]}
+        g = GeoEngine(verbose=False)
+        points = [(lat / 2, lng / 2) for lat in range(-30, 31, 2) for lng in range(-30, 31, 2)]
+        for lat, lng in points:
+            g.add_point(lat, lng)
+        kept = {(f["geometry"]["coordinates"][1], f["geometry"]["coordinates"][0])
+                for f in g.filter_by_polygon(star)}
+        expected = {p for p in points if geo.point_in_polygon(p, star)}
+        assert kept == expected
+        assert 0 < len(expected) < len(points)
+        assert (0.0, 0.0) not in expected and (3.0, 0.0) in expected
+
 
 class TestPointInPolygonErrors:
     @pytest.mark.parametrize(
@@ -1060,6 +1118,43 @@ class TestArea:
     def test_malformed_polygon(self, geo, polygon):
         with pytest.raises(InvalidBufferError):
             geo.area(polygon)
+
+    @pytest.mark.parametrize(
+        "ring",
+        [
+            [[1e308, 0], [0, 1e308], [-1e308, 0], [1e308, 0]],      # was area=inf
+            [[500, 0], [0, 700], [-900, 0], [500, 0]],              # was 169,606,894 km²
+            [[0, 0], [1, 0], [1, 91], [0, 0]],                      # latitude beyond the pole
+            [[0, 0], [361, 0], [361, 1], [0, 0]],                   # longitude beyond ±360
+            [[0, 0], [1, 0], [1, math.nan], [0, 0]],
+            [[0, 0], [1, 0], [1, math.inf], [0, 0]],
+            [[0, 0], [10 ** 400, 0], [1, 1], [0, 0]],               # too large for a float
+        ],
+        ids=["huge", "lat-700", "lat-91", "lng-361", "nan", "inf", "int-overflow"],
+    )
+    def test_out_of_range_positions_rejected(self, geo, ring):
+        polygon = {"type": "Polygon", "coordinates": [ring]}
+        with pytest.raises(InvalidBufferError) as info:
+            geo.area(polygon)
+        assert info.value.reason
+        with pytest.raises(InvalidBufferError):
+            geo.area({"type": "MultiPolygon", "coordinates": [[UNIT_SQUARE["coordinates"][0]], [ring]]})
+        with pytest.raises(InvalidBufferError):
+            geo.point_in_polygon((0.5, 0.5), polygon)   # same validation
+
+    def test_out_of_range_error_names_the_position(self, geo):
+        with pytest.raises(InvalidBufferError) as info:
+            geo.area({"type": "Polygon", "coordinates": [[[500, 0], [0, 700], [-900, 0], [500, 0]]]})
+        assert "[500.0, 0.0]" in info.value.reason
+        assert "swapped" in info.value.reason
+
+    def test_continuous_longitudes_still_accepted(self, geo):
+        assert geo.area(ANTIMERIDIAN_BOX) > 0   # longitudes up to ±360 are fine
+
+    def test_docstring_says_spherical_not_wgs84(self):
+        doc = " ".join((GeoEngine.area.__doc__ or "").split())
+        assert "sphere of mean Earth radius" in doc
+        assert "not the WGS-84 ellipsoid" in doc
 
     def test_returns_float_rounded_to_4_decimals(self, geo):
         a = geo.area(geo.buffer(SYDNEY, 3.3))

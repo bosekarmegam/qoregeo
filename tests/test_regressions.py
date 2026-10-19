@@ -17,12 +17,15 @@ import os
 import pickle
 import re
 import sys
+import time
+import warnings
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from qoregeo import (
+    ColumnNotFoundError,
     GeoEngine,
     GeoFileNotFoundError,
     InvalidArgumentError,
@@ -395,3 +398,129 @@ def test_no_temp_files_left_after_failed_save(tmp_path, two_cities):
         two_cities.add_point(1, 2, name="Ω").save(target, encoding="ascii")
     assert target.read_text(encoding="utf-8") == "OLD"
     assert sorted(p.name for p in Path(tmp_path).iterdir()) == ["bad.geojson"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wide CSV headers load in linear time
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWideHeaders:
+    def test_duplicate_check_is_linear(self, tmp_path):
+        # 40,000 columns took ~13 s with the old list.count() check (O(n²)).
+        n = 40_000
+        path = tmp_path / "wide.csv"
+        path.write_text("lat,lng," + ",".join(f"c{i}" for i in range(n)) + ",c7,c3\n1,2\n",
+                        encoding="utf-8")
+        start = time.perf_counter()
+        with pytest.warns(UserWarning, match=r"duplicate column name\(s\) \['c3', 'c7'\]"):
+            geo = GeoEngine(verbose=False).load(path)
+        assert time.perf_counter() - start < 4.0
+        assert geo.count() == 1
+
+    def test_no_warning_without_duplicates(self, tmp_path):
+        path = tmp_path / "plain.csv"
+        path.write_text("lat,lng,a,b\n1,2,x,y\n", encoding="utf-8")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert GeoEngine(verbose=False).load(path).count() == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# sort_by() on a column that doesn't exist
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSortByColumn:
+    @pytest.fixture
+    def cities(self) -> GeoEngine:
+        return (GeoEngine(verbose=False)
+                .add_point(*DELHI, name="Delhi", population=32_900_000)
+                .add_point(-33.87, 151.21, name="Sydney", population=5_450_000)
+                .add_point(*JAIPUR, name="Jaipur"))
+
+    def test_misspelled_column_raises(self, cities):
+        # Used to return file order, so "top N" answers were silently wrong.
+        with pytest.raises(ColumnNotFoundError) as info:
+            cities.sort_by("populaton", descending=True)
+        assert info.value.column == "populaton"
+        assert "population" in info.value.available
+        assert "geo.sort_by(" in str(info.value)
+
+    def test_error_names_the_loaded_file(self, tmp_path):
+        path = tmp_path / "c.csv"
+        path.write_text("name,lat,lng\nA,1,2\n", encoding="utf-8")
+        with pytest.raises(ColumnNotFoundError) as info:
+            GeoEngine(verbose=False).load(path).sort_by("nope")
+        assert info.value.filepath == str(path)
+
+    def test_sparse_column_still_sorts_missing_last(self, cities):
+        assert _names(cities.sort_by("population")) == ["Sydney", "Delhi", "Jaipur"]
+        assert _names(cities.sort_by("population", descending=True)) == ["Delhi", "Sydney", "Jaipur"]
+
+    def test_empty_filter_result_knows_its_columns(self, cities):
+        empty = cities.filter("name", "Nowhere")
+        assert empty.sort_by("population").count() == 0
+        with pytest.raises(ColumnNotFoundError):
+            empty.sort_by("populaton")
+
+    def test_injected_distance_column(self, cities):
+        near = cities.k_nearest(DELHI, k=3).sort_by("_distance", descending=True)
+        assert _names(near)[0] == "Sydney"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Representative points of shapes cut at the antimeridian
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Fiji as RFC 7946 §3.1.9 asks: a MultiPolygon cut at ±180°.
+FIJI_CUT = {"type": "MultiPolygon", "coordinates": [
+    [[[177.2, -18.3], [178.7, -18.3], [178.7, -17.3], [177.2, -17.3], [177.2, -18.3]]],
+    [[[178.4, -17.0], [180.0, -17.0], [180.0, -16.1], [178.4, -16.1], [178.4, -17.0]]],
+    [[[-180.0, -19.0], [-178.5, -19.0], [-178.5, -16.2], [-180.0, -16.2], [-180.0, -19.0]]],
+]}
+
+
+class TestAntimeridianRepresentativePoint:
+    def _fiji(self) -> GeoEngine:
+        return GeoEngine(verbose=False).load_data([
+            {"type": "Feature", "geometry": FIJI_CUT, "properties": {"name": "Fiji"}}])
+
+    def test_centroid_lands_on_fiji(self):
+        # Was (-17.43, -31.92): the South Atlantic.
+        lat, lng = self._fiji().centroid()
+        assert lat == pytest.approx(-17.43, abs=0.01)
+        assert lng == pytest.approx(179.849, abs=0.01)
+
+    def test_heatmap_point_lands_on_fiji(self):
+        cfg = parse_config(self._fiji().heatmap_html(tiles="none"))
+        (lat, lng, weight), = cfg["points"]
+        assert (lat, weight) == (pytest.approx(-17.43, abs=0.01), 1.0)
+        assert lng == pytest.approx(179.849, abs=0.01)
+
+    def test_csv_coordinates_land_on_fiji(self, tmp_path):
+        out = tmp_path / "fiji.csv"
+        self._fiji().save(out)
+        with open(out, newline="", encoding="utf-8") as fh:
+            row, = csv.DictReader(fh)
+        assert float(row["longitude"]) == pytest.approx(179.849, abs=0.01)
+
+    def test_part_east_of_180_pulls_east(self):
+        # A Chukotka-like shape: mostly west of 180° with a part just east of it.
+        shape = {"type": "MultiPolygon", "coordinates": [
+            [[[170, 65], [180, 65], [180, 70], [170, 70], [170, 65]]],
+            [[[-180, 65], [-172, 65], [-172, 68], [-180, 68], [-180, 65]]],
+        ]}
+        geo = GeoEngine(verbose=False).load_data([shape])
+        lat, lng = geo.centroid()
+        assert 65 < lat < 70
+        assert lng > 175 or lng < -175
+
+    @pytest.mark.parametrize("ring, expected_lng", [
+        ([[175, -5], [185, -5], [185, 5], [175, 5], [175, -5]], 180.0),      # continuous
+        ([[10, -5], [20, -5], [20, 5], [10, 5], [10, -5]], 15.0),            # ordinary
+        ([[-180, -5], [180, -5], [180, 5], [-180, 5], [-180, -5]], 0.0),     # world band
+    ], ids=["continuous", "ordinary", "world-band"])
+    def test_other_polygons_unchanged(self, ring, expected_lng):
+        geo = GeoEngine(verbose=False).load_data([{"type": "Polygon", "coordinates": [ring]}])
+        lat, lng = geo.centroid()
+        assert lat == pytest.approx(0.0, abs=1e-9)
+        assert abs(lng) == pytest.approx(abs(expected_lng), abs=1e-9)

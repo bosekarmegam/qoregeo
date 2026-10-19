@@ -8,9 +8,12 @@ distance, map (filters, tiles, heatmap, --serve), image, export (formula
 escaping, refusing to overwrite the input), serve, tiles, tools, call (stdin
 arguments, saved images, read-only mode, sandbox root from flags and
 environment variables), mcp, skill (install / path / zip into a fake home
-directory) and geocode / reverse with a fake geocoder. Nothing opens a
-browser, starts a blocking server or touches the network. One test runs
-``python -m qoregeo --version`` as a subprocess.
+directory) and geocode / reverse with a fake geocoder. Also: negative
+coordinates and bboxes (argparse on Python 3.10-3.13), strict cp1252 consoles,
+strict JSON output, --root / --max-features validation, clean messages for
+operating-system errors and a busy port, and safe skill installs. Nothing opens
+a browser, starts a blocking server or touches the network. Two tests run
+``python -m qoregeo`` as a subprocess.
 
 Run with:
     pytest tests/test_cli.py -v
@@ -870,7 +873,7 @@ class TestSkill:
         assert code == 0
         assert_skill_copy(home / folder / "skills" / "qoregeo", skill_source)
         assert not (home / other).exists()
-        assert out.count("→") == 1
+        assert out.count(" -> ") == 1
 
     def test_install_project_scope(self, capsys, tmp_path, home, skill_source):
         project = tmp_path / "project"
@@ -973,3 +976,396 @@ class TestImageLabels:
         text = (tmp_path / "l.svg").read_text(encoding="utf-8")
         assert code == 0 and ">Delhi<" in text
         assert 'id="qg-grid"' not in text and 'id="qg-scale-bar"' not in text
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Negative coordinates (argparse on Python 3.10-3.13 took "-33.9,18.4" for an option)
+# ─────────────────────────────────────────────────────────────────────────────
+
+WORLD_CSV = (
+    "name,lat,lng\n"
+    "Sydney,-33.8688,151.2093\n"
+    "London,51.5074,-0.1278\n"
+    "New York,40.7128,-74.0060\n"
+    "Lima,-12.0464,-77.0428\n"
+)
+
+
+@pytest.fixture
+def world(tmp_path: Path) -> Path:
+    path = tmp_path / "world.csv"
+    path.write_text(WORLD_CSV, encoding="utf-8")
+    return path
+
+
+def exported_names(path: Path) -> list[str]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return [f["properties"]["name"] for f in data["features"]]
+
+
+class TestNegativeCoordinates:
+    def test_distance(self, capsys):
+        code, out, err = run(capsys, "distance", "-33.8688,151.2093", "51.5074,-0.1278", "--json")
+        assert code == 0, err
+        assert json.loads(out)["distance"] == pytest.approx(16993.9569, abs=1e-3)
+
+    def test_distance_both_negative(self, capsys):
+        code, out, err = run(capsys, "distance", "-12.0464,-77.0428", "-33.8688,151.2093")
+        assert code == 0, err
+        assert out.endswith(")\n") and " km " in out
+
+    @pytest.mark.parametrize("argv", [["--", "-33.8688,151.2093", "51.5074,-0.1278"],
+                                      ["-.5,1", "-0.5,1"]])
+    def test_distance_other_spellings(self, capsys, argv):
+        code, _, err = run(capsys, "distance", *argv)
+        assert code == 0, err
+
+    def test_reverse(self, capsys):
+        code, out, err = run(capsys, "reverse", "-33.86,151.2")
+        assert code == 0, err
+        assert FakeGeocoder.instances[0].calls == [("reverse", (-33.86, 151.2))]
+
+    @pytest.mark.parametrize("flags, expected", [
+        (["--bbox", "-130,20,-60,50"], ["New York"]),
+        (["--bbox=-130,20,-60,50"], ["New York"]),
+        (["--bbox", "-80,-15,-70,-10"], ["Lima"]),
+        (["--near", "-33.87,151.21,50"], ["Sydney"]),
+        (["--near", "51.5,-0.12,10", "--unit", "miles"], ["London"]),
+    ])
+    def test_export_filters(self, capsys, tmp_path, world, flags, expected):
+        code, _, err = run(capsys, "export", "world.csv", "-o", "out.geojson", "-q", *flags)
+        assert code == 0, err
+        assert exported_names(tmp_path / "out.geojson") == expected
+
+    def test_map_filters(self, capsys, tmp_path, world):
+        code, _, err = run(capsys, "map", "world.csv", "-o", "w.html", "-q",
+                           "--bbox", "-180,-60,0,60")
+        assert code == 0, err
+        assert mapped_names(tmp_path / "w.html") == ["London", "New York", "Lima"]
+
+    def test_real_options_still_work(self, capsys):
+        code, _, err = run(capsys, "distance", "-x,1", "0,0")
+        assert code == 2 and "required" in err   # "-x,1" is not a number: an unknown option
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Consoles that are not UTF-8 (Windows pipes use the ANSI code page, errors=strict)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_cp1252(monkeypatch: pytest.MonkeyPatch, *argv: str) -> tuple[int, str, str]:
+    """Run ``qoregeo argv…`` with stdout / stderr as strict cp1252 pipes."""
+    streams = [io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict", newline="")
+               for _ in range(2)]
+    monkeypatch.setattr(sys, "stdout", streams[0])
+    monkeypatch.setattr(sys, "stderr", streams[1])
+    try:
+        code: Any = main(list(argv))
+    except SystemExit as exc:
+        code = exc.code
+    for stream in streams:
+        stream.flush()
+        assert stream.errors == "strict"   # main() put the setting back
+    out, err = (s.buffer.getvalue().decode("cp1252") for s in streams)   # type: ignore[attr-defined]
+    return (0 if code is None else code), out, err
+
+
+class TestConsoleEncoding:
+    def test_help(self, monkeypatch):
+        code, out, err = run_cp1252(monkeypatch, "--help")
+        assert code == 0 and err == ""
+        assert "address or place -> coordinates" in out
+
+    def test_bare_command_prints_help(self, monkeypatch):
+        code, out, _ = run_cp1252(monkeypatch)
+        assert code == 2 and "usage: qoregeo" in out
+
+    def test_subcommand_help(self, monkeypatch):
+        for command in ("geocode", "mcp", "skill", "call"):
+            code, out, _ = run_cp1252(monkeypatch, command, "--help")
+            assert code == 0 and f"usage: qoregeo {command}" in out
+
+    def test_skill_install_installs_every_target(self, monkeypatch, home, skill_source):
+        code, out, err = run_cp1252(monkeypatch, "skill", "install")
+        assert code == 0, err
+        for folder in (".claude", ".agents"):
+            assert_skill_copy(home / folder / "skills" / "qoregeo", skill_source)
+        assert out.count("Installed the qoregeo skill -> ") == 2
+
+    def test_skill_zip(self, monkeypatch, tmp_path, skill_source):
+        code, out, err = run_cp1252(monkeypatch, "skill", "zip", "-o", "b.zip")
+        assert code == 0, err
+        assert "Skill bundle written -> b.zip" in out and (tmp_path / "b.zip").is_file()
+
+    def test_json_is_ascii_and_lossless(self, monkeypatch, tmp_path):
+        names = ["नई दिल्ली", "東京", "Łódź", "😀"]
+        (tmp_path / "intl.csv").write_text(
+            "name,lat,lng\n" + "".join(f"{n},{i},{i}\n" for i, n in enumerate(names)),
+            encoding="utf-8")
+        code, out, err = run_cp1252(monkeypatch, "call", "query_features", '{"path": "intl.csv"}')
+        assert code == 0, err
+        assert out.isascii()
+        assert [f["properties"]["name"] for f in json.loads(out)["features"]] == names
+
+    def test_geocode_text(self, monkeypatch):
+        def search(self: Any, query: str, limit: int = 5, country_codes: Any = None) -> Any:
+            return [{"lat": 51.759, "lng": 19.457, "name": "Łódź, Polska",
+                     "attribution": "Data © OpenStreetMap contributors"}]
+
+        monkeypatch.setattr(FakeGeocoder, "search", search)
+        code, out, err = run_cp1252(monkeypatch, "geocode", "Lodz")
+        assert code == 0
+        assert out == "51.759000,19.457000  \\u0141ód\\u017a, Polska\n"
+        assert "OpenStreetMap" in err
+
+    def test_status_messages_use_ascii_stand_ins(self, monkeypatch, tmp_path, cities):
+        code, out, _ = run_cp1252(monkeypatch, "map", "cities.csv", "-o", "m.html")
+        assert code == 0 and "[OK]  Map saved -> m.html" in out
+
+    def test_error_messages(self, monkeypatch):
+        code, out, err = run_cp1252(monkeypatch, "info", "missing.csv")
+        assert code == 1 and out == ""
+        assert "[X]  QOREgeo" in err and "-" * 44 in err and "missing.csv" in err
+
+    def test_stdin_is_read_as_utf8(self, monkeypatch, tmp_path):
+        (tmp_path / "intl.csv").write_text("name,lat,lng\n東京,35.68,139.69\nPune,18.5,73.8\n",
+                                           encoding="utf-8")
+        request = '{"path": "intl.csv", "where": [{"column": "name", "op": "==", "value": "東京"}]}'
+        stdin = io.TextIOWrapper(io.BytesIO(b"\xef\xbb\xbf" + request.encode("utf-8")),
+                                 encoding="cp1252")
+        monkeypatch.setattr(sys, "stdin", stdin)
+        code, out, err = run_cp1252(monkeypatch, "call", "query_features", "-")
+        assert code == 0, err
+        assert [f["properties"]["name"] for f in json.loads(out)["features"]] == ["東京"]
+
+    def test_unencodable_output_is_reported(self, monkeypatch, capsys):
+        def boom(ns: Any) -> int:
+            raise UnicodeEncodeError("charmap", "→", 0, 1, "character maps to <undefined>")
+
+        monkeypatch.setattr(cli, "_cmd_tiles", boom)
+        code, out, err = run(capsys, "tiles")
+        assert code == 1 and out == ""
+        assert err.startswith("qoregeo tiles: ") and "PYTHONIOENCODING=utf-8" in err
+
+    def test_python_dash_m_help_on_cp1252_pipe(self):
+        env = {**os.environ, "PYTHONIOENCODING": "cp1252",
+               "PYTHONPATH": str(REPO_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")}
+        env.pop("PYTHONUTF8", None)
+        proc = subprocess.run([sys.executable, "-m", "qoregeo", "--help"], capture_output=True,
+                              env=env, timeout=60)
+        assert proc.returncode == 0, proc.stderr
+        assert b"address or place -> coordinates" in proc.stdout
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Strict JSON output
+# ─────────────────────────────────────────────────────────────────────────────
+
+def strict_loads(text: str) -> Any:
+    def reject(name: str) -> Any:
+        raise AssertionError(f"not strict JSON: {name}")
+
+    return json.loads(text, parse_constant=reject)
+
+
+class TestStrictJson:
+    def test_non_finite_numbers_become_null(self, capsys):
+        cli._print_json({"a": float("inf"), "b": float("nan"), "c": [-float("inf"), 1.5],
+                         "d": {1, 2}, "e": (3,)})
+        assert strict_loads(capsys.readouterr().out) == {"a": None, "b": None, "c": [None, 1.5],
+                                                          "d": [1, 2], "e": [3]}
+
+    def test_lone_surrogates_are_replaced(self, capsys):
+        # Same rule as the MCP server: undecodable characters become U+FFFD,
+        # so the output is valid UTF-8 JSON for every parser.
+        cli._print_json({"name": "caf\udce9", "ok": "é"})
+        out = capsys.readouterr().out
+        assert "\\udce9" not in out and "é" in out   # stdout is UTF-8 here: no needless escapes
+        assert strict_loads(out) == {"name": "caf\ufffd", "ok": "é"}
+        out.encode("utf-8")
+
+    def test_huge_polygon_measure(self, capsys):
+        polygon = {"type": "Polygon", "coordinates": [[[1e308, 0], [0, 1e308], [-1e308, 0],
+                                                       [1e308, 0]]]}
+        _, out, _ = run(capsys, "call", "measure", json.dumps({"geometry": polygon}))
+        assert "Infinity" not in out and "NaN" not in out
+        strict_loads(out)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# --root / --max-features validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSandboxFlags:
+    @pytest.mark.parametrize("value", ["", "   "])
+    def test_empty_root_is_an_error(self, capsys, cities, value):
+        code, out, err = run(capsys, "call", "list_files", "--root", value)
+        assert code == 2 and out == ""
+        assert "--root is empty" in err and "--root ./data" in err
+
+    def test_empty_root_stops_the_mcp_server(self, capsys, monkeypatch, cities):
+        code, replies, err = mcp_session(capsys, monkeypatch, "--root", "")
+        assert code == 2 and replies == []
+        assert "--root is empty" in err and "ready" not in err
+
+    def test_empty_root_ignores_the_environment(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("QOREGEO_ROOT", str(tmp_path))
+        with pytest.raises(cli._UsageError):
+            cli._default_root("")
+
+    @pytest.mark.parametrize("value", ["0", "-2", "abc", "1.5"])
+    def test_max_features_must_be_positive(self, capsys, cities, value):
+        code, out, err = run(capsys, "call", "query_features", '{"path": "cities.csv"}',
+                             "--max-features", value)
+        assert code == 2 and out == ""
+        assert "--max-features" in err and ">= 1" in err
+
+    def test_max_features_one(self, capsys, cities):
+        code, out, _ = run(capsys, "call", "query_features", '{"path": "cities.csv"}',
+                           "--max-features", "1")
+        data = json.loads(out)
+        assert code == 0 and data["returned"] == 1 and data["next_offset"] == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# info on a symlink; operating-system errors; skill install safety
+# ─────────────────────────────────────────────────────────────────────────────
+
+def symlink_or_skip(target: Path, link: Path) -> None:
+    try:
+        os.symlink(target, link, target_is_directory=target.is_dir())
+    except (OSError, NotImplementedError):
+        pytest.skip("this system cannot create symlinks")
+
+
+class TestInfoSymlink:
+    def test_symlink_into_another_folder(self, capsys, tmp_path, cities):
+        project = tmp_path / "project"
+        project.mkdir()
+        symlink_or_skip(cities, project / "linked.csv")
+        os.chdir(project)
+        code, out, err = run(capsys, "info", "linked.csv")
+        assert code == 0, err
+        assert out.startswith("linked.csv: 7 features")
+
+    def test_broken_symlink(self, capsys, tmp_path):
+        symlink_or_skip(tmp_path / "gone.csv", tmp_path / "broken.csv")
+        code, _, err = run(capsys, "info", "broken.csv")
+        assert code == 1 and "broken.csv" in err
+
+
+class TestOSErrors:
+    def test_output_is_a_folder(self, capsys, tmp_path, cities):
+        (tmp_path / "adir.csv").mkdir()
+        code, out, err = run(capsys, "export", "cities.csv", "-o", "adir.csv", "-q")
+        assert code == 1 and out == ""
+        assert err.startswith("qoregeo export: ") and "Traceback" not in err
+
+    def test_within_is_a_folder(self, capsys, cities):
+        code, _, err = run(capsys, "export", "cities.csv", "-o", "o.csv", "--within", ".", "-q")
+        assert code == 1 and err.startswith("qoregeo export: ")
+
+    def test_permission_error(self, capsys, monkeypatch):
+        def denied(ns: Any) -> int:
+            raise PermissionError(13, "Permission denied", "out.csv")
+
+        monkeypatch.setattr(cli, "_cmd_tiles", denied)
+        code, _, err = run(capsys, "tiles")
+        assert (code, err) == (1, "qoregeo tiles: [Errno 13] Permission denied: 'out.csv'\n")
+
+    def test_broken_pipe_is_quiet(self, capsys, monkeypatch):
+        def closed(ns: Any) -> int:
+            raise BrokenPipeError(32, "Broken pipe")
+
+        monkeypatch.setattr(cli, "_cmd_tiles", closed)
+        assert run(capsys, "tiles") == (1, "", "")
+
+
+class TestSkillInstallSafety:
+    def test_checks_every_target_before_installing(self, capsys, home, skill_source):
+        existing = home / ".agents" / "skills" / "qoregeo"
+        existing.mkdir(parents=True)
+        code, _, err = run(capsys, "skill", "install")
+        assert code == 2 and "--force" in err and str(existing) in err
+        assert not (home / ".claude").exists()   # nothing half-installed
+
+    def test_replaces_a_symlink_without_touching_its_target(self, capsys, tmp_path, home,
+                                                            skill_source):
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "keep.txt").write_text("mine", encoding="utf-8")
+        target = home / ".claude" / "skills" / "qoregeo"
+        target.parent.mkdir(parents=True)
+        symlink_or_skip(elsewhere, target)
+        code, _, err = run(capsys, "skill", "install", "--agent", "claude")
+        assert code == 2 and "--force" in err
+        code, _, err = run(capsys, "skill", "install", "--agent", "claude", "--force")
+        assert code == 0, err
+        assert not target.is_symlink()
+        assert_skill_copy(target, skill_source)
+        assert sorted(p.name for p in elsewhere.iterdir()) == ["keep.txt"]
+
+    def test_broken_symlink_counts_as_existing(self, capsys, tmp_path, home, skill_source):
+        target = home / ".claude" / "skills" / "qoregeo"
+        target.parent.mkdir(parents=True)
+        symlink_or_skip(tmp_path / "missing", target)
+        assert run(capsys, "skill", "install", "--agent", "claude")[0] == 2
+        assert run(capsys, "skill", "install", "--agent", "claude", "--force")[0] == 0
+        assert_skill_copy(target, skill_source)
+
+    def test_replaces_a_file(self, capsys, home, skill_source):
+        target = home / ".claude" / "skills" / "qoregeo"
+        target.parent.mkdir(parents=True)
+        target.write_text("not a skill", encoding="utf-8")
+        code, _, err = run(capsys, "skill", "install", "--agent", "claude", "--force")
+        assert code == 0, err
+        assert_skill_copy(target, skill_source)
+
+    def test_failed_copy_keeps_the_old_install(self, capsys, monkeypatch, home, skill_source):
+        import shutil
+
+        assert run(capsys, "skill", "install", "--agent", "claude")[0] == 0
+        target = home / ".claude" / "skills" / "qoregeo"
+        (target / "old.txt").write_text("old", encoding="utf-8")
+
+        def disk_full(src: Any, dst: Any, **kwargs: Any) -> Any:
+            os.makedirs(dst)
+            raise OSError(28, "No space left on device")
+
+        monkeypatch.setattr(shutil, "copytree", disk_full)
+        code, _, err = run(capsys, "skill", "install", "--agent", "claude", "--force")
+        assert code == 1 and err == "qoregeo skill: [Errno 28] No space left on device\n"
+        assert (target / "old.txt").is_file()
+        assert sorted(p.name for p in target.parent.iterdir()) == ["qoregeo"]   # no leftovers
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# serve: a port that is already in use
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestServePortInUse:
+    def test_clean_error(self, capsys, monkeypatch, tmp_path):
+        import socket
+
+        (tmp_path / "m.html").write_text("<p>x</p>", encoding="utf-8")
+        monkeypatch.setattr(qoregeo.serve, "serve_file", _REAL_SERVE_FILE)
+
+        def must_not_serve(*args: Any, **kwargs: Any) -> str:
+            raise AssertionError("the server started on a port that is in use")
+
+        monkeypatch.setattr(qoregeo.serve, "_run", must_not_serve)
+        with socket.socket() as busy:
+            busy.bind(("127.0.0.1", 0))
+            busy.listen()
+            port = busy.getsockname()[1]
+            code, out, err = run(capsys, "serve", "m.html", "--port", str(port), "--no-browser")
+        assert code == 1 and out == ""
+        assert str(port) in err and "port=0" in err and "Traceback" not in err
+
+
+class TestCustomTileAttribution:
+    def test_attribution_flag_reaches_the_map(self, capsys, cities, tmp_path):
+        url = "https://tiles.example.com/{z}/{x}/{y}.png"
+        code, _, _ = run(capsys, "map", "cities.csv", "-o", "a.html", "--tiles", url,
+                         "--attribution", "&copy; Example Maps", "-q")
+        page = (tmp_path / "a.html").read_text(encoding="utf-8")
+        assert code == 0 and "Example Maps" in page and "tiles.example.com" in page

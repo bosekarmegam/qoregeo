@@ -6,7 +6,9 @@ Serve a generated map over ``http://127.0.0.1`` and open it in the browser.
 Why: OpenStreetMap's tile servers require an HTTP ``Referer``, which browsers
 don't send for pages opened straight from disk (``file://``). Serving the page
 from localhost gives the tiles a valid Referer. Only the one page is served,
-and only to this machine.
+and only to this machine: the server listens on 127.0.0.1 and answers only
+requests addressed to 127.0.0.1 or localhost, so a web page that points its
+own domain at 127.0.0.1 (DNS rebinding) cannot read the map.
 """
 
 from __future__ import annotations
@@ -18,15 +20,19 @@ import threading
 import webbrowser
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import quote, unquote, urlsplit
+from urllib.parse import quote, unquote_to_bytes, urlsplit
 
 from .exceptions import GeoFileNotFoundError, InvalidArgumentError
+
+# Host names a browser uses for this machine. Any other Host header means a page
+# on another site resolved its own domain to 127.0.0.1 (DNS rebinding).
+_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 
 
 class _OnePageHandler(http.server.BaseHTTPRequestHandler):
     """Serves one HTML page at ``/<name>`` (and ``/``); every other path is a 404."""
 
-    page_name = "map.html"
+    page_name = b"map.html"   # the page's file name as bytes (os.fsencode), not URL-quoted
 
     @staticmethod
     def load() -> bytes:
@@ -38,9 +44,23 @@ class _OnePageHandler(http.server.BaseHTTPRequestHandler):
     def do_HEAD(self) -> None:   # noqa: N802
         self._respond(body=False)
 
+    def _local_host(self) -> bool:
+        host = self.headers.get("Host")
+        if host is None:   # browsers always send Host; other local clients may not
+            return True
+        try:
+            name = urlsplit("//" + host.strip()).hostname
+        except ValueError:
+            return False
+        return name is not None and name.rstrip(".") in _LOCAL_HOSTS
+
     def _respond(self, body: bool) -> None:
-        path = unquote(urlsplit(self.path).path).lstrip("/")
-        if path not in ("", self.page_name):
+        if not self._local_host():
+            self.send_error(403, "Forbidden host",
+                            "This map is only served at http://127.0.0.1 and http://localhost.")
+            return
+        path = unquote_to_bytes(urlsplit(self.path).path).lstrip(b"/")
+        if path not in (b"", self.page_name):
             self.send_error(404, "Not found")
             return
         try:
@@ -55,7 +75,10 @@ class _OnePageHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         if body:
-            self.wfile.write(data)
+            try:
+                self.wfile.write(data)
+            except ConnectionError:   # the browser reloaded or closed the tab mid-download
+                pass
 
     def log_message(self, format: str, *args: Any) -> None:   # silence request logs
         pass
@@ -68,15 +91,43 @@ def _check_port(port: Any) -> int:
     return port
 
 
+class _Server(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+    # On Windows SO_REUSEADDR lets a second server bind a port that is already in
+    # use, so "port in use" would go unnoticed; elsewhere it only skips TIME_WAIT.
+    allow_reuse_address = os.name != "nt"
+
+    def handle_error(self, request: Any, client_address: Any) -> None:
+        if isinstance(sys.exc_info()[1], ConnectionError):
+            return   # the browser went away (reload, closed tab): nothing to report
+        super().handle_error(request, client_address)
+
+
+def _name_bytes(name: str) -> bytes:
+    """The page name as bytes, so non-UTF-8 file names (surrogate escapes) work too."""
+    try:
+        return os.fsencode(name)
+    except UnicodeError:
+        return name.encode("utf-8", "surrogatepass")
+
+
 def _make_server(
     load: Callable[[], bytes], name: str, port: int
 ) -> tuple[http.server.ThreadingHTTPServer, str]:
+    page = _name_bytes(name)
     handler: type[_OnePageHandler] = type(
-        "Handler", (_OnePageHandler,), {"page_name": name, "load": staticmethod(load)}
+        "Handler", (_OnePageHandler,), {"page_name": page, "load": staticmethod(load)}
     )
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", _check_port(port)), handler)
-    server.daemon_threads = True
-    url = f"http://127.0.0.1:{server.server_address[1]}/{quote(name)}"
+    port = _check_port(port)
+    try:
+        server = _Server(("127.0.0.1", port), handler)
+    except OSError as exc:   # port in use, or a privileged port
+        raise InvalidArgumentError(
+            "port", port,
+            f"a free port (127.0.0.1:{port} is unavailable: {exc.strerror or exc})",
+            "geo.show(port=0)   # 0 = any free port (CLI: --port 0)",
+        ) from None
+    url = f"http://127.0.0.1:{server.server_address[1]}/{quote(page)}"
     return server, url
 
 
@@ -111,7 +162,7 @@ def _run(
 
 
 def serve_file(
-    path: str | os.PathLike[str],
+    path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
     port: int = 0,
     block: bool | None = None,
     open_browser: bool = True,
@@ -136,9 +187,9 @@ def serve_file(
     -------
     The URL being served.
     """
-    full = os.path.abspath(os.fspath(path))
+    full = os.path.abspath(os.fsdecode(path))
     if not os.path.isfile(full):
-        raise GeoFileNotFoundError(os.fspath(path))
+        raise GeoFileNotFoundError(os.fsdecode(path))
 
     def load() -> bytes:
         with open(full, "rb") as fh:

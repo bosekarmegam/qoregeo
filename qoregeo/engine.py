@@ -25,6 +25,7 @@ import os
 import re
 import sys
 import warnings
+from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any, Literal, overload
 
@@ -49,7 +50,6 @@ from .utils import (
     GEOMETRY_TYPES,
     _atomic_write,
     _bearing_to_compass,
-    _buffer_circle,
     _coerce_point,
     _copy_geometry,
     _destination_point,
@@ -77,9 +77,12 @@ from .utils import (
     _point_in_geometry,
     _point_line_km,
     _polygon_area_m2,
-    _polygon_parts,
+    _polygon_tester,
+    _prepare_shape,
     _representative_point,
     _resolve_method,
+    _shapes_intersect,
+    _shell_quote,
     _spherical_mean,
     _validate_coord,
 )
@@ -91,6 +94,7 @@ Coord = tuple[float, float]   # (lat, lng) — what methods return
 Feature = dict[str, Any]      # GeoJSON Feature dict
 PathLike = str | os.PathLike[str]
 # What methods accept as a point: a (lat, lng) or (lat, lng, alt) sequence,
+# a {"lat": …, "lng": …} mapping ("lon" / "latitude" / "longitude" work too),
 # or a GeoJSON Point geometry / Point Feature.
 PointLike = Sequence[float] | Mapping[str, Any]
 
@@ -223,8 +227,7 @@ def _view_hint(path: str, tiles: str) -> str:
     """How to open a saved map whose basemap won't load from file://."""
     if not _tiles_config(tiles)["needsReferer"]:
         return ""
-    shown = f'"{path}"' if any(ch.isspace() for ch in path) else path
-    return f" — view it with: qoregeo serve {shown}"
+    return f" — view it with: qoregeo serve {_shell_quote(path)}"
 
 
 def _check_encoding(encoding: Any) -> str:
@@ -315,7 +318,8 @@ class GeoEngine:
 
     def __init__(self, verbose: bool = True) -> None:
         self._data: dict[str, Any] | None = None   # GeoJSON FeatureCollection
-        self._source_path: str | None = None
+        self._source_path: str | None = None   # as the caller spelled it (for messages)
+        self._source_real: str | None = None   # absolute real path (for the overwrite guard)
         self._columns: list[str] | None = None     # columns inherited from the parent engine
         self.verbose = verbose
 
@@ -387,6 +391,7 @@ class GeoEngine:
             "features": [{**f, "properties": dict(f.get("properties") or {})} for f in features],
         }
         new._source_path = self._source_path
+        new._source_real = self._source_real
         new._columns = columns if columns is not None else self._known_columns()
         return new
 
@@ -545,6 +550,9 @@ class GeoEngine:
             raise UnsupportedFormatError(ext or "(no extension)")
 
         self._source_path = path_str
+        # Resolved now, so the guard against overwriting this file still works
+        # after os.chdir() (e.g. %cd in a notebook).
+        self._source_real = os.path.realpath(path_str)
         self._columns = None
         return self
 
@@ -647,7 +655,7 @@ class GeoEngine:
                 if not reader.fieldnames:
                     raise EmptyDatasetError(path)
                 names = [h.strip() if isinstance(h, str) else h for h in reader.fieldnames]
-                dupes = sorted({n for n in names if names.count(n) > 1})
+                dupes = sorted(n for n, k in Counter(names).items() if k > 1)
                 if dupes:
                     warnings.warn(
                         f"QOREgeo: duplicate column name(s) {dupes} in '{path}'; only the last "
@@ -780,6 +788,7 @@ class GeoEngine:
             raise EmptyDatasetError("<in-memory data>")
         self._data = {"type": "FeatureCollection", **extra, "features": feats}
         self._source_path = None
+        self._source_real = None
         self._columns = None
         return self
 
@@ -821,8 +830,9 @@ class GeoEngine:
         ----------
         path     : output path (.geojson, .json, .csv or .tsv)
         encoding : file encoding
-        csv_safe : for CSV/TSV, prefix text cells that spreadsheet apps would
-                   run as a formula (starting with ``= + - @``, tab or CR) with
+        csv_safe : for CSV/TSV, prefix text cells — values and header
+                   (property name) cells — that spreadsheet apps would run as
+                   a formula (starting with ``= + - @``, tab or CR) with
                    ``'`` — protects files you share from CSV/formula
                    injection. Real numbers such as ``-12.5`` are left alone.
 
@@ -870,8 +880,12 @@ class GeoEngine:
         fieldnames = ["latitude", "longitude"] + (["geometry"] if non_point else []) + all_keys
 
         buffer = io.StringIO()
-        writer = csv.DictWriter(buffer, fieldnames=fieldnames, delimiter="\t" if ext == ".tsv" else ",")
-        writer.writeheader()
+        delimiter = "\t" if ext == ".tsv" else ","
+        writer = csv.DictWriter(buffer, fieldnames=fieldnames, delimiter=delimiter)
+        # Header cells are property names, which can be formulas too.
+        csv.writer(buffer, delimiter=delimiter).writerow(
+            [_formula_safe(k) if csv_safe else k for k in fieldnames]
+        )
         for feat in features:
             geom = feat.get("geometry")
             point = _representative_point(geom)
@@ -910,7 +924,8 @@ class GeoEngine:
 
         Parameters
         ----------
-        point_a : (lat, lng) tuple (or a GeoJSON Point / Point Feature)
+        point_a : (lat, lng) tuple (or a ``{'lat': …, 'lng': …}`` dict, a
+                  GeoJSON Point or a Point Feature)
         point_b : (lat, lng) tuple
         unit    : 'km' | 'm' | 'miles' | 'mi' | 'ft' | 'yd' | 'nmi'
         method  : 'haversine' (sphere, default) or 'vincenty' (WGS-84
@@ -1073,9 +1088,11 @@ class GeoEngine:
         """
         Test whether a point falls inside a polygon.
 
-        Supports ``buffer()`` results (exact circle test), GeoJSON Polygons
-        (holes respected), MultiPolygons, and Features wrapping either.
-        Polygons that cross the antimeridian are handled.
+        Supports ``buffer()`` results (exact circle test, also across the
+        poles and the antimeridian), GeoJSON Polygons (holes respected),
+        MultiPolygons, and Features wrapping either. Polygon edges are
+        straight lines in lng/lat; for a shape crossing 180° use continuous
+        longitudes (177 → 182) or split it into a MultiPolygon at ±180°.
 
         Parameters
         ----------
@@ -1099,11 +1116,14 @@ class GeoEngine:
 
     def area(self, polygon: dict[str, Any], unit: str = "km2") -> float:
         """
-        Spherical area of a Polygon / MultiPolygon / Feature / buffer.
+        Area of a Polygon / MultiPolygon / Feature / buffer on a sphere of
+        mean Earth radius (Chamberlain & Duquette, as in Turf.js — not the
+        WGS-84 ellipsoid; within about 0.5% of ellipsoidal areas).
 
         Parameters
         ----------
-        polygon : GeoJSON polygon-like dict (holes are subtracted)
+        polygon : GeoJSON polygon-like dict (holes are subtracted); positions
+                  must be [lng, lat] in range, else InvalidBufferError
         unit    : 'km2' | 'm2' | 'ha' | 'acres' | 'mi2' | 'ft2'
 
         Examples
@@ -1475,19 +1495,17 @@ class GeoEngine:
         2
         """
         self._require_data("filter_by_polygon")
-        if _buffer_circle(polygon) is None:
-            _polygon_parts(polygon)   # validate up front, even for empty datasets
-        return self._clone_with([
-            feat for _, feat, (la, lo) in self._located() if _point_in_geometry(la, lo, polygon)
-        ])
+        inside = _polygon_tester(polygon)   # validates up front, even for empty datasets
+        return self._clone_with([feat for _, feat, (la, lo) in self._located() if inside(la, lo)])
 
     def intersects(self, geometry_a: Any, geometry_b: Any) -> bool:
         """
         True if two shapes share at least one point (touching counts).
 
         Accepts GeoJSON geometries of any type, Features, FeatureCollections
-        and ``buffer()`` results (tested as exact circles where possible).
-        Edges are straight lines in lng/lat, as in ``point_in_polygon()``.
+        and ``buffer()`` results (tested as exact circles on the sphere, so
+        also around the poles). Edges are straight lines in lng/lat, as in
+        ``point_in_polygon()``; shapes meeting at ±180° touch.
 
         Examples
         --------
@@ -1512,10 +1530,11 @@ class GeoEngine:
         2
         """
         self._require_data("filter_intersects")
-        _geometries_intersect(geometry, {"type": "GeometryCollection", "geometries": []})  # validate
+        query = _prepare_shape(geometry, "geometry")   # validated and indexed once
         return self._clone_with([
-            f for f in self._features()
-            if f.get("geometry") is not None and _geometries_intersect(f["geometry"], geometry)
+            f for i, f in enumerate(self._features())
+            if f.get("geometry") is not None
+            and _shapes_intersect(_prepare_shape(f["geometry"], f"features[{i}].geometry"), query)
         ])
 
     def filter_by_line(self, line: Any, distance: float, unit: str = "km") -> GeoEngine:
@@ -1558,9 +1577,21 @@ class GeoEngine:
         """
         Sort features by a property. Numbers sort numerically (numeric
         strings included), other values case-insensitively; features
-        missing the property go last.
+        missing the property go last. A column no feature has raises
+        ColumnNotFoundError (like ``filter()``), so a typo can't silently
+        leave the data unsorted.
+
+        Examples
+        --------
+        >>> geo.sort_by("population", descending=True).head(3)
         """
         self._require_data("sort_by")
+        keys = self._known_columns()
+        if column not in keys:
+            raise ColumnNotFoundError(
+                column, keys, self._source_path or "dataset",
+                hint=f"geo.sort_by('{keys[0] if keys else 'column_name'}', descending=True)",
+            )
         present: list[Feature] = []
         missing: list[Feature] = []
         for feat in self._features():
@@ -1670,7 +1701,7 @@ class GeoEngine:
     def _output_path(self, output_path: Any, example: str) -> str:
         """``output_path`` as a str, refusing the file the data was loaded from."""
         path = _fspath(output_path, example)
-        if self._source_path is not None and _same_file(path, self._source_path):
+        if self._source_real is not None and _same_file(path, self._source_real):
             raise InvalidArgumentError(
                 "output_path", path,
                 "a different file — this is the data file that was loaded, and writing "
@@ -1728,8 +1759,8 @@ class GeoEngine:
         Points, lines and polygons are all drawn; property popups are
         HTML-escaped. The basemap is OpenStreetMap, whose tile servers only
         serve web pages — view the file with ``geo.show()`` or
-        ``qoregeo serve map.html`` (or pick ``tiles='humanitarian'``,
-        ``'topo'`` or ``'none'``, which also work when opened from disk).
+        ``qoregeo serve map.html`` (or pick ``tiles='topo'``, ``'satellite'``,
+        ``'osm-de'`` or ``'none'``, which also work when opened from disk).
 
         Parameters
         ----------
@@ -1739,8 +1770,8 @@ class GeoEngine:
                       without: the maximum zoom used when fitting the data
         center      : (lat, lng) initial center; fits all features if None
         tiles       : basemap — 'light' (OpenStreetMap, softened; default) |
-                      'osm' | 'dark' | 'humanitarian' | 'topo' | 'cyclosm' |
-                      'osm-de' | 'osm-fr' | 'none', or a custom
+                      'osm' | 'dark' | 'humanitarian' | 'topo' | 'satellite' |
+                      'cyclosm' | 'osm-de' | 'osm-fr' | 'none', or a custom
                       ``https://…/{z}/{x}/{y}.png`` URL template.
                       All presets are open and need no API key.
         overlays    : extra shapes drawn as outlines, e.g. ``[geo.buffer(...)]``

@@ -34,17 +34,31 @@ The public Nominatim and Photon servers are community resources. The Nominatim
 usage policy (https://operations.osmfoundation.org/policies/nominatim/) asks for:
 
 * an absolute maximum of 1 request per second — enforced here for the public
-  endpoints, process-wide and thread-safe (``min_interval`` can only raise it);
+  endpoints across threads *and processes* (``min_interval`` can only raise it
+  within a process);
 * an identifying User-Agent — qoregeo sends one; pass your own application
   name and a contact (``user_agent=...``, ``email=...``) for real projects;
-* caching of results — every ``Geocoder`` keeps an LRU cache of answers;
+* caching of results — every ``Geocoder`` keeps an LRU cache of answers, and
+  answers from the public servers are also kept on disk for 30 days;
 * no bulk geocoding of large lists and no autocomplete-as-you-type;
 * visible attribution — every result carries an ``attribution`` string
   ("Data © OpenStreetMap contributors, ODbL 1.0").
 
+The shared request slot and the on-disk answers live in one small SQLite file,
+``geocode-v1.sqlite3``, in the per-user cache directory: ``$XDG_CACHE_HOME`` or
+``~/.cache`` (``~/Library/Caches`` on macOS) or ``%LOCALAPPDATA%`` on Windows,
+in a ``qoregeo`` folder. So a shell loop of ``qoregeo geocode`` calls, or several
+MCP servers, still send at most 1 request per second and do not repeat
+questions already answered. Choose another directory with
+``Geocoder(cache_dir=...)`` or the ``QOREGEO_CACHE_DIR`` environment variable;
+turn it off with ``Geocoder(cache_dir=None)`` or ``QOREGEO_CACHE_DIR=off``. If
+the directory is not writable (or Python lacks ``sqlite3``), the limit falls
+back to applying within the process only.
+
 There is deliberately no batch method. To geocode thousands of addresses, run
 your own server (Nominatim and Photon are open source and ship Docker images)
-and point ``url=`` at it — custom endpoints are not throttled by default.
+and point ``url=`` at it — custom endpoints are not throttled by default and
+their answers are not stored on disk.
 """
 
 from __future__ import annotations
@@ -54,21 +68,26 @@ import copy
 import http.client
 import json
 import math
+import os
 import re
+import sys
 import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.request
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 from urllib.parse import quote, urlencode, urlsplit
 
 from ._version import __version__
 from .exceptions import GeocodingError, InvalidArgumentError, InvalidCoordinateError
 from .utils import _validate_coord
+
+if TYPE_CHECKING:
+    import sqlite3
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Constants
@@ -129,30 +148,234 @@ PROVIDERS: tuple[str, ...] = tuple(_PROVIDERS)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Process-wide rate limiting
+# On-disk state shared by processes (public servers only)
+# ─────────────────────────────────────────────────────────────────────────────
+CACHE_DIR_ENV = "QOREGEO_CACHE_DIR"   # overrides the cache directory; "off" disables it
+CACHE_TTL = 30 * 86_400.0             # seconds an answer from a public server is reused
+_CACHE_OFF = frozenset({"0", "off", "no", "none", "false", "disable", "disabled"})
+_DB_NAME = "geocode-v1.sqlite3"
+_DB_SCHEMA = 1                        # PRAGMA user_version of a ready database
+_DB_TIMEOUT = 10.0                    # seconds to wait while another process holds the lock
+_DB_MAX_ROWS = 10_000                 # answers kept on disk (the oldest go first)
+# A booked slot further ahead than this is stale or corrupt (a legitimate queue
+# is one interval per waiting request) and is ignored rather than waited for.
+_MAX_QUEUE_SECONDS = 300.0
+
+_T = TypeVar("_T")
+
+
+def _default_cache_dir(environ: Mapping[str, str] | None = None,
+                       platform: str | None = None) -> str | None:
+    """The per-user cache directory for qoregeo, or ``None`` when it is turned off
+    (``QOREGEO_CACHE_DIR=off``) or no home directory can be found."""
+    env = os.environ if environ is None else environ
+    plat = sys.platform if platform is None else platform
+    override = env.get(CACHE_DIR_ENV, "").strip()
+    if override:
+        if override.lower() in _CACHE_OFF:
+            return None
+        return os.path.abspath(os.path.expanduser(override))
+    home = env.get("USERPROFILE" if plat == "win32" else "HOME") or os.path.expanduser("~")
+    if plat == "win32":
+        base = env.get("LOCALAPPDATA") or os.path.join(home, "AppData", "Local")
+    elif os.path.isabs(env.get("XDG_CACHE_HOME", "")):   # relative values are invalid (XDG)
+        base = env["XDG_CACHE_HOME"]
+    elif plat == "darwin":
+        base = os.path.join(home, "Library", "Caches")
+    else:
+        base = os.path.join(home, ".cache")
+    if not os.path.isabs(base):            # no usable home directory
+        return None
+    return os.path.join(base, "qoregeo")
+
+
+def _check_cache_dir(value: Any) -> str | None:
+    """``True`` → the default directory, ``None`` / ``False`` → none, or a path."""
+    if value is True:
+        return _default_cache_dir()
+    if value is None or value is False:
+        return None
+    path: Any = None
+    if isinstance(value, (str, os.PathLike)):
+        with contextlib.suppress(TypeError):
+            path = os.fspath(value)
+    if not isinstance(path, str) or not path.strip() or "\x00" in path:
+        raise InvalidArgumentError(
+            "cache_dir", value,
+            "a directory path, True (the per-user cache, the default) or None (memory only)",
+            "Geocoder(cache_dir='./geocode-cache')   or   Geocoder(cache_dir=None)",
+        )
+    return os.path.abspath(os.path.expanduser(path))
+
+
+class _DiskStore:
+    """The SQLite file through which processes share the public servers' request
+    slot and answers. A short-lived connection per operation keeps it safe across
+    threads; ``BEGIN IMMEDIATE`` serialises bookings across processes on every OS.
+
+    Nothing here raises: if ``sqlite3`` is missing or the directory or file is
+    unusable, the store marks itself broken and every call returns ``None``, so
+    the caller falls back to the in-process behaviour.
+    """
+
+    def __init__(self, directory: str) -> None:
+        self.directory = directory
+        self.path = os.path.join(directory, _DB_NAME)
+        self.broken = False
+
+    def _open(self) -> sqlite3.Connection:
+        import sqlite3
+
+        os.makedirs(self.directory, mode=0o700, exist_ok=True)
+        # Create the file owner-only (on POSIX): it holds the queries. A symlink in
+        # its place is refused (O_NOFOLLOW) and so falls back to memory only.
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        os.close(os.open(self.path, flags, 0o600))
+        con = sqlite3.connect(self.path, timeout=_DB_TIMEOUT, isolation_level=None)
+        try:
+            if con.execute("PRAGMA user_version").fetchone()[0] != _DB_SCHEMA:
+                con.execute("BEGIN IMMEDIATE")
+                con.execute("CREATE TABLE IF NOT EXISTS slots (endpoint TEXT PRIMARY KEY,"
+                            " start REAL NOT NULL, booked_at REAL NOT NULL)")
+                con.execute("CREATE TABLE IF NOT EXISTS results (key TEXT PRIMARY KEY,"
+                            " endpoint TEXT NOT NULL, value TEXT NOT NULL,"
+                            " expires REAL NOT NULL)")
+                con.execute("CREATE INDEX IF NOT EXISTS results_expires ON results (expires)")
+                con.execute(f"PRAGMA user_version = {_DB_SCHEMA}")
+                con.execute("COMMIT")
+        except BaseException:
+            con.close()                    # also rolls back an open transaction
+            raise
+        return con
+
+    def _run(self, action: Callable[[sqlite3.Connection], _T]) -> _T | None:
+        if self.broken:
+            return None
+        try:
+            import sqlite3
+        except ImportError:                # Python built without SQLite
+            self.broken = True
+            return None
+        try:
+            con = self._open()
+        except (sqlite3.Error, OSError, ValueError):
+            self.broken = True
+            return None
+        try:
+            return action(con)
+        except (sqlite3.Error, OSError, ValueError):
+            self.broken = True
+            return None
+        finally:
+            con.close()                    # rolls back anything left uncommitted
+
+    def book_slot(self, endpoint: str, interval: float) -> float | None:
+        """Book the next request to ``endpoint`` for every process sharing this file:
+        at least ``interval`` s after the previous booking. Returns the seconds to
+        wait first, or ``None`` if the file cannot be used."""
+        def book(con: sqlite3.Connection) -> float:
+            con.execute("BEGIN IMMEDIATE")   # waits while another process books
+            row = con.execute("SELECT start, booked_at FROM slots WHERE endpoint = ?",
+                              (endpoint,)).fetchone()
+            now = time.time()
+            start = now
+            last = _float_or_none(row[0]) if row else None
+            booked_at = _float_or_none(row[1]) if row else None
+            if last is not None and booked_at is not None:
+                if booked_at > now:          # the clock was set back since then
+                    last -= booked_at - now
+                if last - now <= _MAX_QUEUE_SECONDS:
+                    start = max(now, last + max(interval, 0.0))
+            con.execute("INSERT OR REPLACE INTO slots (endpoint, start, booked_at)"
+                        " VALUES (?, ?, ?)", (endpoint, start, now))
+            con.execute("COMMIT")
+            return start - now
+
+        return self._run(book)
+
+    def get_results(self, key: str) -> list[dict[str, Any]] | None:
+        """A stored, unexpired answer for ``key`` — or ``None``."""
+        def get(con: sqlite3.Connection) -> list[dict[str, Any]] | None:
+            row = con.execute("SELECT value, expires FROM results WHERE key = ?",
+                              (key,)).fetchone()
+            expires = _float_or_none(row[1]) if row else None
+            now = time.time()
+            if (row is None or expires is None or not now < expires <= now + CACHE_TTL
+                    or not isinstance(row[0], str)):
+                return None
+            try:
+                value = json.loads(row[0])
+            except (ValueError, RecursionError):
+                return None
+            if isinstance(value, list) and all(isinstance(item, dict) for item in value):
+                return value
+            return None
+
+        return self._run(get)
+
+    def put_results(self, key: str, endpoint: str, results: list[dict[str, Any]]) -> None:
+        """Store an answer for ``CACHE_TTL`` seconds; drop expired and excess ones."""
+        try:   # ASCII-only JSON: lone surrogates from a server cannot break the binding
+            value = json.dumps(results, allow_nan=False, separators=(",", ":"))
+        except (TypeError, ValueError):
+            return
+
+        def put(con: sqlite3.Connection) -> None:
+            now = time.time()
+            con.execute("BEGIN IMMEDIATE")
+            con.execute("INSERT OR REPLACE INTO results (key, endpoint, value, expires)"
+                        " VALUES (?, ?, ?, ?)", (key, endpoint, value, now + CACHE_TTL))
+            con.execute("DELETE FROM results WHERE expires <= ?", (now,))
+            con.execute("DELETE FROM results WHERE key IN (SELECT key FROM results"
+                        " ORDER BY expires DESC LIMIT -1 OFFSET ?)", (_DB_MAX_ROWS,))
+            con.execute("COMMIT")
+
+        self._run(put)
+
+    def clear_results(self, endpoint: str) -> None:
+        """Forget every stored answer from ``endpoint``."""
+        def clear(con: sqlite3.Connection) -> None:
+            con.execute("DELETE FROM results WHERE endpoint = ?", (endpoint,))
+
+        self._run(clear)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Rate limiting
 # ─────────────────────────────────────────────────────────────────────────────
 # Slot reservation: each request books the earliest start time that is at
 # least `interval` after the previously booked one for the same endpoint, then
 # sleeps (outside the lock) until its slot. Concurrent threads and separate
-# Geocoder instances therefore never exceed the rate together.
+# Geocoder instances therefore never exceed the rate together. For the public
+# servers a second booking in the shared _DiskStore then spaces the requests of
+# all processes on the machine by PUBLIC_MIN_INTERVAL.
 _RATE_LOCK = threading.Lock()
 _NEXT_SLOT: dict[str, float] = {}
 
 
-def _throttle(key: str, interval: float) -> None:
-    """Block until a request to endpoint ``key`` may start (``interval`` s after the last)."""
+def _throttle(key: str, interval: float, store: _DiskStore | None = None) -> None:
+    """Block until a request to endpoint ``key`` may start: ``interval`` s after
+    this process's previous one and, with a ``store``, ``PUBLIC_MIN_INTERVAL`` s
+    after the previous one of any process using that store."""
     with _RATE_LOCK:
         now = time.monotonic()
         last = _NEXT_SLOT.get(key)
         start = now if last is None else max(now, last + max(interval, 0.0))
         _NEXT_SLOT[key] = start
-    wait = start - now
-    if wait > 0:
+    if start > now:
+        time.sleep(start - now)
+    # The shared booking comes after the local wait, so the file only ever holds
+    # requests that are ready to go (a large min_interval never blocks others).
+    wait = store.book_slot(key, PUBLIC_MIN_INTERVAL) if store is not None else None
+    if wait is not None and wait > 0:
+        with _RATE_LOCK:                   # later local bookings follow this start
+            begin = time.monotonic() + wait
+            _NEXT_SLOT[key] = max(begin, _NEXT_SLOT.get(key, begin))
         time.sleep(wait)
 
 
 def _reset_rate_limits() -> None:
-    """Forget all booked request slots (used by the test-suite)."""
+    """Forget all booked request slots in this process (used by the test-suite)."""
     with _RATE_LOCK:
         _NEXT_SLOT.clear()
 
@@ -558,9 +781,16 @@ class Geocoder:
                       however their URL is spelled; custom ``url`` servers
                       default to 0 (no throttling).
         timeout     : Seconds to wait for a response (default 10, at most 86400).
-        cache_size  : Number of answers kept in the LRU cache (0 disables it).
+        cache_size  : Number of answers kept in the LRU cache (0 disables result
+                      caching, on disk too).
         language    : Preferred result language — ``"en"`` or an Accept-Language
                       list such as ``"de,en;q=0.8"`` (Photon uses the first one).
+        cache_dir   : Where the public servers' shared request slot and answers
+                      (kept 30 days) are stored, so the 1 request/second limit and
+                      the cache also hold across processes. ``True`` (default): the
+                      per-user cache directory, or ``$QOREGEO_CACHE_DIR``. ``None``
+                      or ``False``: memory only. Not used for custom ``url`` servers;
+                      an unwritable directory falls back to memory only.
 
     Example:
         >>> gc = Geocoder(user_agent="my-app/1.0 (you@example.com)")
@@ -582,6 +812,7 @@ class Geocoder:
         timeout: float = 10.0,
         cache_size: int = 1024,
         language: str | None = None,
+        cache_dir: str | os.PathLike[str] | bool | None = True,
     ) -> None:
         self.provider: str = _check_provider(provider)
         self._spec = _PROVIDERS[self.provider]
@@ -599,6 +830,11 @@ class Geocoder:
         if self.is_public:
             interval = max(PUBLIC_MIN_INTERVAL, interval or 0.0)
         self.min_interval: float = interval or 0.0
+
+        directory = _check_cache_dir(cache_dir)
+        #: Directory of the on-disk state this geocoder uses (``None``: memory only).
+        self.cache_dir: str | None = directory if self.is_public else None
+        self._store = _DiskStore(self.cache_dir) if self.cache_dir else None
 
         self._cache: OrderedDict[str, list[dict[str, Any]]] = OrderedDict()
         self._cache_lock = threading.Lock()
@@ -648,7 +884,9 @@ class Geocoder:
             params += self._photon_extras()
             params += [("countrycode", c.upper()) for c in codes]
         url = f"{self.url}{self._spec.search_path}?{urlencode(params)}"
-        return self._cached(url, lambda payload: self._parse_search(payload, codes, count))
+        # The key includes `count`: Nominatim's URL caps limit at 40, the parse does not.
+        return self._cached(url, lambda payload: self._parse_search(payload, codes, count),
+                            key=f"{url}#{count}")
 
     def geocode(
         self,
@@ -693,9 +931,12 @@ class Geocoder:
         return results[0] if results else None
 
     def clear_cache(self) -> None:
-        """Empty this geocoder's result cache."""
+        """Empty this geocoder's result cache, including the answers from its
+        server stored on disk (see ``cache_dir``)."""
         with self._cache_lock:
             self._cache.clear()
+        if self._store is not None:
+            self._store.clear_results(self._rate_key)
 
     # ──────────────────────────────────────────────────────────────────────
     # Request parameters
@@ -803,22 +1044,35 @@ class Geocoder:
     # ──────────────────────────────────────────────────────────────────────
 
     def _cached(
-        self, url: str, parse: Callable[[Any], list[dict[str, Any]]]
+        self, url: str, parse: Callable[[Any], list[dict[str, Any]]], key: str | None = None
     ) -> list[dict[str, Any]]:
+        """Answer from the memory cache, then the disk cache (public servers), and
+        only then from the server; a fresh answer is stored in both."""
+        key = url if key is None else key
+        disk_key = f"{__version__} {key}"   # a new release may parse differently
         if self.cache_size:
             with self._cache_lock:
-                hit = self._cache.get(url)
+                hit = self._cache.get(key)
                 if hit is not None:
-                    self._cache.move_to_end(url)
+                    self._cache.move_to_end(key)
                     return copy.deepcopy(hit)
+            stored = self._store.get_results(disk_key) if self._store is not None else None
+            if stored is not None:
+                self._remember(key, stored)
+                return stored
         results = parse(self._get(url))
         if self.cache_size:
-            with self._cache_lock:
-                self._cache[url] = copy.deepcopy(results)
-                self._cache.move_to_end(url)
-                while len(self._cache) > self.cache_size:
-                    self._cache.popitem(last=False)
+            self._remember(key, results)
+            if self._store is not None:
+                self._store.put_results(disk_key, self._rate_key, results)
         return results
+
+    def _remember(self, key: str, results: list[dict[str, Any]]) -> None:
+        with self._cache_lock:
+            self._cache[key] = copy.deepcopy(results)
+            self._cache.move_to_end(key)
+            while len(self._cache) > self.cache_size:
+                self._cache.popitem(last=False)
 
     def _fetch(self, url: str) -> bytes:
         """Perform one HTTP GET and return the body. All network I/O goes through here."""
@@ -839,7 +1093,8 @@ class Geocoder:
         host = urlsplit(self.url).netloc
         for attempt in (1, 2):
             _throttle(self._rate_key,
-                      self.min_interval if attempt == 1 else max(self.min_interval, _RETRY_DELAY))
+                      self.min_interval if attempt == 1 else max(self.min_interval, _RETRY_DELAY),
+                      self._store)
             last = attempt == 2
             try:
                 body = self._fetch(url)

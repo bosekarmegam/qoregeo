@@ -4,7 +4,9 @@ Tests for qoregeo.geocode — fully offline.
 Every HTTP request goes through ``Geocoder._fetch`` (or, for the one test of
 ``_fetch`` itself, ``urllib.request.urlopen``), both of which are replaced
 here; an autouse fixture makes any real network access fail loudly. Time is
-faked, so the 1 request/second throttle costs no wall-clock time.
+faked, so the 1 request/second throttle costs no wall-clock time. The on-disk
+state shared by processes (request slot + answers) lives in a per-test temporary
+directory; one test starts two real subprocesses with a short interval.
 """
 
 from __future__ import annotations
@@ -13,11 +15,16 @@ import email.message
 import http.client
 import io
 import json
+import os
 import pickle
+import sqlite3
+import subprocess
+import sys
 import threading
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, parse_qsl, urlsplit
 
@@ -257,8 +264,12 @@ def _http_error(url: str, code: int, body: bytes = b"",
 # Fixtures
 # ─────────────────────────────────────────────────────────────────────────────
 
+# The real clock, for the test that runs subprocesses (the fixtures fake it).
+_REAL_TIME = (time.time, time.monotonic, time.sleep)
+
+
 class FakeClock:
-    """Deterministic replacement for time.monotonic / time.sleep."""
+    """Deterministic replacement for time.time / time.monotonic / time.sleep."""
 
     def __init__(self) -> None:
         self.now = 1000.0
@@ -316,9 +327,33 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture(autouse=True)
 def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
     fake = FakeClock()
+    monkeypatch.setattr(time, "time", fake.monotonic)    # one clock for both
     monkeypatch.setattr(time, "monotonic", fake.monotonic)
     monkeypatch.setattr(time, "sleep", fake.sleep)
     return fake
+
+
+@pytest.fixture
+def cache_mode() -> str:
+    """"disk": the default on-disk state, in a temporary directory; "memory": off.
+    Classes parametrize it to run their tests both ways."""
+    return "disk"
+
+
+@pytest.fixture(autouse=True)
+def cache_home(cache_mode: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Never touch the real user cache: point QOREGEO_CACHE_DIR at tmp_path."""
+    home = tmp_path / "qoregeo-cache"
+    monkeypatch.setenv("QOREGEO_CACHE_DIR", str(home) if cache_mode == "disk" else "off")
+    return home
+
+
+def _rows(home: Path, table: str = "results") -> int:
+    con = sqlite3.connect(home / "geocode-v1.sqlite3")
+    try:
+        return int(con.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0])
+    finally:
+        con.close()
 
 
 @pytest.fixture
@@ -347,6 +382,7 @@ class TestConstruction:
         assert gc.timeout == 10.0 and gc.cache_size == 1024
         assert gc.email is None and gc.language is None
         assert repr(gc) == "Geocoder(provider='nominatim', url='https://nominatim.openstreetmap.org')"
+        assert gc.cache_dir == os.environ["QOREGEO_CACHE_DIR"]   # see the cache_home fixture
 
     def test_photon_defaults(self) -> None:
         gc = Geocoder(provider=" Photon ")
@@ -443,6 +479,12 @@ class TestConstruction:
         {"language": "toolongsubtag"},
         {"language": "-"},
         {"language": "en--us"},
+        {"cache_dir": 5},
+        {"cache_dir": ""},
+        {"cache_dir": "  "},
+        {"cache_dir": b"/tmp/geo"},
+        {"cache_dir": "geo\x00cache"},
+        {"cache_dir": ["/tmp"]},
     ])
     def test_invalid_arguments(self, kwargs: dict[str, Any]) -> None:
         with pytest.raises(InvalidArgumentError) as info:
@@ -771,6 +813,10 @@ class TestValidation:
 # Rate limiting
 # ─────────────────────────────────────────────────────────────────────────────
 
+BOTH_MODES = pytest.mark.parametrize("cache_mode", ["disk", "memory"])
+
+
+@BOTH_MODES
 class TestRateLimit:
     def test_public_endpoint_one_per_second(self, server: FakeServer, clock: FakeClock) -> None:
         gc = Geocoder()
@@ -817,17 +863,6 @@ class TestRateLimit:
         gc.search("b")
         assert clock.sleeps == [2.5]
 
-    def test_thread_safe_slots(self, server: FakeServer, clock: FakeClock) -> None:
-        clock.advance_on_sleep = False     # every thread sees the same "now"
-        gc = Geocoder()
-        threads = [threading.Thread(target=gc.search, args=(f"q{i}",)) for i in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(timeout=5)
-        assert len(server.urls) == 5
-        assert sorted(clock.sleeps) == [1.0, 2.0, 3.0, 4.0]
-
     def test_cache_hits_are_not_throttled(self, server: FakeServer, clock: FakeClock) -> None:
         gc = Geocoder()
         gc.search("a")
@@ -836,10 +871,24 @@ class TestRateLimit:
         assert clock.sleeps == [] and len(server.urls) == 1
 
 
+@pytest.mark.parametrize("cache_mode", ["memory"])   # the frozen clock confuses the disk slot
+def test_thread_safe_slots(server: FakeServer, clock: FakeClock) -> None:
+    clock.advance_on_sleep = False     # every thread sees the same "now"
+    gc = Geocoder()
+    threads = [threading.Thread(target=gc.search, args=(f"q{i}",)) for i in range(5)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=5)
+    assert len(server.urls) == 5
+    assert sorted(clock.sleeps) == [1.0, 2.0, 3.0, 4.0]
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Caching
 # ─────────────────────────────────────────────────────────────────────────────
 
+@BOTH_MODES
 class TestCache:
     def test_same_request_fetched_once(self, server: FakeServer) -> None:
         server.queue(NOMINATIM_SEARCH_BERLIN)
@@ -1188,6 +1237,7 @@ class TestHardeningInputs:
         assert server.params().get("lang") == ([lang] if lang else None)
 
 
+@BOTH_MODES
 class TestHardeningRateLimit:
     @pytest.mark.parametrize("url", [
         "https://nominatim.openstreetmap.org./",       # trailing-dot FQDN
@@ -1344,3 +1394,379 @@ def test_real_fetch_sends_ascii_url(monkeypatch: pytest.MonkeyPatch) -> None:
     assert Geocoder(url="http://bücher.example/géo").search("Straße") == []
     assert seen[0].full_url == ("http://xn--bcher-kva.example/g%C3%A9o/search?q=Stra%C3%9Fe"
                                 "&format=jsonv2&addressdetails=1&limit=5")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# On-disk state shared by processes (review finding 31: a shell loop of
+# `qoregeo geocode` sent ~10 requests/s, because every process started with an
+# empty throttle and an empty cache)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _new_process() -> None:
+    """What a fresh process sees: no in-process slots (the disk is shared)."""
+    gmod._reset_rate_limits()
+
+
+class TestSharedAcrossProcesses:
+    def test_slot_survives_a_new_process(self, server: FakeServer, clock: FakeClock) -> None:
+        Geocoder().search("Berlin")
+        _new_process()
+        Geocoder().search("Paris")
+        assert clock.sleeps == [1.0] and len(server.urls) == 2
+
+    def test_shell_loop_is_one_request_per_second(self, server: FakeServer,
+                                                  clock: FakeClock) -> None:
+        for city in ("Berlin", "Paris", "Rome", "Madrid"):
+            _new_process()
+            Geocoder().search(city)
+            clock.now += 0.1               # interpreter start-up between runs
+        assert clock.sleeps == pytest.approx([0.9, 0.9, 0.9])
+
+    @pytest.mark.parametrize("cache_mode", ["memory"])
+    def test_without_disk_only_the_process_is_throttled(self, server: FakeServer,
+                                                         clock: FakeClock) -> None:
+        Geocoder().search("Berlin")
+        _new_process()
+        Geocoder().search("Paris")
+        assert clock.sleeps == []
+
+    def test_public_hosts_have_separate_slots(self, server: FakeServer,
+                                              clock: FakeClock) -> None:
+        Geocoder().search("a")
+        _new_process()
+        server.default = _bytes(PHOTON_EMPTY)
+        Geocoder("photon").search("a")
+        assert clock.sleeps == []
+
+    def test_custom_endpoint_has_no_disk_state(self, server: FakeServer, clock: FakeClock,
+                                               cache_home: Path) -> None:
+        gc = Geocoder(url="http://localhost:8080", cache_dir=cache_home)
+        assert gc.cache_dir is None
+        gc.search("a")
+        _new_process()
+        Geocoder(url="http://localhost:8080").search("a")
+        assert clock.sleeps == [] and len(server.urls) == 2
+        assert not cache_home.exists()
+
+    def test_answer_reused_by_the_next_process(self, server: FakeServer, clock: FakeClock,
+                                               cache_home: Path) -> None:
+        server.queue(NOMINATIM_SEARCH_BERLIN)
+        first = Geocoder().search("Berlin")
+        _new_process()
+        again = Geocoder(user_agent="other-app/1.0").search("Berlin")
+        assert again == first and len(server.urls) == 1
+        assert clock.sleeps == []          # a disk hit is not throttled
+        assert _rows(cache_home) == 1
+
+    def test_answer_expires_after_ttl(self, server: FakeServer, clock: FakeClock) -> None:
+        Geocoder().search("Berlin")
+        clock.now += gmod.CACHE_TTL - 1
+        Geocoder().search("Berlin")
+        assert len(server.urls) == 1
+        clock.now += 2
+        Geocoder().search("Berlin")
+        assert len(server.urls) == 2
+
+    def test_reverse_and_no_result_are_stored(self, server: FakeServer) -> None:
+        server.queue(NOMINATIM_REVERSE_NOTHING)
+        assert Geocoder().reverse(0, -140) is None
+        assert Geocoder().reverse(0, -140) is None
+        assert len(server.urls) == 1
+
+    def test_errors_are_not_stored(self, server: FakeServer, cache_home: Path) -> None:
+        server.queue(_http_error(URL, 429), NOMINATIM_SEARCH_BERLIN)
+        with pytest.raises(GeocodingError):
+            Geocoder().search("Berlin")
+        assert len(Geocoder().search("Berlin")) == 2
+        assert len(server.urls) == 2
+
+    def test_key_includes_the_limit(self, server: FakeServer) -> None:
+        server.default = _bytes([NOMINATIM_SEARCH_BAKERY[0]] * 50)   # ignores `limit`
+        assert len(Geocoder().search("bakery", limit=41)) == 41
+        assert len(Geocoder().search("bakery", limit=45)) == 45   # same URL (limit=40)
+        assert len(server.urls) == 2
+
+    def test_cache_size_zero_stores_nothing_but_keeps_the_slot(
+        self, server: FakeServer, clock: FakeClock, cache_home: Path
+    ) -> None:
+        Geocoder(cache_size=0).search("a")
+        _new_process()
+        Geocoder(cache_size=0).search("a")
+        assert len(server.urls) == 2 and clock.sleeps == [1.0]
+        assert _rows(cache_home) == 0
+
+    @pytest.mark.parametrize("off", [None, False])
+    def test_cache_dir_off(self, server: FakeServer, clock: FakeClock, cache_home: Path,
+                           off: Any) -> None:
+        gc = Geocoder(cache_dir=off)
+        assert gc.cache_dir is None
+        gc.search("a")
+        _new_process()
+        Geocoder(cache_dir=off).search("a")
+        assert len(server.urls) == 2 and clock.sleeps == []
+        assert not cache_home.exists()
+
+    def test_explicit_cache_dir(self, server: FakeServer, tmp_path: Path,
+                                monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        gc = Geocoder(cache_dir=Path("mine"))           # relative: fixed at construction
+        assert gc.cache_dir is not None
+        assert Path(gc.cache_dir).resolve() == (tmp_path / "mine").resolve()
+        gc.search("a")
+        db = tmp_path / "mine" / "geocode-v1.sqlite3"
+        assert db.is_file()
+        if os.name == "posix":            # it holds the queries: owner-only
+            assert db.stat().st_mode & 0o077 == 0
+
+    @pytest.mark.parametrize("value", ["off", "OFF", "0", "none", "false"])
+    def test_env_turns_it_off(self, monkeypatch: pytest.MonkeyPatch, value: str) -> None:
+        monkeypatch.setenv("QOREGEO_CACHE_DIR", value)
+        assert Geocoder().cache_dir is None
+
+    def test_env_path(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("QOREGEO_CACHE_DIR", str(tmp_path / "env-cache"))
+        assert Geocoder().cache_dir == str(tmp_path / "env-cache")
+        assert Geocoder(cache_dir=tmp_path / "arg").cache_dir == str(tmp_path / "arg")
+
+    def test_clear_cache_forgets_its_servers_answers(self, server: FakeServer) -> None:
+        Geocoder().search("a")
+        server.default = _bytes(PHOTON_EMPTY)
+        Geocoder("photon").search("a")
+        server.default = b"[]"
+        Geocoder().clear_cache()
+        Geocoder().search("a")
+        assert len(server.urls) == 3
+        server.default = _bytes(PHOTON_EMPTY)
+        Geocoder("photon").search("a")    # another server: still stored
+        assert len(server.urls) == 3
+
+    def test_old_answers_are_pruned(self, server: FakeServer, cache_home: Path,
+                                    monkeypatch: pytest.MonkeyPatch, clock: FakeClock) -> None:
+        monkeypatch.setattr(gmod, "_DB_MAX_ROWS", 3)
+        gc = Geocoder()
+        for q in "abcde":
+            gc.search(q)
+        assert _rows(cache_home) == 3
+        clock.now += gmod.CACHE_TTL + 1
+        gc.search("f")                    # expired answers are dropped on the next write
+        assert _rows(cache_home) == 1
+
+    def test_unusual_text_is_stored(self, server: FakeServer) -> None:
+        server.queue(b'[{"lat": "1", "lon": "2", "display_name": "\\ud800 x \\u00e9"}]')
+        gc = Geocoder()
+        (place,) = gc.search("x")
+        assert gc._store is not None and not gc._store.broken
+        assert Geocoder().search("x") == [place] and len(server.urls) == 1
+
+    def test_tampered_answer_is_ignored(self, server: FakeServer, cache_home: Path) -> None:
+        Geocoder().search("a")
+        con = sqlite3.connect(cache_home / "geocode-v1.sqlite3")
+        con.execute("UPDATE results SET value = '{\"not\": \"a list\"}'")
+        con.commit()
+        con.close()
+        assert Geocoder().search("a") == [] and len(server.urls) == 2
+
+    def test_clock_set_back_does_not_block(self, server: FakeServer, clock: FakeClock) -> None:
+        Geocoder().search("a")
+        clock.now -= 500                   # e.g. NTP corrected a fast clock
+        _new_process()
+        Geocoder().search("b")
+        assert clock.sleeps == [1.0]       # not 501 s
+
+    def test_stale_far_future_slot_is_ignored(self, server: FakeServer, clock: FakeClock,
+                                              cache_home: Path) -> None:
+        Geocoder().search("a")
+        con = sqlite3.connect(cache_home / "geocode-v1.sqlite3")
+        con.execute("UPDATE slots SET start = start + 1e9")
+        con.commit()
+        con.close()
+        _new_process()
+        Geocoder().search("b")
+        assert clock.sleeps == []
+
+    def test_bookings_from_many_connections_are_serialised(self, cache_home: Path,
+                                                           clock: FakeClock) -> None:
+        clock.advance_on_sleep = False     # everyone books at the same "now"
+        waits: list[float | None] = []
+        lock = threading.Lock()
+
+        def book() -> None:
+            wait = gmod._DiskStore(str(cache_home)).book_slot("example.org", 1.0)
+            with lock:
+                waits.append(wait)
+
+        threads = [threading.Thread(target=book) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+        assert sorted(w for w in waits if w is not None) == [0.0, 1.0, 2.0, 3.0, 4.0, 5.0]
+
+    def test_large_min_interval_does_not_hold_up_others(
+        self, server: FakeServer, clock: FakeClock
+    ) -> None:
+        slow = Geocoder(min_interval=3600)
+        slow.search("a")
+        clock.now += 5
+        _new_process()
+        Geocoder().search("b")             # another process: the 1 s policy only
+        assert clock.sleeps == []
+
+
+class TestSharedStateDegrades:
+    """An unusable cache directory or a Python without sqlite3 falls back to the
+    in-process limit and cache — never an error."""
+
+    def _check_in_process(self, server: FakeServer, clock: FakeClock, gc: Geocoder) -> None:
+        assert gc.search("a") == [] and gc.search("a") == []   # memory cache
+        gc.search("b")
+        assert len(server.urls) == 2 and clock.sleeps == [1.0]
+        assert gc._store is not None and gc._store.broken
+
+    def test_cache_dir_is_a_file(self, server: FakeServer, clock: FakeClock,
+                                 tmp_path: Path) -> None:
+        blocker = tmp_path / "file"
+        blocker.write_text("x")
+        self._check_in_process(server, clock, Geocoder(cache_dir=blocker / "sub"))
+
+    def test_unwritable_directory(self, server: FakeServer, clock: FakeClock,
+                                  monkeypatch: pytest.MonkeyPatch) -> None:
+        def denied(*args: Any, **kwargs: Any) -> int:
+            raise PermissionError(13, "Permission denied")
+
+        monkeypatch.setattr(os, "open", denied)    # root ignores chmod, so simulate it
+        self._check_in_process(server, clock, Geocoder())
+
+    def test_no_sqlite3_module(self, server: FakeServer, clock: FakeClock,
+                               monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setitem(sys.modules, "sqlite3", None)
+        self._check_in_process(server, clock, Geocoder())
+
+    @pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "symlink"),
+                        reason="needs O_NOFOLLOW and symlinks")
+    def test_symlinked_database_is_not_followed(self, server: FakeServer, clock: FakeClock,
+                                                cache_home: Path, tmp_path: Path) -> None:
+        victim = tmp_path / "victim.txt"
+        victim.write_bytes(b"")
+        cache_home.mkdir()
+        try:
+            os.symlink(victim, cache_home / "geocode-v1.sqlite3")
+        except OSError:                    # e.g. no symlink privilege
+            pytest.skip("cannot create symlinks here")
+        self._check_in_process(server, clock, Geocoder())
+        assert victim.read_bytes() == b""
+
+    def test_corrupt_database(self, server: FakeServer, clock: FakeClock,
+                              cache_home: Path) -> None:
+        cache_home.mkdir()
+        (cache_home / "geocode-v1.sqlite3").write_bytes(b"not a database " * 100)
+        self._check_in_process(server, clock, Geocoder())
+
+    def test_locked_database(self, server: FakeServer, clock: FakeClock,
+                             monkeypatch: pytest.MonkeyPatch) -> None:
+        def locked(*args: Any, **kwargs: Any) -> Any:
+            raise sqlite3.OperationalError("database is locked")
+
+        monkeypatch.setattr(sqlite3, "connect", locked)
+        self._check_in_process(server, clock, Geocoder())
+
+    def test_failure_after_a_disk_booking_keeps_the_local_slot(
+        self, server: FakeServer, clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def failing(*args: Any, **kwargs: Any) -> Any:
+            raise sqlite3.OperationalError("disk I/O error")
+
+        gc = Geocoder()
+        gc.search("a")
+        monkeypatch.setattr(sqlite3, "connect", failing)
+        gc.search("b")
+        assert clock.sleeps == [1.0] and len(server.urls) == 2
+
+
+@pytest.mark.parametrize("platform, env, expected", [
+    ("linux", {"HOME": "/home/ann"}, "/home/ann/.cache/qoregeo"),
+    ("linux", {"HOME": "/home/ann", "XDG_CACHE_HOME": "/var/cache/ann"},
+     "/var/cache/ann/qoregeo"),
+    ("linux", {"HOME": "/home/ann", "XDG_CACHE_HOME": "relative"},   # invalid per XDG
+     "/home/ann/.cache/qoregeo"),
+    ("darwin", {"HOME": "/Users/ann"}, "/Users/ann/Library/Caches/qoregeo"),
+    ("win32", {"LOCALAPPDATA": "/c/Users/ann/AppData/Local"},
+     "/c/Users/ann/AppData/Local/qoregeo"),
+    ("win32", {"USERPROFILE": "/c/Users/ann"}, "/c/Users/ann/AppData/Local/qoregeo"),
+    ("linux", {"HOME": "/home/ann", "QOREGEO_CACHE_DIR": "/srv/geo"}, "/srv/geo"),
+    ("linux", {"HOME": "/home/ann", "QOREGEO_CACHE_DIR": " Off "}, None),
+    ("linux", {"HOME": "/home/ann", "QOREGEO_CACHE_DIR": ""}, "/home/ann/.cache/qoregeo"),
+])
+def test_default_cache_dir(platform: str, env: dict[str, str], expected: str | None) -> None:
+    def native(path: str) -> str:   # "/a/b" -> an absolute path on the running OS
+        if not path.startswith("/"):
+            return path
+        return os.path.join(os.path.abspath(os.sep), *path.strip("/").split("/"))
+
+    result = gmod._default_cache_dir({k: native(v) for k, v in env.items()}, platform)
+    assert result == (None if expected is None else native(expected))
+
+
+def test_default_cache_dir_without_a_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(os.path, "expanduser", lambda path: path)   # "~" stays "~"
+    assert gmod._default_cache_dir({}, "linux") is None
+
+
+# A child process: geocodes twice against a "public" test host with a short
+# interval, after waiting for its sibling to be ready, and prints when each of
+# its requests started (wall clock, comparable across processes).
+_CHILD = r"""
+import json, os, sys, time
+from qoregeo import geocode as gmod
+
+host, interval, cache_dir, me, *others = sys.argv[1:]
+gmod.PUBLIC_HOSTS = frozenset({host})
+gmod.PUBLIC_MIN_INTERVAL = float(interval)
+starts = []
+
+def fetch(self, url):
+    starts.append(time.time())
+    return b"[]"
+
+gmod.Geocoder._fetch = fetch
+open(me, "w").close()
+deadline = time.monotonic() + 60
+while not all(os.path.exists(p) for p in others):
+    if time.monotonic() > deadline:
+        sys.exit("the other process never started")
+    time.sleep(0.005)
+gc = gmod.Geocoder(url="https://" + host, cache_dir=None if cache_dir == "-" else cache_dir)
+for query in ("first", "second"):
+    gc.search(query + " from " + os.path.basename(me))
+print(json.dumps(starts))
+"""
+
+
+def _run_two_processes(tmp_path: Path, cache_dir: str, interval: float) -> list[float]:
+    root = str(Path(gmod.__file__).resolve().parents[1])     # this checkout of qoregeo
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        p for p in (root, os.environ.get("PYTHONPATH")) if p))
+    ready = [str(tmp_path / f"ready-{i}") for i in range(2)]
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CHILD, "geo.invalid", str(interval), cache_dir, me,
+             *[r for r in ready if r != me]],
+            cwd=tmp_path, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        for me in ready
+    ]
+    outputs = [proc.communicate(timeout=120) for proc in procs]
+    for proc, (_, err) in zip(procs, outputs, strict=True):
+        assert proc.returncode == 0, err
+    return sorted(t for out, _ in outputs for t in json.loads(out))
+
+
+def test_two_real_processes_share_one_slot(tmp_path: Path,
+                                           monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, real in zip(("time", "monotonic", "sleep"), _REAL_TIME, strict=True):
+        monkeypatch.setattr(time, name, real)
+    interval = 0.2
+    starts = _run_two_processes(tmp_path, str(tmp_path / "cache"), interval)
+    assert len(starts) == 4
+    gaps = [b - a for a, b in zip(starts[:-1], starts[1:], strict=True)]
+    assert min(gaps) >= interval - 0.05, gaps      # small allowance for clock resolution

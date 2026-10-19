@@ -25,9 +25,12 @@ from __future__ import annotations
 
 import base64
 import csv
+import dataclasses
 import json
+import math
 import os
 import re
+import warnings
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
@@ -35,9 +38,11 @@ from typing import Any
 import pytest
 
 from qoregeo import GeoEngine
+from qoregeo import tools as tools_module
 from qoregeo.exceptions import InvalidArgumentError
 from qoregeo.map_builder import tile_presets
 from qoregeo.tools import (
+    MAX_RESULT_CHARS,
     SERVER_INSTRUCTIONS,
     TOOLS,
     ToolContext,
@@ -362,6 +367,27 @@ class TestGeometryTools:
         assert data["unit"] == "miles" and data["method"] == "vincenty"
         assert data["distance"] == pytest.approx(1148.1 / 1.609344, rel=0.01)
 
+    def test_distance_vincenty_fallback_is_reported(self, ctx):
+        # Vincenty doesn't converge for nearly antipodal points; the engine then
+        # uses haversine, and the result must say so (the warning only reaches stderr).
+        args = {"from": {"lat": 0, "lng": 0}, "to": {"lat": 0.5, "lng": 179.7}}
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")   # nothing leaks out of the tool either
+            data = ok("distance", {**args, "method": "vincenty"}, ctx)
+        assert data["method"] == "haversine"
+        assert "converge" in data["note"] and "haversine" in data["note"]
+        assert data["distance"] == ok("distance", args, ctx)["distance"]
+        data = ok("distance", {"from": DELHI, "to": MUMBAI, "method": "vincenty"}, ctx)
+        assert data["method"] == "vincenty" and "note" not in data
+        assert data["distance"] != ok("distance", {"from": DELHI, "to": MUMBAI}, ctx)["distance"]
+
+    def test_module_docstring_example(self):
+        # The example output in qoregeo.tools' docstring is what the call returns.
+        result = call_tool("distance", {"from": {"lat": 28.61, "lng": 77.21},
+                                        "to": {"lat": 19.08, "lng": 72.88}})
+        assert result.data == {"distance": 1147.2349, "unit": "km", "method": "haversine"}
+        assert str(result.data) in (tools_module.__doc__ or "")
+
     def test_distance_rejects_lat_lng_pairs(self, ctx):
         message = err("distance", {"from": [0, 0], "to": [0, 1]}, ctx)
         assert "from" in message and "object" in message
@@ -439,6 +465,31 @@ class TestGeometryTools:
                             "area_unit": "ha"}, ctx)
         assert ha["area"] == pytest.approx(data["area"] * 100, rel=1e-6)
 
+    @pytest.mark.parametrize("geometry", [
+        {"type": "Polygon", "coordinates": [[[500, 0], [0, 700], [-900, 0], [500, 0]]]},
+        {"type": "Polygon", "coordinates": [[[1e308, 0], [0, 1e308], [-1e308, 0], [1e308, 0]]]},
+        {"type": "Polygon", "coordinates": [[[0, 0], [1, 95], [1, 0], [0, 0]]]},
+        {"type": "MultiPolygon", "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 0]]],
+                                                 [[[0, 0], [400, 0], [1, 1], [0, 0]]]]},
+        {"type": "Feature", "properties": {},
+         "geometry": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, -91], [0, 0]]]}},
+        {"type": "LineString", "coordinates": [[0, 0], [1e308, 0]]},
+        {"type": "LineString", "coordinates": [[0, 0], ["1", 0]]},
+    ], ids=["lat-700", "1e308", "lat-95", "multi-lng-400", "feature-lat-91", "line-1e308",
+            "line-string-coord"])
+    def test_measure_rejects_invalid_coordinates(self, ctx, geometry):
+        # Out-of-range positions gave nonsense or infinite areas (an unencodable result).
+        result = call_tool("measure", {"geometry": geometry}, ctx)
+        assert result.is_error, result.data
+        assert "Invalid Coordinate" in result.data["error"]
+        assert "[lng, lat]" in result.data["error"]   # says how to fix it
+
+    def test_measure_accepts_antimeridian_rings(self, ctx):
+        # Rings drawn across 180° may use longitudes up to 360.
+        ring = [[179, 0], [181, 0], [181, 1], [179, 1], [179, 0]]
+        data = ok("measure", {"geometry": {"type": "Polygon", "coordinates": [ring]}}, ctx)
+        assert data["area"] == pytest.approx(2 * 12364, rel=0.01)
+
     def test_geohash(self, ctx):
         data = ok("geohash", {"point": DELHI, "precision": 6}, ctx)
         assert data["geohash"] == "ttnfuc"
@@ -456,6 +507,22 @@ class TestDataTools:
         assert paths == ["cities.csv", "zones.geojson", "data/deep/more.tsv"]
         sizes = {f["path"]: f["bytes"] for f in data["files"]}
         assert sizes["cities.csv"] == (root / "cities.csv").stat().st_size
+
+    def test_list_files_skips_dangling_and_escaping_symlinks(self, tmp_path, ctx, root):
+        if not can_symlink(tmp_path):
+            pytest.skip("symlinks are not available here")
+        # An editor lock file (a dangling link) used to fail the whole listing …
+        os.symlink(root / "deleted.csv", root / ".#cities.csv")
+        # … and a link to a file outside the root was listed, with its size.
+        outside = tmp_path / "secret.txt"
+        outside.write_text("x" * 1379, encoding="utf-8")
+        os.symlink(outside, root / "shadow.txt")
+        os.symlink(root / "cities.csv", root / "alias.csv")   # inside the root: fine
+        data = ok("list_files", {}, ctx)
+        paths = [f["path"] for f in data["files"]]
+        assert ".#cities.csv" not in paths and "shadow.txt" not in paths
+        assert "alias.csv" in paths and "cities.csv" in paths
+        assert ok("describe_dataset", {"path": "alias.csv"}, ctx)["count"] == 7
 
     def test_list_files_subdirectory(self, ctx):
         data = ok("list_files", {"directory": "data"}, ctx)
@@ -761,13 +828,24 @@ class TestCallErrors:
                                                   "coordinates": [[0, 0], [1, 1]]}}, ctx)
 
     def test_buffer_num_points_above_schema_maximum(self, ctx):
-        assert TOOLS["buffer"].input_schema["properties"]["num_points"]["maximum"] == 4096
+        assert TOOLS["buffer"].input_schema["properties"]["num_points"]["maximum"] == 1024
         assert "num_points" in err("buffer", {"center": DELHI, "radius": 1,
-                                              "num_points": 4097}, ctx)
+                                              "num_points": 1025}, ctx)
         assert "num_points" in err("buffer", {"center": DELHI, "radius": 1,
                                               "num_points": 10**12}, ctx)
-        assert len(ok("buffer", {"center": DELHI, "radius": 1,
-                                 "num_points": 4096}, ctx)["geometry"]["coordinates"][0]) == 4097
+        # The largest ring fits in one result, wherever it is (long coordinates).
+        for center in (DELHI, {"lat": -89.9, "lng": -179.9}, {"lat": 0.0001, "lng": -0.0001}):
+            result = call_tool("buffer", {"center": center, "radius": 1, "num_points": 1024}, ctx)
+            assert not result.is_error, result.data
+            assert len(result.data["geometry"]["coordinates"][0]) == 1025
+            assert len(result.text) < MAX_RESULT_CHARS
+
+    @pytest.mark.parametrize("value", [0, -2, True, 1.5, "5", None])
+    def test_bad_max_features(self, root, value):
+        # 0 never advanced next_offset (endless paging); negatives sliced from the end.
+        with pytest.raises(InvalidArgumentError, match="max_features"):
+            ToolContext(root=str(root), max_features=value)
+        assert ToolContext(root=str(root), max_features=1).max_features == 1
 
     def test_path_dot_dot_escape(self, tmp_path, ctx):
         (tmp_path / "outside.csv").write_text(CITIES_CSV, encoding="utf-8")
@@ -782,8 +860,17 @@ class TestCallErrors:
         assert "outside the allowed directory" in err("describe_dataset",
                                                       {"path": str(outside)}, ctx)
 
-    def test_path_home_escape(self, ctx):
-        assert "outside" in err("describe_dataset", {"path": "~/cities.csv"}, ctx)
+    def test_tilde_is_not_expanded(self, ctx, root):
+        # '~' is not the home directory: paths are relative to the root.
+        message = err("describe_dataset", {"path": "~/cities.csv"}, ctx)
+        assert "No file" in message and "'~' is not expanded" in message
+        for folder in ("~", "~root", "~news"):   # 'root' / 'news' are users on many systems
+            (root / folder).mkdir()
+            (root / folder / "points.csv").write_text("lat,lng\n1,2\n", encoding="utf-8")
+        listed = [f["path"] for f in ok("list_files", {}, ctx)["files"]]
+        for path in ("~/points.csv", "~root/points.csv", "~news/points.csv"):
+            assert path in listed
+            assert ok("describe_dataset", {"path": path}, ctx)["count"] == 1
 
     def test_path_symlink_escape(self, tmp_path, ctx, root):
         if not can_symlink(tmp_path):
@@ -1065,6 +1152,22 @@ class TestSchemaValidation:
     def test_huge_integer_for_number(self, ctx, tool, args):
         err(tool, args, ctx)
 
+    def test_whole_floats_are_integers(self, full_ctx, root):
+        # JSON Schema 2020-12 (the MCP default) counts 5.0 as an integer; tools get an int.
+        assert len(ok("geohash", {"point": DELHI, "precision": 5.0}, full_ctx)["geohash"]) == 5
+        data = ok("query_features", {"path": "cities.csv", "limit": 3.0, "offset": 1.0}, full_ctx)
+        assert names_of(data) == CITY_NAMES[1:3]
+        assert data["offset"] == 1 and isinstance(data["offset"], int)
+        nearest = ok("nearest", {"path": "cities.csv", "point": DELHI, "k": 2.0}, full_ctx)
+        assert nearest["count"] == 2
+        ring = ok("buffer", {"center": DELHI, "radius": 1, "num_points": 8.0}, full_ctx)
+        assert len(ring["geometry"]["coordinates"][0]) == 9
+        ok("preview_map", {"path": "cities.csv", "width": 64.0, "height": 64.0}, full_ctx)
+        assert "num_points" in err("buffer", {"center": DELHI, "radius": 1, "num_points": 8.5},
+                                   full_ctx)
+        assert "at most 12" in err("geohash", {"point": DELHI, "precision": 13.0}, full_ctx)
+        assert "precision" in err("geohash", {"point": DELHI, "precision": 1e300}, full_ctx)
+
     def test_huge_integer_for_integer(self, ctx):
         assert "num_points" in err("buffer", {**VALID_ARGS["buffer"], "num_points": 10**400},
                                    ctx)
@@ -1146,11 +1249,144 @@ class TestPaging:
         fc["features"][1]["properties"]["pad"] = "y" * 50_000
         data = ok("query_features", {"geojson": fc}, ctx)
         assert data["returned"] == 1 and data["next_offset"] == 1   # stops before the giant
-        data = ok("query_features", {"geojson": fc, "offset": 1}, ctx)
-        assert data["returned"] == 1 and data["next_offset"] == 2   # the giant on its own
-        assert len(data["features"][0]["properties"]["pad"]) == 50_000
+        result = call_tool("query_features", {"geojson": fc, "offset": 1}, ctx)
+        data = result.data
+        assert data["returned"] == 1 and data["next_offset"] == 2   # the giant on its own …
+        props = data["features"][0]["properties"]
+        assert props["i"] == 1 and props["pad"].startswith("y" * 500)   # … shortened
+        assert "50,000 characters" in props["pad"] and len(props["pad"]) < 600
+        assert "export_features" in data["note"]
+        assert len(result.text) < MAX_RESULT_CHARS
         data = ok("query_features", {"geojson": fc, "offset": 2}, ctx)
         assert data["returned"] == 1 and data["truncated"] is False
+        assert "note" not in data
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Result size caps: every successful result stays under MAX_RESULT_CHARS
+# ─────────────────────────────────────────────────────────────────────────────
+
+def circle_feature(vertices: int, **props: Any) -> dict[str, Any]:
+    ring = [[math.cos(2 * math.pi * i / vertices), math.sin(2 * math.pi * i / vertices)]
+            for i in range(vertices)]
+    ring.append(ring[0])
+    return {"type": "Feature", "properties": {"name": "big", **props},
+            "geometry": {"type": "Polygon", "coordinates": [ring]}}
+
+
+def assert_capped(result: ToolResult) -> dict[str, Any]:
+    assert not result.is_error, result.data
+    assert len(result.text) < MAX_RESULT_CHARS
+    return result.data
+
+
+class TestResultCaps:
+    def test_huge_geometry_is_summarised(self, ctx, root):
+        fc = {"type": "FeatureCollection", "features": [circle_feature(3000)]}
+        (root / "big.geojson").write_text(json.dumps(fc), encoding="utf-8")
+        for tool, args in (("query_features", {"path": "big.geojson"}),
+                           ("nearest", {"path": "big.geojson", "point": {"lat": 0, "lng": 0}})):
+            data = assert_capped(call_tool(tool, args, ctx))
+            (feature,) = data["features"]
+            assert feature["geometry"] is None
+            summary = feature["geometry_summary"]
+            assert summary["type"] == "Polygon" and summary["vertices"] == 3001
+            assert summary["bbox"] == pytest.approx([-1, -1, 1, 1], abs=1e-6)
+            assert feature["properties"]["name"] == "big"
+            assert "3,001 vertices" in data["note"] and "export_features" in data["note"]
+        # export_features still writes all of it
+        ok("export_features", {"path": "big.geojson", "output": "full.geojson"}, ctx)
+        written = json.loads((root / "full.geojson").read_text(encoding="utf-8"))
+        assert len(written["features"][0]["geometry"]["coordinates"][0]) == 3001
+        # A read-only server doesn't point the model at a tool it doesn't offer.
+        read_only = ToolContext(root=str(root), allow_write=False)
+        data = assert_capped(call_tool("query_features", {"path": "big.geojson"}, read_only))
+        assert "read-only server does not offer" in data["note"]
+
+    def test_huge_geometry_and_properties(self, ctx):
+        feature = circle_feature(3000, **{f"note_{i}": "z" * 2000 for i in range(60)})
+        data = assert_capped(call_tool("query_features", {"geojson": feature}, ctx))
+        (shown,) = data["features"]
+        assert shown["geometry"] is None and shown["geometry_summary"]["vertices"] == 3001
+        assert shown["properties"]["name"] == "big"
+        assert "2,000 characters" in shown["properties"]["note_0"]
+        assert 1 < len(shown["properties"]) < 61
+        assert f"{len(shown['properties'])} of 61 properties are shown" in data["note"]
+        assert "cut short" in data["note"]
+
+    def test_describe_wide_dataset(self, ctx, root):
+        names = [f"a_rather_long_column_name_number_{i:04d}" for i in range(1500)]
+        (root / "wide.csv").write_text("lat,lng," + ",".join(names) + "\n1,2," +
+                                       ",".join("v" for _ in names) + "\n", encoding="utf-8")
+        data = assert_capped(call_tool("describe_dataset", {"path": "wide.csv"}, ctx))
+        assert data["columns_total"] == 1500
+        listed = list(data["columns"])
+        assert 0 < len(listed) < 1500 and listed == names[:len(listed)]
+        assert f"{len(listed):,} of 1,500 columns" in data["note"]
+        assert "export_features" in data["note"]
+
+    def test_describe_long_values(self, ctx, root):
+        (root / "long.csv").write_text("lat,lng,notes\n" + "".join(
+            f"{i},{i},{'x' * 20_000}\n" for i in range(5)), encoding="utf-8")
+        data = assert_capped(call_tool("describe_dataset", {"path": "long.csv"}, ctx))
+        assert data["columns"] == {"notes": "str"} and "columns_total" not in data
+        assert len(data["sample"]) == 5
+        assert all("20,000 characters" in row["notes"] for row in data["sample"])
+        assert "sample rows are shortened" in data["note"]
+        small = ok("describe_dataset", {"path": "cities.csv"}, ctx)
+        assert "note" not in small and "columns_total" not in small
+
+    def test_list_files_count_cap(self, ctx, root):
+        many = root / "many"
+        many.mkdir()
+        for i in range(501):
+            (many / f"f{i:03d}.csv").write_text("", encoding="utf-8")
+        data = assert_capped(call_tool("list_files", {"directory": "many"}, ctx))
+        assert data["truncated"] is True and len(data["files"]) == 500
+        assert "directory" in data["note"]
+        (many / "f500.csv").unlink()
+        data = ok("list_files", {"directory": "many"}, ctx)   # exactly 500: complete
+        assert data["truncated"] is False and len(data["files"]) == 500 and "note" not in data
+
+    def test_list_files_character_cap(self, ctx, root):
+        many = root / "long"
+        many.mkdir()
+        for i in range(450):
+            (many / f"{i:03d}_{'n' * 80}.csv").write_text("", encoding="utf-8")
+        data = assert_capped(call_tool("list_files", {"directory": "long"}, ctx))
+        assert data["truncated"] is True and 0 < len(data["files"]) < 450
+
+    def test_geocode_results_fit(self, root):
+        class WordyGeocoder(FakeGeocoder):
+            def search(self, query: str, limit: int = 5,
+                       country_codes: Any = None) -> list[dict[str, Any]]:
+                return [{"lat": 1, "lng": 2, "name": f"{i} " + "w" * 2000} for i in range(limit)]
+
+        ctx = ToolContext(root=str(root), allow_network=True, geocoder=WordyGeocoder())
+        data = assert_capped(call_tool("geocode", {"query": "x", "limit": 50}, ctx))
+        assert 0 < len(data["results"]) < 50 and "limit" in data["note"]
+        assert len(ok("geocode", {"query": "x", "limit": 3}, ctx)["results"]) == 3
+
+    def test_oversized_result_is_an_error(self, ctx, monkeypatch):
+        def flood(context: ToolContext, args: dict[str, Any]) -> ToolResult:
+            return ToolResult({"blob": "x" * (MAX_RESULT_CHARS + 1)})
+
+        monkeypatch.setitem(TOOLS, "distance", dataclasses.replace(TOOLS["distance"],
+                                                                   handler=flood))
+        message = err("distance", VALID_ARGS["distance"], ctx)
+        assert "too large" in message and "export_features" in message
+
+    def test_non_finite_result_is_an_error(self, ctx, monkeypatch):
+        def infinite(context: ToolContext, args: dict[str, Any]) -> ToolResult:
+            return ToolResult({"area": float("inf")})
+
+        monkeypatch.setitem(TOOLS, "distance", dataclasses.replace(TOOLS["distance"],
+                                                                   handler=infinite))
+        assert "non-finite" in err("distance", VALID_ARGS["distance"], ctx)
+
+    def test_every_valid_call_is_within_the_cap(self, full_ctx):
+        for name, args in VALID_ARGS.items():
+            assert_capped(call_tool(name, dict(args), full_ctx))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1201,6 +1437,36 @@ class TestToolResult:
         assert image == {"type": "image", "source": {
             "type": "base64", "media_type": "image/png",
             "data": base64.b64encode(b"PNGDATA").decode("ascii")}}
+
+    def test_lone_surrogates_replaced(self):
+        # Lone surrogates (undecodable file names, "\ud800" escapes in data) are
+        # not valid UTF-8; strict JSON parsers reject them. Valid pairs are joined.
+        data = {"name": "bad \ud800 name", "caf\udce9.csv": ["x\udfff"],
+                "pair": "\ud83d\ude00", "ok": "São Paulo"}
+        result = ToolResult(data)
+        expected = {"name": "bad \ufffd name", "caf\ufffd.csv": ["x\ufffd"],
+                    "pair": "\U0001f600", "ok": "São Paulo"}
+        result.text.encode("utf-8")
+        assert json.loads(result.text) == expected
+        mcp = result.to_mcp()
+        assert mcp["structuredContent"] == expected
+        json.dumps(mcp, ensure_ascii=False).encode("utf-8")
+        block = result.to_anthropic("toolu_1")
+        assert json.loads(block["content"][0]["text"]) == expected
+        error = ToolResult({"error": "No file at 'x\udce9.csv'"}, is_error=True)
+        assert json.loads(error.to_mcp()["content"][0]["text"]) == \
+            {"error": "No file at 'x\ufffd.csv'"}
+        assert result.data is data and data["name"] == "bad \ud800 name"   # data untouched
+
+    def test_lone_surrogates_from_a_data_file(self, ctx, root):
+        (root / "sur.geojson").write_text(
+            '{"type": "Feature", "geometry": {"type": "Point", "coordinates": [1, 2]}, '
+            '"properties": {"name": "bad \\ud800 name"}}', encoding="ascii")
+        for tool in ("query_features", "describe_dataset"):
+            result = call_tool(tool, {"path": "sur.geojson"}, ctx)
+            assert not result.is_error, result.data
+            assert "bad \ufffd name" in result.text
+            result.text.encode("utf-8")
 
     def test_preview_map_round_trip(self, ctx):
         result = call_tool("preview_map", {"path": "cities.csv", "width": 64, "height": 64}, ctx)

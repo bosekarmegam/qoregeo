@@ -30,7 +30,7 @@ from typing import Any
 
 import pytest
 
-from qoregeo import __version__
+from qoregeo import __version__, mcp_server
 from qoregeo.mcp_server import (
     HANDSHAKE_PROTOCOL_VERSIONS,
     MODERN_PROTOCOL_VERSIONS,
@@ -123,6 +123,35 @@ def run_stdio(server: MCPServer, *lines: str) -> tuple[list[str], str]:
     server.serve_stdio(io.StringIO("".join(line + "\n" for line in lines)), out)
     raw = out.getvalue()
     return raw.splitlines(), raw
+
+
+def strict_loads(line: str) -> Any:
+    """
+    Parse one output line the way strict JSON parsers (the MCP SDKs' pydantic)
+    do: a lone UTF-16 surrogate escape such as "\\udce9" is an error there, while
+    Python's json module accepts it — so check every decoded string too.
+    """
+    try:
+        from pydantic_core import from_json  # optional: the parser the MCP SDK uses
+    except ImportError:
+        pass
+    else:
+        from_json(line)
+    message = json.loads(line)
+
+    def walk(obj: Any) -> None:
+        if isinstance(obj, str):
+            obj.encode("utf-8")   # raises UnicodeEncodeError on a lone surrogate
+        elif isinstance(obj, dict):
+            for k, v in obj.items():
+                walk(k)
+                walk(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                walk(v)
+
+    walk(message)
+    return message
 
 
 @pytest.fixture
@@ -307,7 +336,7 @@ class TestStatelessEra:
         msg = request("tools/list", {"_meta": modern_meta(progressToken=5)})
         assert result_of(server.handle(msg))["resultType"] == "complete"
 
-    @pytest.mark.parametrize("version", ["2099-01-01", "2025-11-25", "2024-11-05", "x", 1])
+    @pytest.mark.parametrize("version", ["2099-01-01", "2025-11-25", "2024-11-05", "x", ""])
     def test_unsupported_version(self, server, version):
         for method in ("tools/list", "server/discover", "ping"):
             error = error_of(server.handle(request(method, {"_meta": modern_meta(version)})),
@@ -315,10 +344,66 @@ class TestStatelessEra:
             assert error["data"]["supported"] == ["2026-07-28"]
             assert error["data"]["requested"] == str(version)
 
-    @pytest.mark.parametrize("method", ["initialize", "ping", "notifications/initialized",
-                                        "no/such/method"])
+    @pytest.mark.parametrize("method", ["ping", "notifications/initialized", "no/such/method"])
     def test_removed_methods(self, server, method):
         error_of(server.handle(modern(method)), METHOD_NOT_FOUND)
+
+    @pytest.mark.parametrize("version", [MODERN, "2025-11-25", "2099-01-01", 20260728, None])
+    def test_initialize_with_envelope_is_the_handshake(self, server, version):
+        # "An initialize request selects legacy semantics", even when a client
+        # stamps the 2026 envelope on every request.
+        reply = server.handle(request("initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "stamper", "version": "1"},
+            "_meta": {META_VERSION: version, META_CAPS: {}}}))
+        result = result_of(reply)
+        assert result["protocolVersion"] == "2025-06-18" == server.protocol_version
+        assert "resultType" not in result and result["serverInfo"] == SERVER_INFO
+        assert tool_names(result_of(server.handle(request("tools/list", msg_id=2)), 2))
+
+    @pytest.mark.parametrize("version", [20260728, None, 2026.0728, True, [MODERN], {"v": MODERN}])
+    def test_malformed_envelope_version(self, server, version):
+        # The envelope key's presence selects the stateless era; a non-string
+        # value is malformed (-32602), not an unsupported version (-32022, from
+        # which auto-negotiating clients don't fall back) nor a legacy request.
+        for method in ("server/discover", "tools/list", "tools/call", "prompts/list"):
+            msg = request(method, {"name": "distance", "arguments": DISTANCE_ARGS,
+                                   "_meta": {META_VERSION: version, META_CAPS: {}}})
+            error = error_of(server.handle(msg), INVALID_PARAMS)
+            assert META_VERSION in error["message"] and "string" in error["message"]
+
+    @pytest.mark.parametrize("method, key", [("resources/list", "resources"),
+                                             ("resources/templates/list", "resourceTemplates"),
+                                             ("prompts/list", "prompts")])
+    def test_empty_listings_carry_caching_hints(self, server, method, key):
+        # 2026-07-28: "Servers MUST include caching hints on results … returned by
+        # prompts/list, resources/list, resources/templates/list".
+        result = result_of(server.handle(modern(method)))
+        assert result[key] == []
+        assert result["ttlMs"] == 0 and result["cacheScope"] == "private"
+        assert result["resultType"] == "complete"
+        legacy = result_of(server.handle(request(method)))
+        assert legacy == {key: []}   # the handshake era has no caching hints
+
+    def test_results_match_the_official_sdk_types(self, server, root):
+        # Every stateless-era result through the MCP SDK's own validators
+        # (skipped when the optional 'mcp' package isn't installed).
+        methods = pytest.importorskip("mcp_types.methods")
+        line = {"type": "LineString", "coordinates": [[i / 1000, 0.5] for i in range(5000)]}
+        (root / "big.geojson").write_text(json.dumps({"type": "Feature", "properties": {},
+                                                      "geometry": line}), encoding="utf-8")
+        calls = [
+            ("server/discover", {}), ("tools/list", {}), ("resources/list", {}),
+            ("resources/templates/list", {}), ("prompts/list", {}),
+            ("tools/call", {"name": "distance", "arguments": DISTANCE_ARGS}),
+            ("tools/call", {"name": "distance", "arguments": {}}),
+            ("tools/call", {"name": "preview_map", "arguments": {"path": "cities.csv",
+                                                                 "width": 64, "height": 64}}),
+            ("tools/call", {"name": "query_features", "arguments": {"path": "big.geojson"}}),
+        ]
+        for method, params in calls:
+            result = result_of(server.handle(modern(method, params)))
+            methods.validate_server_result(method, MODERN, result)
 
     @pytest.mark.parametrize("meta", [
         {META_VERSION: MODERN},                       # no client capabilities
@@ -436,9 +521,11 @@ class TestJsonRpc:
         error = error_of(server.handle(request("tools/destroy")), METHOD_NOT_FOUND)
         assert "tools/destroy" in error["message"]
 
-    @pytest.mark.parametrize("params", [[1], "x", 5, True])
+    @pytest.mark.parametrize("params", [[1], "x", 5, True, 0, False, "", []])
     def test_params_not_an_object(self, server, params):
         error_of(server.handle(request("tools/list", params)), INVALID_PARAMS)
+        msg = {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": params}
+        error_of(server.handle(msg), INVALID_PARAMS)
 
     @pytest.mark.parametrize("name", ["teleport", None, 5, ["distance"]])
     def test_unknown_tool(self, server, name):
@@ -489,16 +576,37 @@ class TestJsonRpc:
     def test_empty_batch(self, server):
         error_of(server.handle([]), INVALID_REQUEST, None)
 
+    def test_batch_with_invalid_id(self, server):
+        replies = server.handle([request("ping", msg_id=None), request("ping", msg_id=2)])
+        assert isinstance(replies, list)
+        error_of(replies[0], INVALID_REQUEST, None)
+        result_of(replies[1], 2)
+
     def test_batch_with_garbage(self, server):
         replies = server.handle([5, request("ping", msg_id=2)])
         assert isinstance(replies, list)
         error_of(replies[0], INVALID_REQUEST, None)
         result_of(replies[1], 2)
 
-    @pytest.mark.parametrize("msg_id", [0, -1, "x", "server-discover-probe-1", 2**53, 1.5,
-                                        None])
+    @pytest.mark.parametrize("msg_id", [0, -1, "x", "", "server-discover-probe-1", 2**53])
     def test_ids_echoed(self, server, msg_id):
         assert result_of(server.handle(request("ping", msg_id=msg_id)), msg_id) == {}
+
+    @pytest.mark.parametrize("msg_id", [None, True, False, 1.5, 1.0, {"a": 1}, [1]])
+    def test_invalid_ids_are_rejected_unrun(self, server, root, msg_id):
+        # MCP: "Requests MUST include a string or integer ID … MUST NOT be null".
+        # The method must not run: the client could never match the reply.
+        for msg in (request("ping", msg_id=msg_id), request("tools/list", msg_id=msg_id),
+                    request("tools/call", {"name": "export_features", "arguments": {
+                        "path": "cities.csv", "output": "side_effect.csv"}}, msg_id=msg_id)):
+            error = error_of(server.handle(msg), INVALID_REQUEST, None)
+            assert "'id'" in error["message"]
+        assert not (root / "side_effect.csv").exists()
+
+    def test_invalid_ids_not_echoed_in_other_errors(self, server):
+        error_of(server.handle({"jsonrpc": "1.0", "id": {"a": 1}, "method": "ping"}),
+                 INVALID_REQUEST, None)
+        error_of(server.handle({"jsonrpc": "2.0", "id": [1]}), INVALID_REQUEST, None)
 
     def test_internal_error_keeps_serving(self, server, monkeypatch, capsys):
         def boom(ctx: ToolContext, args: dict[str, Any]) -> ToolResult:
@@ -622,6 +730,80 @@ class TestServeStdio:
         server.serve_stdio(io.StringIO('{"jsonrpc":"2.0","id":1,"method":"ping"}\n' * 3), out)
         assert out.getvalue().count("\n") == 3
         assert Recorder.flushes >= 3
+
+    def test_lone_surrogates_are_replaced(self, server, root):
+        # "\ud800" escapes are valid JSON syntax, so data files can carry them.
+        (root / "sur.geojson").write_text(
+            '{"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": '
+            '{"type": "Point", "coordinates": [1, 2]}, "properties": {"name": "bad \\ud800 name", '
+            '"emoji": "\\ud83d\\uddfa", "k\\udc80": 1}}]}', encoding="ascii")
+        lines, raw = run_stdio(
+            server,
+            json.dumps(request("tools/call", {"name": "query_features",
+                                              "arguments": {"path": "sur.geojson"}}, msg_id=1)),
+            json.dumps(modern("tools/call", {"name": "query_features",
+                                             "arguments": {"path": "sur.geojson"}}, msg_id=2)),
+            json.dumps(request("tools/call", {"name": "describe_dataset",
+                                              "arguments": {"path": "x\udce9.csv"}}, msg_id=3)),
+            json.dumps(request("no/such/\ud800", msg_id=4)),
+        )
+        assert raw.isascii() and len(lines) == 4
+        replies = [strict_loads(line) for line in lines]
+        for reply in replies[:2]:
+            result = reply["result"]
+            props = result["structuredContent"]["features"][0]["properties"]
+            assert props == {"name": "bad \ufffd name", "emoji": "\U0001f5fa", "k\ufffd": 1}
+            assert json.loads(result["content"][0]["text"])["features"][0]["properties"] == props
+        assert replies[2]["result"]["isError"] is True
+        assert "x\ufffd.csv" in replies[2]["result"]["content"][0]["text"]
+        assert replies[3]["error"]["message"] == "Method not found: no/such/\ufffd"
+
+    def test_undecodable_file_name(self, server, root):
+        # A Latin-1 file name on a UTF-8 system (e.g. unpacked from an old zip)
+        # is listed with U+FFFD rather than a lone surrogate.
+        try:
+            with open(os.path.join(os.fsencode(str(root)), b"caf\xe9.csv"), "w") as fh:
+                fh.write("lat,lng\n1,2\n")
+        except (OSError, UnicodeError):
+            pytest.skip("this file system only takes UTF-8 file names")
+        if "caf\udce9.csv" not in os.listdir(root):
+            pytest.skip("file names are not decoded with surrogateescape here")
+        lines, _ = run_stdio(server, json.dumps(request("tools/call", {"name": "list_files"})))
+        result = strict_loads(lines[0])["result"]
+        assert "caf\ufffd.csv" in [f["path"] for f in result["structuredContent"]["files"]]
+
+    def test_undecodable_root_name(self, tmp_path):
+        try:
+            os.mkdir(os.path.join(os.fsencode(str(tmp_path)), b"M\xfcnchen"))
+        except (OSError, UnicodeError):
+            pytest.skip("this file system only takes UTF-8 file names")
+        root = os.path.join(str(tmp_path), os.fsdecode(b"M\xfcnchen"))
+        lines, _ = run_stdio(MCPServer(ToolContext(root=root)),
+                             json.dumps(request("initialize", {"protocolVersion": "2025-11-25"})),
+                             json.dumps(modern("server/discover", msg_id=2)))
+        for line in lines:
+            assert "M\ufffdnchen" in strict_loads(line)["result"]["instructions"]
+
+    def test_batch_survives_an_unencodable_reply(self, server, monkeypatch, capsys):
+        monkeypatch.setitem(mcp_server._HANDSHAKE_METHODS, "ping",
+                            lambda srv, params, version: {"x": float("nan")})
+        lines, _ = run_stdio(server, json.dumps([request("ping", msg_id=1),
+                                                 request("tools/list", msg_id=2)]))
+        first, second = strict_loads(lines[0])
+        error_of(first, INTERNAL_ERROR, 1)
+        assert tool_names(result_of(second, 2))
+        assert "could not encode" in capsys.readouterr().err
+
+    def test_measure_with_huge_coordinates_in_a_batch(self, server):
+        huge = {"type": "Polygon", "coordinates": [[[1e308, 0], [0, 1e308], [-1e308, 0],
+                                                    [1e308, 0]]]}
+        lines, _ = run_stdio(server, json.dumps([
+            request("tools/call", {"name": "measure", "arguments": {"geometry": huge}}, msg_id=7),
+            request("ping", msg_id=2)]))
+        measure, ping = strict_loads(lines[0])
+        result = result_of(measure, 7)
+        assert result["isError"] is True and "Invalid Coordinate" in result["content"][0]["text"]
+        assert result_of(ping, 2) == {}
 
     @pytest.mark.parametrize("line", [
         pytest.param('{"jsonrpc": "2.0", "id": NaN, "method": "ping"}', id="nan-id"),

@@ -20,9 +20,12 @@ geo = GeoEngine().load("customers.csv")
 zone = geo.buffer((28.6139, 77.2090), 5)
 inside = geo.filter_by_polygon(zone)
 inside.save("in_zone.csv", csv_safe=True)
-inside.map("zone.html", title="Customers within 5 km", overlays=[zone])
+inside.map("zone.html", title="Customers within 5 km", overlays=[zone])   # qoregeo serve zone.html
 inside.image("zone.png", overlays=[zone])          # for e-mail / slides
 ```
+
+To share the HTML file itself, make it with `tiles="topo"`, `"satellite"`, `"osm-de"`
+(non-commercial) or `"none"`: those basemaps also work when the file is opened from disk.
 
 ## Geocode a short list of addresses, then map them
 
@@ -43,7 +46,7 @@ with open("addresses.csv", encoding="utf-8") as fh:
         else:
             print("not found:", row["address"])
 geo.save("geocoded.csv")          # keep the results — don't geocode the same rows twice
-geo.show(title="Geocoded addresses")
+geo.show(title="Geocoded addresses")   # serves until Ctrl+C, so it comes last
 ```
 
 ## Corridor along a route

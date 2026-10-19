@@ -329,10 +329,19 @@ def _add_geometry(geometry: dict[str, Any], layer: _Layer) -> None:
 
 
 def _spans_world(layer: _Layer) -> bool:
-    """True if a line or ring runs all the way round (-180° to 180°, 0° to 360°...)."""
+    """
+    True if a line or ring runs (all but) the whole way round the globe — the
+    same rule as map_builder._spans_world: its longitudes span 360° (-180° to
+    180°, 0° to 360° …), or at least 359° with every vertex on one of its two
+    extreme meridians (an extent box from -179.9999° to 179.9999°).
+    """
     for path in [*layer.lines, *(ring for rings in layer.polygons for ring in rings)]:
         xs = [p[0] for p in path]
-        if max(xs) - min(xs) >= 360.0:
+        if not xs:
+            continue
+        west, east = min(xs), max(xs)
+        if east - west >= 360.0 or (
+                east - west >= 359.0 and all(min(x - west, east - x) <= 1e-9 for x in xs)):
             return True
     return False
 

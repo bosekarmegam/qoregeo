@@ -22,16 +22,20 @@ from __future__ import annotations
 import csv
 import html
 import json
+import math
 import os
 import re
+import shlex
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+import qoregeo.utils as qutils
 from qoregeo import GeoEngine
-from qoregeo.exceptions import InvalidArgumentError, NoDataError
+from qoregeo.exceptions import InvalidArgumentError, InvalidBufferError, NoDataError
+from qoregeo.map_builder import _tiles_config
 
 pytestmark = pytest.mark.filterwarnings("ignore:QOREgeo. .* no heat:UserWarning")
 
@@ -297,6 +301,34 @@ class TestSourceFileGuard:
         out = tmp_path / "cities.svg"
         g.image(out)
         assert out.is_file()
+
+    @pytest.mark.parametrize("method", WRITERS)
+    def test_guard_survives_chdir(self, tmp_path, monkeypatch, method):
+        # The source path is resolved at load() time, so os.chdir() (or %cd in a
+        # notebook) can't turn the guard off.
+        (tmp_path / "data").mkdir()
+        (tmp_path / "reports").mkdir()
+        src = tmp_path / "data" / "cities.csv"
+        src.write_text(CITIES_CSV, encoding="utf-8")
+        monkeypatch.chdir(tmp_path / "data")
+        g = GeoEngine(verbose=False).load("cities.csv")     # a relative path
+        monkeypatch.chdir(tmp_path / "reports")
+        assert_refused(g, method, src)
+        assert_refused(g, method, os.path.join("..", "data", "cities.csv"))
+        assert_refused(g.filter("name", "Delhi"), method, src)
+        assert src.read_text(encoding="utf-8") == CITIES_CSV
+
+    def test_same_name_in_another_directory_after_chdir_is_allowed(self, tmp_path, monkeypatch):
+        (tmp_path / "data").mkdir()
+        (tmp_path / "reports").mkdir()
+        src = tmp_path / "data" / "cities.csv"
+        src.write_text(CITIES_CSV, encoding="utf-8")
+        monkeypatch.chdir(tmp_path / "data")
+        g = GeoEngine(verbose=False).load("cities.csv")
+        monkeypatch.chdir(tmp_path / "reports")
+        g.map("cities.csv")      # reports/cities.csv is a different file
+        assert (tmp_path / "reports" / "cities.csv").read_text(encoding="utf-8").startswith("<!DOCTYPE")
+        assert src.read_text(encoding="utf-8") == CITIES_CSV
 
     def test_guard_message_names_the_path(self, loaded, csv_file):
         with pytest.raises(InvalidArgumentError) as info:
@@ -582,6 +614,40 @@ class TestCsvSafe:
         data = json.loads(out.read_text(encoding="utf-8"))
         assert data["features"][0]["properties"]["value"] == "=1+1"
 
+    HEADER_FORMULAS = {
+        '=HYPERLINK("http://evil.example","Click")': "x",
+        "@SUM(A1)": 1,
+        "+cmd": 2,
+        "-cmd": 3,
+    }
+
+    @pytest.mark.parametrize("ext, delimiter", [(".csv", ","), (".tsv", "\t")])
+    def test_header_cells_escaped(self, tmp_path, ext, delimiter):
+        # Property names become header cells, which a spreadsheet evaluates too.
+        g = GeoEngine(verbose=False).add_point(1, 2, name="=x", **self.HEADER_FORMULAS)
+        out = tmp_path / ("safe" + ext)
+        g.save(out, csv_safe=True)
+        with open(out, newline="", encoding="utf-8") as fh:
+            header = next(csv.reader(fh, delimiter=delimiter))
+        assert header == ["latitude", "longitude", "name"] + ["'" + k for k in self.HEADER_FORMULAS]
+        row, = read_rows(out, delimiter)
+        assert row["name"] == "'=x"
+        assert [row["'" + k] for k in self.HEADER_FORMULAS] == ["x", "1", "2", "3"]
+
+    def test_numeric_and_plain_header_cells_untouched(self, tmp_path):
+        g = GeoEngine(verbose=False).add_point(1, 2, **{"-5": "a", "a=b": "c", "geometry_id": 7})
+        out = tmp_path / "safe.csv"
+        g.save(out, csv_safe=True)
+        with open(out, newline="", encoding="utf-8") as fh:
+            assert next(csv.reader(fh)) == ["latitude", "longitude", "-5", "a=b", "geometry_id"]
+
+    def test_header_raw_without_csv_safe(self, tmp_path):
+        g = GeoEngine(verbose=False).add_point(1, 2, **self.HEADER_FORMULAS)
+        out = tmp_path / "raw.csv"
+        g.save(out)
+        with open(out, newline="", encoding="utf-8") as fh:
+            assert next(csv.reader(fh)) == ["latitude", "longitude", *self.HEADER_FORMULAS]
+
     def test_escaped_file_reloads(self, tmp_path):
         out = tmp_path / "safe.csv"
         text_engine(["=1+1", "-5"]).save(out, csv_safe=True)
@@ -844,3 +910,262 @@ class TestImageOptions:
     def test_bad_options_rejected(self, loaded, kwargs):
         with pytest.raises(InvalidArgumentError):
             loaded.to_svg(**kwargs)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# "view it with: qoregeo serve …" hint and map() docs
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Names that broke the printed command in bash (finding: unquoted ( ) ' & ; $ `).
+SHELL_NAMES = ["sales(2026).html", "it's.html", "a b.html", "a&b;c|d.html", "$HOME.html",
+               "x`id`.html", 'say "hi".html', "#tag.html", "~tilde.html", "bang!.html"]
+
+
+def posix_words(cmd: str) -> list[str]:
+    """Split like sh: ( ) ; & | < > are operators and # starts a comment."""
+    lexer = shlex.shlex(cmd, posix=True, punctuation_chars=True)
+    lexer.whitespace_split = True
+    return list(lexer)
+
+
+def posix_expands(cmd: str) -> bool:
+    """True if sh would expand a $, ` or ! in ``cmd`` (one outside single quotes)."""
+    single = double = False
+    i = 0
+    while i < len(cmd):
+        ch = cmd[i]
+        if single:
+            single = ch != "'"
+        elif ch == "\\":
+            i += 1
+        elif ch == "'" and not double:
+            single = True
+        elif ch == '"':
+            double = not double
+        elif ch in "$`!":
+            return True
+        i += 1
+    return False
+
+
+class TestViewHint:
+    @pytest.mark.parametrize("name", SHELL_NAMES)
+    def test_printed_command_pastes_into_a_shell(self, tmp_path, monkeypatch, capsys, name):
+        if os.name == "nt" and '"' in name:
+            pytest.skip("not a valid Windows file name")
+        monkeypatch.chdir(tmp_path)
+        GeoEngine(verbose=True).add_point(1, 2).map(name)
+        cmd = capsys.readouterr().out.split("view it with: ", 1)[1].strip()
+        assert cmd.startswith("qoregeo serve ")
+        if os.name != "nt":   # POSIX shell syntax
+            assert posix_words(cmd) == ["qoregeo", "serve", name]
+            assert not posix_expands(cmd)
+        else:
+            assert cmd == f'qoregeo serve "{name}"'
+
+    @pytest.mark.parametrize("name", ["map.html", "out/m.html", "C:/maps/m-1_v2.html", "a+b=c@d,e%.html"])
+    def test_plain_names_unquoted(self, name):
+        assert qutils._shell_quote(name) == name
+
+    def test_leading_dash_is_not_an_option(self):
+        assert qutils._shell_quote("-v.html") == os.path.join(os.curdir, "-v.html")
+
+    def test_heatmap_hint_quoted_too(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        GeoEngine(verbose=True).add_point(1, 2).heatmap("heat (1).html")
+        assert 'qoregeo serve "heat (1).html"' in capsys.readouterr().out
+
+    def test_no_hint_for_tiles_that_work_from_disk(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        GeoEngine(verbose=True).add_point(1, 2).map("t (1).html", tiles="topo")
+        assert "qoregeo serve" not in capsys.readouterr().out
+
+
+class TestMapDocstring:
+    def test_presets_said_to_work_from_disk_really_do(self):
+        doc = " ".join((GeoEngine.map.__doc__ or "").split())
+        found = re.search(r"\(or pick (.*?), which also work when opened from disk\)", doc)
+        assert found, "map() should say which basemaps work from disk"
+        names = re.findall(r"'([a-z-]+)'", found.group(1))
+        assert {"topo", "satellite", "none"} <= set(names)
+        assert "humanitarian" not in names
+        for name in names:
+            assert _tiles_config(name)["needsReferer"] is False, name
+
+    def test_tiles_list_includes_satellite(self):
+        doc = " ".join((GeoEngine.map.__doc__ or "").split())
+        tiles = doc.split("tiles :", 1)[1].split("overlays :", 1)[0]
+        assert "'satellite'" in tiles and "'humanitarian'" in tiles
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# intersects(): poles, the antimeridian seam, invalid polygons, scaling
+# ─────────────────────────────────────────────────────────────────────────────
+
+HOLE = [[1, 1], [2, 1], [2, 2], [1, 2], [1, 1]]
+
+
+class TestIntersectsPoles:
+    """Buffers are exact discs: shapes in the polar part of a disc intersect it."""
+
+    def test_buffer_centred_on_north_pole(self, geo):
+        zone = geo.buffer((90, 0), 500)
+        assert geo.point_in_polygon((89.2, 0.5), zone)
+        assert geo.intersects(zone, square(0, 89, 1, 89.5)) is True
+        assert geo.intersects(zone, line((10, 89.5), (20, 89.5))) is True
+        assert geo.intersects(zone, {"type": "MultiPoint", "coordinates": [[100, 86]]}) is True
+        assert geo.intersects(zone, square(0, 80, 1, 85)) is False   # ≥ 556 km from the pole
+
+    def test_disc_containing_the_pole(self, geo):
+        helsinki = (60.17, 24.94)
+        zone = geo.buffer(helsinki, 4000)      # reaches over the North Pole
+        assert 3600 < geo.distance(helsinki, (85, -100)) < 4000
+        assert geo.intersects(zone, square(-100, 85, -99, 86)) is True
+        assert geo.intersects(zone, line((-150, 86), (-140, 86))) is True
+        assert geo.intersects(square(-100, 85, -99, 86), zone) is True
+        assert geo.intersects(zone, square(-100, 20, -99, 21)) is False   # Mexico
+
+    def test_south_pole(self, geo):
+        zone = geo.buffer((-90, 0), 300)
+        assert geo.intersects(zone, square(-60, -89.6, -59.8, -89.4)) is True
+        assert geo.intersects(zone, square(-60, -80, -59, -79)) is False
+
+    def test_buffer_covering_both_poles(self, geo):
+        zone = geo.buffer((0, 0), 12000)
+        assert geo.intersects(zone, square(100, 80, 101, 81)) is True    # over the pole
+        assert geo.intersects(zone, square(-120, -85, -119, -84)) is True
+        assert geo.intersects(zone, square(170, -1, 171, 1)) is False    # near the antipode
+
+    def test_long_edges_are_straight_in_lng_lat(self, geo):
+        # An edge from (0, 89) to (180, 89) runs along the 89th parallel
+        # (111 km from the pole), as point_in_polygon() reads it — not over the pole.
+        assert geo.intersects(geo.buffer((90, 0), 100), line((0, 89), (180, 89))) is False
+        assert geo.intersects(geo.buffer((90, 0), 112), line((0, 89), (180, 89))) is True
+
+    def test_circle_edge_is_exact_between_vertices(self, geo):
+        zone = geo.buffer((0, 0), 100)         # 100 km ≈ 0.8993° of latitude
+        assert geo.intersects(zone, line((-10, 0.89), (10, 0.89))) is True
+        assert geo.intersects(zone, line((-10, 0.91), (10, 0.91))) is False
+
+    def test_agrees_with_point_tests_for_polar_buffers(self):
+        g = GeoEngine(verbose=False)
+        for lat in (80, 84, 86, 88, 89.5):
+            for lng in range(-180, 180, 30):
+                g.add_point(lat, lng)
+        for center, radius in [((90, 0), 500), ((60.17, 24.94), 4000), ((89.5, 0), 200)]:
+            zone = g.buffer(center, radius)
+            assert g.filter_intersects(zone).count() == g.filter_by_polygon(zone).count() > 0
+
+
+class TestIntersectsAntimeridianSeam:
+    @pytest.mark.parametrize("a, b", [
+        (point(180, 0), point(-180, 0)),
+        (square(170, -5, 180, 5), square(-180, -5, -170, 5)),
+        (square(170, -5, 180, 5), point(-180, 0)),
+        (line((175, 0), (180, 0)), line((-180, 0), (-175, 0))),
+        (line((175, 1), (180, 1)), square(-180, 0, -170, 2)),
+    ], ids=["points", "polygons", "polygon-point", "lines", "line-polygon"])
+    def test_shapes_meeting_on_the_antimeridian(self, geo, a, b):
+        assert geo.intersects(a, b) is True
+        assert geo.intersects(b, a) is True
+
+    def test_seam_neighbours_that_do_not_touch(self, geo):
+        assert geo.intersects(square(170, -5, 180, 5), square(-180, 6, -170, 10)) is False
+        assert geo.intersects(point(180, 0), point(-180, 1)) is False
+
+    def test_filter_intersects_on_the_seam(self):
+        g = GeoEngine(verbose=False).load_data([
+            feature(square(-180, -5, -170, 5), name="east half"),
+            feature(point(-180, 0), name="seam point"),
+            feature(point(-175, 0), name="inside east half"),
+        ])
+        names = [f["properties"]["name"] for f in g.filter_intersects(square(170, -5, 180, 5))]
+        assert names == ["east half", "seam point"]
+
+
+class TestIntersectsInvalidPolygons:
+    @pytest.mark.parametrize("bad", [
+        {"type": "Polygon", "coordinates": [[], HOLE]},
+        {"type": "MultiPolygon", "coordinates": [[[], HOLE]]},
+    ], ids=["polygon", "multipolygon"])
+    def test_holes_without_exterior_rejected(self, geo, bad):
+        # The hole used to be promoted to the exterior, so a point *in the hole* matched.
+        with pytest.raises(InvalidArgumentError) as info:
+            geo.intersects(bad, point(1.5, 1.5))
+        assert "empty exterior ring" in str(info.value)
+        with pytest.raises(InvalidBufferError):      # point_in_polygon agrees
+            geo.point_in_polygon((1.5, 1.5), bad)
+
+    def test_empty_polygon_is_still_empty(self, geo):
+        assert geo.intersects({"type": "Polygon", "coordinates": [[]]}, point(0, 0)) is False
+        assert geo.intersects({"type": "Polygon", "coordinates": []}, point(0, 0)) is False
+
+    def test_load_skips_hole_without_exterior(self):
+        with pytest.warns(UserWarning, match="empty exterior ring"):
+            g = GeoEngine(verbose=False).load_data([
+                feature({"type": "Polygon", "coordinates": [[], HOLE]}), feature(point(0, 0))])
+        assert g.count() == 1
+
+
+def zigzag(n: int, y: float, amplitude: float = 0.001) -> dict[str, Any]:
+    return line(*[(-5 + 10 * i / n, y + (amplitude if i % 2 else -amplitude)) for i in range(n)])
+
+
+def ring_polygon(n: int, cx: float, cy: float, r: float) -> dict[str, Any]:
+    ring = [[cx + r * math.cos(2 * math.pi * k / n) * (1 + 0.2 * math.sin(14 * math.pi * k / n)),
+             cy + r * math.sin(2 * math.pi * k / n)] for k in range(n)]
+    return {"type": "Polygon", "coordinates": [ring + [ring[0]]]}
+
+
+class CallCounter:
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+        self.calls = 0
+        original = getattr(qutils, name)
+
+        def counting(*args: Any) -> Any:
+            self.calls += 1
+            return original(*args)
+
+        monkeypatch.setattr(qutils, name, counting)
+
+
+class TestIntersectsScaling:
+    """Edge pairs are pruned by bounding boxes (these used to be O(n·m))."""
+
+    def test_parallel_lines_compare_few_edge_pairs(self, geo, monkeypatch):
+        n = 3000
+        counter = CallCounter(monkeypatch, "_segments_intersect")
+        assert geo.intersects(zigzag(n, 0.0), zigzag(n, 0.01)) is False
+        assert counter.calls < 10 * n            # was n² = 9,000,000
+        assert geo.intersects(zigzag(n, 0.0), line((1e-4, -1), (1e-4, 1))) is True   # still found
+
+    def test_far_apart_shapes_need_no_edge_tests(self, geo, monkeypatch):
+        counter = CallCounter(monkeypatch, "_segments_intersect")
+        a, b = ring_polygon(3000, 0, 0, 1), ring_polygon(3000, 5, 0, 1)
+        assert geo.intersects(a, b) is False
+        assert counter.calls == 0
+
+    def test_circle_far_from_a_long_line_needs_no_distance_tests(self, geo, monkeypatch):
+        counter = CallCounter(monkeypatch, "_arc_distance_km")
+        river = zigzag(20000, 3.0, amplitude=0.5)
+        assert geo.intersects(geo.buffer((0, 0), 100), river) is False
+        assert counter.calls == 0
+        assert geo.intersects(geo.buffer((3, 0), 100), river) is True
+
+    def test_filter_intersects_prepares_the_query_once(self, monkeypatch):
+        built: list[int] = []
+        original = qutils._PolygonIndex
+
+        class Counting(original):  # type: ignore[misc, valid-type]
+            def __init__(self, rings: Any) -> None:
+                built.append(len(rings[0]))
+                super().__init__(rings)
+
+        monkeypatch.setattr(qutils, "_PolygonIndex", Counting)
+        g = GeoEngine(verbose=False)
+        for i in range(400):
+            g.add_point(-2 + (i % 20) * 0.2, -2 + (i // 20) * 0.2, i=i)
+        zone = ring_polygon(1000, 0, 0, 1.5)
+        hits = g.filter_intersects(zone)
+        assert built == [1001]                    # one index for the query, not one per feature
+        assert hits.count() == g.filter_by_polygon(zone).count() > 0
