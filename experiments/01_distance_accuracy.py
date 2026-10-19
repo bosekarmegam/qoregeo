@@ -42,19 +42,18 @@ import statistics
 import sys
 import time
 import warnings
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
-
-import numpy as np
+from typing import Any
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+from geographiclib.geodesic import Geodesic  # noqa: E402
 from matplotlib.colors import LogNorm  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
-
-from geographiclib.geodesic import Geodesic  # noqa: E402
 
 import qoregeo  # noqa: E402
 from qoregeo import GeoEngine  # noqa: E402
@@ -198,7 +197,7 @@ def err_stats(est: np.ndarray, ref: np.ndarray) -> dict[str, Any]:
 
 
 def angle_stats(est: np.ndarray, ref: np.ndarray) -> dict[str, Any]:
-    d = np.array([_angle_diff(a, b) for a, b in zip(est, ref)], dtype=float)
+    d = np.array([_angle_diff(a, b) for a, b in zip(est, ref, strict=True)], dtype=float)
     d = d[np.isfinite(d)]
     return {"n": int(d.size), "abs_deg": _pct(np.abs(d))}
 
@@ -290,6 +289,43 @@ def summarize(meas: dict[str, Any], with_bearing: bool = True) -> dict[str, Any]
 
 # Sections
 
+def haversine_theory() -> dict[str, Any]:
+    """Local relative error of a sphere of radius R against WGS-84 for short paths.
+
+    A short north-south step is scaled by R / M(lat) and an east-west step by
+    R / N(lat), where M and N are the meridian and prime vertical radii of
+    curvature. Their extremes bound the haversine error for short distances.
+    """
+    a, f = qutils.WGS84_A, qutils.WGS84_F
+    e2 = f * (2 - f)
+    r = qutils.EARTH_RADIUS_M
+
+    def m_rad(lat: float) -> float:
+        return a * (1 - e2) / (1 - e2 * math.sin(math.radians(lat)) ** 2) ** 1.5
+
+    def n_rad(lat: float) -> float:
+        return a / math.sqrt(1 - e2 * math.sin(math.radians(lat)) ** 2)
+
+    return {
+        "north_south_at_equator_pct": (r / m_rad(0.0) - 1) * 100,
+        "east_west_at_equator_pct": (r / n_rad(0.0) - 1) * 100,
+        "any_direction_at_pole_pct": (r / m_rad(90.0) - 1) * 100,
+        "zero_error_lat_north_south_deg": _bisect_zero(lambda x: r / m_rad(x) - 1, 0.0, 90.0),
+        "note": "short-path bounds: the sphere overestimates north-south steps near the equator "
+                "and underestimates every step near the poles",
+    }
+
+
+def _bisect_zero(fn: Callable[[float], float], lo: float, hi: float) -> float:
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if (fn(lo) > 0) == (fn(mid) > 0):
+            lo = mid
+        else:
+            hi = mid
+    return 0.5 * (lo + hi)
+
+
 def run_uniform(geo: GeoEngine, seed: int, n: int) -> tuple[dict[str, Any], dict[str, Any], list]:
     rng = _rng(seed, "uniform")
     pairs = [(_uniform_point(rng), _uniform_point(rng)) for _ in range(n)]
@@ -316,7 +352,7 @@ def run_classes(geo: GeoEngine, seed: int, n: int) -> tuple[dict[str, Any], dict
     meas = measure_pairs(geo, pairs)
     meas["cls"] = np.array(cls)
     out: dict[str, Any] = {}
-    for ci, (name, lo, hi) in enumerate(CLASSES):
+    for ci, (name, _lo, _hi) in enumerate(CLASSES):
         sel = meas["cls"] == ci
         sub = {k: (v[sel] if isinstance(v, np.ndarray) else v) for k, v in meas.items()}
         sub["exceptions"] = {}
@@ -551,7 +587,7 @@ def run_destination(geo: GeoEngine, seed: int, n: int, class_pairs: list, class_
 
     # Round trip through the public API: distance + bearing, then destination.
     ref = class_meas["ref"]
-    for ci, (name, lo, hi) in enumerate(CLASSES):
+    for ci, (name, _lo, _hi) in enumerate(CLASSES):
         sel = np.flatnonzero(class_meas["cls"] == ci)[:n_rt]
         e_pub, e_raw, dist = [], [], []
         for i in sel:
@@ -602,7 +638,7 @@ def run_length(geo: GeoEngine, seed: int, n: int, max_v: int) -> dict[str, Any]:
                     az = d["azi2"] + rng.gauss(0.0, 30.0)
                     pts.append((lat, lng))
                 total = sum(W.Inverse(p[0], p[1], q[0], q[1], Geodesic.DISTANCE)["s12"]
-                            for p, q in zip(pts, pts[1:]))
+                            for p, q in zip(pts, pts[1:], strict=False))
                 ref.append(total)
                 hav.append(geo.length(pts, unit="m"))
                 vin.append(geo.length(pts, unit="m", method="vincenty"))
@@ -626,7 +662,8 @@ def run_length(geo: GeoEngine, seed: int, n: int, max_v: int) -> dict[str, Any]:
 def run_context(geo: GeoEngine, uniform_meas: dict[str, Any], pairs: list, n: int) -> dict[str, Any]:
     import geopy.distance as gd
     import haversine as hv
-    from haversine import haversine as hv_fn, Unit
+    from haversine import Unit
+    from haversine import haversine as hv_fn
     from pyproj import Geod
 
     pairs = pairs[:n]
@@ -682,7 +719,8 @@ def run_context(geo: GeoEngine, uniform_meas: dict[str, Any], pairs: list, n: in
 
 def run_timing(geo: GeoEngine, pairs: list, fallback_pairs: list, repeats: int) -> dict[str, Any]:
     import geopy.distance as gd
-    from haversine import haversine as hv_fn, Unit
+    from haversine import Unit
+    from haversine import haversine as hv_fn
     from pyproj import Geod
 
     geod = Geod(ellps="WGS84")
@@ -747,7 +785,7 @@ def run_doc_claims(geo: GeoEngine, results: dict[str, Any]) -> list[dict[str, An
     delhi, mumbai, jaipur = (28.6139, 77.2090), (19.0760, 72.8777), (26.9124, 75.7873)
     ref_dm = W.Inverse(*delhi, *mumbai)
     route = [delhi, jaipur, mumbai]
-    ref_route = sum(W.Inverse(*p, *q)["s12"] for p, q in zip(route, route[1:]))
+    ref_route = sum(W.Inverse(*p, *q)["s12"] for p, q in zip(route, route[1:], strict=False))
 
     all_hav = [results["uniform_random"]["haversine"]["rel_pct"]["max"]]
     all_hav += [c["haversine"]["rel_pct"]["max"] for k, c in results["distance_classes"].items()
@@ -941,7 +979,7 @@ def fig_antipodal(grid_data: dict[str, Any]) -> str:
     step = offs[1] - offs[0]
     ext = (offs[0] - step / 2, offs[-1] + step / 2, offs[0] - step / 2, offs[-1] + step / 2)
     im = None
-    for ax, (lat0, (err, fbm)) in zip(axes, grids.items()):
+    for ax, (lat0, (err, fbm)) in zip(axes, grids.items(), strict=True):
         im = ax.imshow(np.clip(err, 1e-5, None), origin="lower", extent=ext, cmap=cmap, norm=norm,
                        interpolation="nearest", aspect="equal")
         if fbm.any() and not fbm.all():
@@ -987,6 +1025,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[{mode}] poles and antimeridian", flush=True)
     results["poles_antimeridian"] = run_poles_antimeridian(geo, args.seed, sz["pole_random"],
                                                            sz["antimeridian_random"])
+
+    results["haversine_theory"] = haversine_theory()
 
     results["bearing"] = {
         "uniform_random": results["uniform_random"]["bearing_vs_geodesic_azimuth"],

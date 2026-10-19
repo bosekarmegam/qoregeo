@@ -1135,6 +1135,83 @@ z
     </g>
    </g>
    <g id="text_16">
+    <!-- all four sizes coincide -->
+    <g style="fill: #52514e" transform="translate(215.069559 42.183043) scale(0.075 -0.075)">
+     <defs>
+      <path id="Inter-Regular-288" d="M 2119 3494 
+L 1313 3494 
+L 1313 3834 
+C 1313 4172 1463 4353 1809 4353 
+C 1966 4353 2053 4319 2113 4300 
+L 2269 4781 
+C 2184 4819 2009 4875 1744 4875 
+C 1234 4875 750 4566 750 3959 
+L 750 3494 
+L 63 3494 
+L 63 3013 
+L 750 3013 
+L 750 0 
+L 1313 0 
+L 1313 3013 
+L 2119 3013 
+L 2119 3494 
+z
+" transform="scale(0.015625)"/>
+      <path id="Inter-Regular-400" d="M 394 0 
+L 3141 0 
+L 3141 522 
+L 1175 522 
+L 1175 556 
+L 3078 3047 
+L 3078 3494 
+L 456 3494 
+L 456 2972 
+L 2353 2972 
+L 2353 2938 
+L 394 419 
+L 394 0 
+z
+" transform="scale(0.015625)"/>
+      <path id="Inter-Regular-24b" d="M 1916 -75 
+C 2600 -75 3156 297 3344 919 
+L 2806 1072 
+C 2703 694 2384 428 1916 428 
+C 1219 428 897 1038 897 1725 
+C 897 2422 1219 3034 1916 3034 
+C 2375 3034 2688 2778 2791 2419 
+L 3331 2572 
+C 3141 3181 2591 3538 1916 3538 
+C 966 3538 325 2819 325 1725 
+C 325 647 966 -75 1916 -75 
+z
+" transform="scale(0.015625)"/>
+     </defs>
+     <use xlink:href="#Inter-Regular-1fc"/>
+     <use xlink:href="#Inter-Regular-2e2" transform="translate(56.15625 0)"/>
+     <use xlink:href="#Inter-Regular-2e2" transform="translate(80.375 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(104.59375 0)"/>
+     <use xlink:href="#Inter-Regular-288" transform="translate(132.71875 0)"/>
+     <use xlink:href="#Inter-Regular-318" transform="translate(166.8125 0)"/>
+     <use xlink:href="#Inter-Regular-395" transform="translate(226.78125 0)"/>
+     <use xlink:href="#Inter-Regular-356" transform="translate(285.90625 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(323.546875 0)"/>
+     <use xlink:href="#Inter-Regular-369" transform="translate(351.671875 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(404.453125 0)"/>
+     <use xlink:href="#Inter-Regular-400" transform="translate(428.671875 0)"/>
+     <use xlink:href="#Inter-Regular-267" transform="translate(482.421875 0)"/>
+     <use xlink:href="#Inter-Regular-369" transform="translate(540.71875 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(593.5 0)"/>
+     <use xlink:href="#Inter-Regular-24b" transform="translate(621.625 0)"/>
+     <use xlink:href="#Inter-Regular-318" transform="translate(678.75 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(738.71875 0)"/>
+     <use xlink:href="#Inter-Regular-307" transform="translate(762.9375 0)"/>
+     <use xlink:href="#Inter-Regular-24b" transform="translate(822.015625 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(879.140625 0)"/>
+     <use xlink:href="#Inter-Regular-256" transform="translate(903.359375 0)"/>
+     <use xlink:href="#Inter-Regular-267" transform="translate(964.59375 0)"/>
+    </g>
+   </g>
+   <g id="text_17">
     <!-- Along a meridian -->
     <g style="fill: #0b0b0b" transform="translate(55.904609 20.003125) scale(0.095 -0.095)">
      <defs>
@@ -1224,7 +1301,7 @@ L 317.702305 26.003125
        <use xlink:href="#m8f78f0a050" x="317.702305" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_17">
+     <g id="text_18">
       <!-- 0 -->
       <g style="fill: #52514e" transform="translate(314.547617 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-53f"/>
@@ -1242,7 +1319,7 @@ L 357.909421 26.003125
        <use xlink:href="#m8f78f0a050" x="357.909421" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_18">
+     <g id="text_19">
       <!-- 15 -->
       <g style="fill: #52514e" transform="translate(352.835983 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-540"/>
@@ -1261,7 +1338,7 @@ L 398.116536 26.003125
        <use xlink:href="#m8f78f0a050" x="398.116536" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_19">
+     <g id="text_20">
       <!-- 30 -->
       <g style="fill: #52514e" transform="translate(391.873568 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-543"/>
@@ -1280,7 +1357,7 @@ L 438.323652 26.003125
        <use xlink:href="#m8f78f0a050" x="438.323652" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_20">
+     <g id="text_21">
       <!-- 45 -->
       <g style="fill: #52514e" transform="translate(432.054121 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-544"/>
@@ -1299,7 +1376,7 @@ L 478.530768 26.003125
        <use xlink:href="#m8f78f0a050" x="478.530768" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_21">
+     <g id="text_22">
       <!-- 60 -->
       <g style="fill: #52514e" transform="translate(472.275299 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-547"/>
@@ -1318,7 +1395,7 @@ L 518.737884 26.003125
        <use xlink:href="#m8f78f0a050" x="518.737884" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_22">
+     <g id="text_23">
       <!-- 75 -->
       <g style="fill: #52514e" transform="translate(512.91679 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-548"/>
@@ -1337,7 +1414,7 @@ L 558.945 26.003125
        <use xlink:href="#m8f78f0a050" x="558.945" y="185.840781" style="fill: #52514e; stroke: #52514e; stroke-width: 0.8"/>
       </g>
      </g>
-     <g id="text_23">
+     <g id="text_24">
       <!-- 90 -->
       <g style="fill: #52514e" transform="translate(552.689531 202.528281) scale(0.1 -0.1)">
        <use xlink:href="#Inter-Regular-54a"/>
@@ -1345,7 +1422,7 @@ L 558.945 26.003125
       </g>
      </g>
     </g>
-    <g id="text_24">
+    <g id="text_25">
      <!-- Latitude (degrees) -->
      <g style="fill: #0b0b0b" transform="translate(394.965059 218.627891) scale(0.1 -0.1)">
       <use xlink:href="#Inter-Regular-11a"/>
@@ -1568,7 +1645,35 @@ L 545.542628 178.20813
      <use xlink:href="#mcd7c1ed431" x="545.542628" y="178.20813" style="fill: #eda100; stroke: #ffffff; stroke-width: 0.6; stroke-linejoin: miter"/>
     </g>
    </g>
-   <g id="text_25">
+   <g id="text_26">
+    <!-- all four sizes coincide -->
+    <g style="fill: #52514e" transform="translate(476.867254 42.183043) scale(0.075 -0.075)">
+     <use xlink:href="#Inter-Regular-1fc"/>
+     <use xlink:href="#Inter-Regular-2e2" transform="translate(56.15625 0)"/>
+     <use xlink:href="#Inter-Regular-2e2" transform="translate(80.375 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(104.59375 0)"/>
+     <use xlink:href="#Inter-Regular-288" transform="translate(132.71875 0)"/>
+     <use xlink:href="#Inter-Regular-318" transform="translate(166.8125 0)"/>
+     <use xlink:href="#Inter-Regular-395" transform="translate(226.78125 0)"/>
+     <use xlink:href="#Inter-Regular-356" transform="translate(285.90625 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(323.546875 0)"/>
+     <use xlink:href="#Inter-Regular-369" transform="translate(351.671875 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(404.453125 0)"/>
+     <use xlink:href="#Inter-Regular-400" transform="translate(428.671875 0)"/>
+     <use xlink:href="#Inter-Regular-267" transform="translate(482.421875 0)"/>
+     <use xlink:href="#Inter-Regular-369" transform="translate(540.71875 0)"/>
+     <use xlink:href="#Inter-Regular-6eb" transform="translate(593.5 0)"/>
+     <use xlink:href="#Inter-Regular-24b" transform="translate(621.625 0)"/>
+     <use xlink:href="#Inter-Regular-318" transform="translate(678.75 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(738.71875 0)"/>
+     <use xlink:href="#Inter-Regular-307" transform="translate(762.9375 0)"/>
+     <use xlink:href="#Inter-Regular-24b" transform="translate(822.015625 0)"/>
+     <use xlink:href="#Inter-Regular-2b2" transform="translate(879.140625 0)"/>
+     <use xlink:href="#Inter-Regular-256" transform="translate(903.359375 0)"/>
+     <use xlink:href="#Inter-Regular-267" transform="translate(964.59375 0)"/>
+    </g>
+   </g>
+   <g id="text_27">
     <!-- Along a parallel -->
     <g style="fill: #0b0b0b" transform="translate(317.702305 20.003125) scale(0.095 -0.095)">
      <defs>
@@ -1612,7 +1717,7 @@ z
     </g>
    </g>
   </g>
-  <g id="text_26">
+  <g id="text_28">
    <!-- qoregeo 1.1.0 -->
    <g style="fill: #52514e" transform="translate(527.062969 248.930918) scale(0.075 -0.075)">
     <defs>
@@ -1659,7 +1764,7 @@ L 110.30625 240.070312
 L 118.30625 240.070312 
 " style="fill: none; stroke-dasharray: 4.4,2.75; stroke-dashoffset: 0; stroke: #52514e; stroke-width: 1.1"/>
    </g>
-   <g id="text_27">
+   <g id="text_29">
     <!-- theory R/M - 1 and R/N - 1 -->
     <g transform="translate(124.70625 242.870313) scale(0.08 -0.08)">
      <defs>
@@ -1792,7 +1897,7 @@ L 254.19875 240.070312
      <use xlink:href="#mb45eba2246" x="246.19875" y="240.070312" style="fill: #2a78d6; stroke: #ffffff; stroke-width: 0.6"/>
     </g>
    </g>
-   <g id="text_28">
+   <g id="text_30">
     <!-- 1 km -->
     <g transform="translate(260.59875 242.870313) scale(0.08 -0.08)">
      <defs>
@@ -1828,7 +1933,7 @@ L 309.50125 240.070312
      <use xlink:href="#mac2151fc87" x="301.50125" y="240.070312" style="fill: #eb6834; stroke: #ffffff; stroke-width: 0.6; stroke-linejoin: miter"/>
     </g>
    </g>
-   <g id="text_29">
+   <g id="text_31">
     <!-- 10 km -->
     <g transform="translate(315.90125 242.870313) scale(0.08 -0.08)">
      <use xlink:href="#Inter-Regular-540"/>
@@ -1847,7 +1952,7 @@ L 369.85125 240.070312
      <use xlink:href="#me32a523eb1" x="361.85125" y="240.070312" style="fill: #1baf7a; stroke: #ffffff; stroke-width: 0.6; stroke-linejoin: miter"/>
     </g>
    </g>
-   <g id="text_30">
+   <g id="text_32">
     <!-- 100 km -->
     <g transform="translate(376.25125 242.870313) scale(0.08 -0.08)">
      <use xlink:href="#Inter-Regular-540"/>
@@ -1867,7 +1972,7 @@ L 435.24875 240.070312
      <use xlink:href="#mcd7c1ed431" x="427.24875" y="240.070312" style="fill: #eda100; stroke: #ffffff; stroke-width: 0.6; stroke-linejoin: miter"/>
     </g>
    </g>
-   <g id="text_31">
+   <g id="text_33">
     <!-- 1000 km -->
     <g transform="translate(441.64875 242.870313) scale(0.08 -0.08)">
      <use xlink:href="#Inter-Regular-540"/>

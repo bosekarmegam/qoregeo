@@ -534,6 +534,12 @@ def run_timing(repeats: int) -> dict[str, Any]:
 
 # Tables and claim checks
 
+def size_spread(rows: list[dict[str, Any]], size_key: str) -> float:
+    """Largest gap, in percentage points, between the 1,000 km and 1 km errors at one latitude."""
+    by = {(r["lat"], r[size_key]): r["error_pct"] for r in rows if not r.get("contains_pole")}
+    return max(abs(by[(lat, 1000.0)] - by[(lat, 1.0)]) for lat, s in by if s == 1000.0 and (lat, 1.0) in by)
+
+
 def table(rows: list[dict[str, Any]], size_key: str, value_key: str = "error_pct") -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {}
     for r in rows:
@@ -644,11 +650,16 @@ def fig_area(squares: list[dict[str, Any]], circles: list[dict[str, Any]], rando
                     alpha=0.55, linewidths=0, zorder=3, label="random polygon")
     axes[0].set_ylabel("Area error vs WGS84 (%)")
     axes[0].set_ylim(-1.0, 0.6)
+    for ax in axes[:2]:
+        ax.text(2, -0.97, "1 to 100 km lines coincide", fontsize=7.5, color=INK2, va="bottom")
     handles, labels = axes[0].get_legend_handles_labels()
     h2, l2 = axes[2].get_legend_handles_labels()
     band = plt.Rectangle((0, 0), 1, 1, color=BAND)
-    fig.legend(handles + [h2[-1], band], labels + [l2[-1], "SKILL.md claim (0.5 % to 55°, 0.9 % above)"],
-               loc="lower center", ncol=4, fontsize=8, bbox_to_anchor=(0.5, 0.0))
+    # The legend fills column by column; this order reads row by row, sizes first.
+    order_h = [handles[1], handles[0], handles[2], h2[-1], handles[3], band, handles[4]]
+    order_l = [labels[1], labels[0], labels[2], l2[-1], labels[3],
+               "SKILL.md claim (0.5 % to 55°, 0.9 % above)", labels[4]]
+    fig.legend(order_h, order_l, loc="lower center", ncol=4, fontsize=8, bbox_to_anchor=(0.5, 0.0))
     fig.tight_layout(rect=(0, 0.13, 1, 1))
     _note(fig)
     return _save(fig, "latitude")
@@ -668,6 +679,8 @@ def fig_length(lengths: dict[str, list[dict[str, Any]]], sizes: list[float]) -> 
         ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
         ax.set_xlabel("Latitude (degrees)")
     axes[0].set_ylabel("length() haversine error vs WGS84 (%)")
+    for ax in axes:
+        ax.text(88, 0.55, "all four sizes coincide", fontsize=7.5, color=INK2, ha="right", va="top")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=5, fontsize=8, bbox_to_anchor=(0.5, 0.0))
     fig.tight_layout(rect=(0, 0.08, 1, 1))
@@ -685,18 +698,21 @@ def fig_buffer(buffers: list[dict[str, Any]], radii: list[float]) -> str:
                 marker=MARKERS[i], markersize=4.5, linewidth=1.6, label=f"r = {r_km:g} km", zorder=3,
                 markeredgecolor="white", markeredgewidth=0.6)
     ax.set_title("area(buffer) vs WGS84 geodesic circle", fontsize=9.5, color=INK, loc="left")
-    ax.set_ylabel("Error (%)")
+    ax.set_ylabel("Area error (%)")
+    small = max(abs(b["area_error_pct"]) for b in buffers if b["radius_km"] <= 100)
+    ax.text(88, 0.0001, f"r ≤ 100 km: all within {small:.1g} %", fontsize=7.5, color=INK2,
+            ha="right", va="bottom")
     ax = axes[1]
-    _claim_band(ax)
     ax.axhline(0, color=INK2, linewidth=0.6, zorder=1)
-    _theory(ax, small_area_error, "small-shape limit R²/(MN) - 1")
+    _theory(ax, lambda x: 1 / (1 + small_area_error(x)) - 1, "theory MN/R² - 1")
     for i, r_km in enumerate(radii):
         sel = sorted((b for b in buffers if b["radius_km"] == r_km and b["lat"] >= 0
                       and not b["contains_pole"]), key=lambda b: b["lat"])
         ax.plot([b["lat"] for b in sel], [b["drawn_region_vs_true_circle_pct"] for b in sel],
                 color=C_SIZE[i], marker=MARKERS[i], markersize=4.5, linewidth=1.6, zorder=3,
                 markeredgecolor="white", markeredgewidth=0.6)
-    ax.set_title("buffer polygon vs true circle, on WGS84", fontsize=9.5, color=INK, loc="left")
+    ax.set_title("Region inside buffer vs true circle (WGS84)", fontsize=9.5, color=INK, loc="left")
+    ax.set_ylabel("Area difference (%)")
     for ax in axes:
         ax.set_xlim(0, 90)
         ax.set_xticks([0, 15, 30, 45, 60, 75, 90])
@@ -821,6 +837,38 @@ def main() -> None:
         "squares": squares,
         "circles": circles,
     }
+
+    co = colorado
+    bmax = results["buffer"]["max_abs_area_error_pct_by_radius"]
+    pmax = results["buffer"]["max_abs_pi_r2_error_pct_by_radius"]
+    reg = results["buffer"]["drawn_region_vs_true_circle_pct_range"]
+    hv = results["length"]["haversine_error_pct_range"]
+    tm = timing["per_call"]
+    results["summary"] = [
+        f"Polygon area error vs WGS84 depends on latitude, not size: "
+        f"{results['area_error_pct_by_size_and_latitude']['squares_side']['1 km']['0']:+.3f} % at the equator, "
+        f"0 near {claims['theory_sign_change_lat']:g} degrees, "
+        f"{results['area_error_pct_by_size_and_latitude']['squares_side']['1 km']['85']:+.3f} % at 85 degrees "
+        f"(1 km squares); 1,000 km shapes differ from 1 km shapes by at most "
+        f"{max(size_spread(squares, 'size_km'), size_spread(circles, 'radius_km')):.3f} "
+        f"percentage points (pole-covering circle excluded).",
+        f"SKILL.md claim (0.5 % up to 55 degrees, 0.9 % near the poles): measured max "
+        f"{claims['measured_max_abs_pct_lat_0_to_55']:.3f} % up to 55 degrees and "
+        f"{claims['measured_max_abs_pct_all']:.3f} % overall; holds = {claims['holds']}.",
+        f"Colorado box: qoregeo {co['qoregeo_corners_km2']:,.0f} km2, WGS84 {co['geographiclib_densified_km2']:,.0f} km2 "
+        f"({co['qoregeo_vs_wgs84_box_pct']:+.3f} %); Census 2010 total {co['census_2010_total_km2']:,.0f} km2 is "
+        f"{co['census_vs_wgs84_box_km2']:+,.0f} km2 from the ideal WGS84 box.",
+        f"area(buffer) matches the WGS84 geodesic circle within {max(bmax['1 km'], bmax['10 km'], bmax['100 km']):.1g} % "
+        f"for r up to 100 km and {bmax['1000 km']:.2g} % at 1,000 km; pi r^2 is off by {pmax['1000 km']:.2f} % "
+        f"at 1,000 km.",
+        f"The region a buffer covers (haversine distance <= r) differs from the true WGS84 circle by "
+        f"{reg[0]:+.2f} % to {reg[1]:+.2f} % in area, so area(buffer) and the zone it tests disagree by that much.",
+        f"length() haversine error vs WGS84: {hv[0]:+.3f} % to {hv[1]:+.3f} % (meridian at the equator is the "
+        f"worst case); method='vincenty' is within "
+        f"{results['length']['vincenty_max_abs_error_pct']:.1g} %.",
+        "Timing (indicative, 1,024-vertex ring): " + "; ".join(
+            f"{k} median {v['median_us']:,.0f} us" for k, v in tm.items()) + ".",
+    ]
 
     _style()
     figures = [

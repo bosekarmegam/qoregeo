@@ -47,10 +47,10 @@
    ],
    "timing_repeats": 3
   },
-  "utc_timestamp": "2026-10-19T12:50:29+00:00",
+  "utc_timestamp": "2026-10-19T12:52:09+00:00",
   "command": "python experiments/02_area_accuracy.py --quick",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
-  "runtime_seconds": 9.0,
+  "runtime_seconds": 6.5,
   "figures": [
    "docs/assets/experiments/area-accuracy-latitude.svg",
    "docs/assets/experiments/area-accuracy-length.svg",
@@ -1970,20 +1970,20 @@
    "polygon": "geodesic circle, r = 100 km at 45 N, 1,024 vertices",
    "per_call": {
     "qoregeo.area (pure Python, sphere)": {
-     "median_us": 795.23,
-     "min_us": 633.81,
+     "median_us": 432.85,
+     "min_us": 428.92,
      "calls_per_run": 500,
      "runs": 3
     },
     "geographiclib PolygonArea (pure Python, WGS84)": {
-     "median_us": 74332.54,
-     "min_us": 73709.78,
+     "median_us": 56545.1,
+     "min_us": 55553.56,
      "calls_per_run": 5,
      "runs": 3
     },
     "pyproj Geod.polygon_area_perimeter (C, WGS84)": {
-     "median_us": 984.53,
-     "min_us": 858.1,
+     "median_us": 771.95,
+     "min_us": 732.86,
      "calls_per_run": 500,
      "runs": 3
     }
@@ -2972,6 +2972,15 @@
     "check_ratio_change_n_to_2n": -0.00154323260183,
     "check_pyproj_vs_geographiclib": 0.0
    }
+  ],
+  "summary": [
+   "Polygon area error vs WGS84 depends on latitude, not size: +0.449 % at the equator, 0 near 35.4 degrees, -0.881 % at 85 degrees (1 km squares); 1,000 km shapes differ from 1 km shapes by at most 0.014 percentage points (pole-covering circle excluded).",
+   "SKILL.md claim (0.5 % up to 55 degrees, 0.9 % near the poles): measured max 0.449 % up to 55 degrees and 0.881 % overall; holds = True.",
+   "Colorado box: qoregeo 268,995 km2, WGS84 269,217 km2 (-0.083 %); Census 2010 total 269,602 km2 is +385 km2 from the ideal WGS84 box.",
+   "area(buffer) matches the WGS84 geodesic circle within 3e-05 % for r up to 100 km and 0.0018 % at 1,000 km; pi r^2 is off by 0.21 % at 1,000 km.",
+   "The region a buffer covers (haversine distance <= r) differs from the true WGS84 circle by -0.45 % to +0.89 % in area, so area(buffer) and the zone it tests disagree by that much.",
+   "length() haversine error vs WGS84: -0.444 % to +0.561 % (meridian at the equator is the worst case); method='vincenty' is within 1e-06 %.",
+   "Timing (indicative, 1,024-vertex ring): qoregeo.area (pure Python, sphere) median 433 us; geographiclib PolygonArea (pure Python, WGS84) median 56,545 us; pyproj Geod.polygon_area_perimeter (C, WGS84) median 772 us."
   ]
  }
 }
