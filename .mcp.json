@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "qoregeo": {
+      "command": "uvx",
+      "args": ["--from", "qoregeo>=1.1.0", "qoregeo", "mcp"]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.bosekarmegam/qoregeo",
+  "title": "QOREgeo GIS",
+  "description": "Zero-dependency GIS: distances, geofences, CSV/GeoJSON filters, OpenStreetMap maps, geocoding",
+  "version": "1.1.0",
+  "websiteUrl": "https://github.com/bosekarmegam/qoregeo",
+  "repository": { "url": "https://github.com/bosekarmegam/qoregeo", "source": "github" },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "qoregeo",
+      "version": "1.1.0",
+      "runtimeHint": "uvx",
+      "transport": { "type": "stdio" },
+      "packageArguments": [ { "type": "positional", "value": "mcp" } ],
+      "environmentVariables": [
+        {
+          "name": "QOREGEO_ROOT",
+          "description": "Folder the tools may read and write (default: the working directory)",
+          "isRequired": false,
+          "format": "filepath"
+        },
+        {
+          "name": "QOREGEO_ALLOW_NETWORK",
+          "description": "Set to 1 to enable geocoding via OpenStreetMap Nominatim",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

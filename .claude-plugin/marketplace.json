@@ -1,0 +1,14 @@
+{
+  "name": "qoregeo",
+  "description": "QOREgeo: offline GIS tools, an MCP server and an Agent Skill for AI assistants",
+  "owner": { "name": "Suneel Bose", "url": "https://github.com/bosekarmegam" },
+  "plugins": [
+    {
+      "name": "qoregeo",
+      "source": "./",
+      "description": "GIS MCP server + skill: distance, nearest, buffers, point-in-polygon, filters, maps, geocoding",
+      "category": "data",
+      "tags": ["gis", "maps", "geojson", "openstreetmap"]
+    }
+  ]
+}

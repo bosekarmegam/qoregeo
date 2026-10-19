@@ -1,13 +1,14 @@
 [build-system]
-requires      = ["hatchling"]
+requires      = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name        = "qoregeo"
-version     = "1.0.3"
-description = "Quantum-Powered Spatial Intelligence for Python. Zero C++ dependencies."
-readme      = "README.md"
-license     = { file = "LICENSE" }
+name          = "qoregeo"
+dynamic       = ["version"]   # single source of truth: qoregeo/_version.py
+description   = "Zero-dependency geospatial toolkit for Python and AI assistants: distances, geofences, OpenStreetMap maps, geocoding, MCP server."
+readme        = "README.md"
+license       = "MIT"
+license-files = ["LICENSE"]
 authors     = [
     { name = "Suneel Bose",  email = "suneelbosekarmegam@gmail.com" },
 ]
@@ -16,36 +17,33 @@ maintainers = [
 ]
 keywords = [
     "gis", "geospatial", "spatial", "geography", "mapping",
-    "geofencing", "leaflet", "heatmap", "coordinates",
-    "latitude", "longitude", "distance", "bearing",
-    "qore", "quantum",
+    "geofencing", "leaflet", "heatmap", "coordinates", "geojson",
+    "latitude", "longitude", "distance", "bearing", "geohash",
+    "haversine", "vincenty", "qore", "quantum", "openstreetmap", "geocoding",
+    "mcp", "model-context-protocol", "ai-agents", "claude", "llm-tools",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Scientific/Engineering :: GIS",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed",
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies    = []          # Zero runtime dependencies
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=7.4",
-    "pytest-cov>=4.1",
-    "ruff>=0.1",
-    "mypy>=1.5",
-]
+[project.scripts]
+qoregeo = "qoregeo.cli:main"
 
 [project.urls]
 Homepage      = "https://github.com/bosekarmegam/qoregeo"
@@ -54,13 +52,30 @@ Documentation = "https://github.com/bosekarmegam/qoregeo#readme"
 "Bug Tracker" = "https://github.com/bosekarmegam/qoregeo/issues"
 Changelog     = "https://github.com/bosekarmegam/qoregeo/blob/main/CHANGELOG.md"
 
+# ─── Development dependencies (PEP 735; pip >= 25.1: pip install -e . --group dev) ──
+[dependency-groups]
+test = ["pytest>=8.3", "pytest-cov>=6.0"]
+lint = ["ruff>=0.9", "mypy>=1.15"]
+dev  = [{ include-group = "test" }, { include-group = "lint" }, "build>=1.2", "twine>=6.1"]
+
+# ─── Build ───────────────────────────────────────────────────────────────────
+[tool.hatch.version]
+path = "qoregeo/_version.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["qoregeo"]
+core-metadata-version = "2.4"   # PEP 639 license metadata; readable by twine >= 6.1
+
+# The Agent Skill ships inside the package so `qoregeo skill install` works from PyPI.
+[tool.hatch.build.targets.wheel.force-include]
+"skills/qoregeo" = "qoregeo/_skill/qoregeo"
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 include = [
     "qoregeo/",
     "tests/",
+    "skills/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
@@ -84,13 +99,15 @@ skip_covered = false
 
 # ─── Ruff (linting) ──────────────────────────────────────────────────────────
 [tool.ruff]
-line-length = 100
-target-version = "py38"
-select = ["E", "F", "W", "I", "UP"]
+line-length    = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
 ignore = ["E501"]
 
 # ─── Mypy (type checking) ────────────────────────────────────────────────────
 [tool.mypy]
-python_version = "3.8"
-strict         = false
-ignore_missing_imports = true
+python_version = "3.10"
+files          = ["qoregeo"]
+strict         = true

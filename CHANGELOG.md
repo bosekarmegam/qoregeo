@@ -2,22 +2,190 @@
 
 All notable changes to QOREgeo are documented here.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).  
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
 Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
-## [1.0.3] — 2025-03-02
+
+## [Unreleased]
+
+### Planned
+- Interactive maps inside AI chats (MCP Apps)
+- Offline reverse geocoding (country / region)
+- Choropleth maps
+- Spatial index for large files
+- QORE OS integration (v2.0)
+
+## [1.1.0] — 2026-10-19
+
+### ⚠️ Compatibility notes
+- **Python 3.10+ is now required** (3.8 and 3.9 are end-of-life; current pytest, mypy
+  and hatchling no longer run on them). Python 3.10 – 3.15 are tested. Older Pythons
+  keep installing 1.0.3 automatically.
+- `point_in_polygon()` / `area()` on a `buffer()` result now use the exact circle
+  (great-circle distance test, spherical-cap area) instead of the inscribed 64-gon, so
+  they agree with `filter_by_radius()`.
+- Polygon edges are read as straight lines in lng/lat (RFC 7946 / Turf / Shapely /
+  Leaflet). Shapes crossing the antimeridian should use continuous longitudes
+  (`177 → 182`, as `buffer()` does) or be split into a MultiPolygon at ±180°.
+- Invalid rows / features are skipped with one summary warning instead of aborting
+  the whole load: out-of-range CSV coordinates, and GeoJSON geometries that are
+  malformed or have non-numeric / out-of-range positions.
+- `heatmap(intensity_col=...)` raises `ColumnNotFoundError` for an unknown column;
+  rows with missing / non-numeric / non-positive intensity add no heat (with a warning).
+- `map()` / `heatmap()`: `zoom` now defaults to `None` (auto-fit). With `center` it is
+  the initial zoom; without, it caps the fit zoom so every feature stays visible.
+  Popups now list every property (previously keys starting with `_` were hidden).
+- Filters on an empty result return an empty engine (unknown columns are still
+  reported), `get_features()` returns `[]`, and `save()` writes empty results.
+- `qoregeo.FileNotFoundError` is deprecated in favour of `GeoFileNotFoundError`.
+
+### Security
+- **Fixed XSS in generated maps**: the title is HTML-escaped, popups are built with
+  `textContent`, and embedded JSON escapes `<`, `>`, `&`, U+2028/U+2029 and lone
+  surrogates so data can never break out of the `<script>` block.
+- Leaflet and leaflet.heat are loaded with **Subresource Integrity** hashes (verified
+  against the npm-published files; v1.0.2 shipped a mistyped hash, which v1.0.3 worked
+  around by dropping SRI) and fall back to a second CDN.
+- The error overlay no longer uses `innerHTML`; map data is embedded with `JSON.parse`, so
+  a property named `__proto__` can't change the object's prototype.
+- `map()`, `heatmap()` and `image()` refuse to overwrite the data file that was loaded.
+- `save()` and map output are written atomically: a failure never truncates an
+  existing file (symlinks are followed and read-only files are still refused).
+
+### Fixed
+- `map()` / `heatmap()` ignored `center`; heatmap ignored `zoom`; single-point maps
+  zoomed to the maximum; empty maps never set a view; data spanning the antimeridian
+  opened as a world view.
+- Heatmaps were nearly invisible at the auto-fitted zoom, crashed in the browser above
+  ~125 k points (`Math.min(...spread)`), and only normalised intensities above 1.
+- One malformed geometry blanked the whole map; Decimal NaN, sets containing NaN,
+  lone surrogates and non-string keys crashed `map()` / `save()`; integers above 2⁵³
+  were silently corrupted in popups.
+- `map()` printing `✅` crashed with `UnicodeEncodeError` on non-UTF-8 consoles
+  (e.g. Windows cp1252) after the file was written.
+- Non-Point features (Polygon, LineString, …) and `"geometry": null` /
+  `"properties": null` (valid RFC 7946) crashed `nearest`, `filter`,
+  `filter_by_radius`, `bounds`, `save(csv)`, `map` and `heatmap`.
+- `point_in_polygon()` ignored holes, rejected MultiPolygons, gave wrong answers for
+  buffers near the poles and the antimeridian, and leaked raw `KeyError` /
+  `IndexError` for malformed polygons. Buffers centred exactly on a pole produced a
+  degenerate ring.
+- String coordinates passed validation then crashed; `(lat, lng, alt)` tuples, `None`,
+  booleans, NaN/inf radii and invalid `num_points` raised raw Python errors.
+- Inconsistent unit tables (`buffer()` had no `ft`, mile factors differed); unit
+  matching is now exact (1 mi = 1.609344 km), case- and whitespace-insensitive.
+- `nearest()` / `filter_by_radius()` compared distances rounded to 4 dp; an invalid
+  `method` was only noticed when there was something to measure.
+- Compass sector boundaries used banker's rounding; `bearing(as_degrees=True)` could
+  return `360.0`. Haversine could raise `math domain error` for antipodal points.
+- CSV loading: only one of `lat_col` / `lng_col` re-ran auto-detection for both; a
+  misspelled override produced a misleading `EmptyDatasetError` (the hint now suggests
+  the real columns); headers with spaces, quoted headers containing other
+  delimiters, tab-delimited `.txt` exports, leading blank lines and Excel's `sep=`
+  line were mis-read; fields over 128 KiB and non-UTF-8 files raised raw `csv` /
+  `UnicodeDecodeError` errors; extra columns produced a `None` property key;
+  duplicate headers silently replaced values.
+- `save()` to CSV wrote duplicate / overwritten `latitude`/`longitude` columns when
+  properties used those names, wrote nested values as Python reprs, and lost
+  polygons and lines on a CSV round trip.
+- Filtered engines shared feature and property dicts with the original (setting a
+  property on a result changed the source) and dropped FeatureCollection members;
+  `load_data()` kept a stale source path and aliased the caller's geometries and
+  property dicts; the GeoJSON skip warning pointed at QOREgeo instead of your code.
+- `load()` on a directory raised `IsADirectoryError`; invalid JSON was reported as an
+  "unsupported format"; "No data loaded" was reported after a filter that simply
+  matched nothing; `ColumnNotFoundError` from `load()` suggested a `geo.filter(...)` fix.
+- QOREgeo exceptions could not be pickled (breaking `multiprocessing` workers);
+  `GeoFileNotFoundError` lacked `errno` / `strerror`.
+- README / docstring example outputs (1153.54 km → 1148.0965 km, 202.4° → 203.47°).
+
+### Added
+- **GeoJSON geometry support**: Polygons, MultiPolygons, LineStrings, Multi*, null
+  geometries and bare Geometry objects load, filter, save and render on maps.
+- `distance(method="vincenty")` — WGS-84 ellipsoidal distance (~0.5 mm).
+- Units `yd` and `nmi`, plus spelled-out aliases (`kilometres`, `feet`, …).
+- `destination()`, `midpoint()`, `area()`, `length()`, `distance_to_line()`.
+- `filter_by_line()` (line buffers), `filter_by_polygon()` (also a whole
+  FeatureCollection of polygons), `filter_by_bbox()` (antimeridian aware),
+  `k_nearest()`, `where()`, `sort_by()`, `head()`.
+- `filter(column, value, op=...)` with `==`, `!=`, `>`, `>=`, `<`, `<=`, `in`,
+  `not in`, `contains`; numeric comparisons when `value` is a number (integers
+  compared exactly, so large IDs never collide).
+- `bbox()` (RFC 7946 order, antimeridian aware) and `centroid()`.
+- `geohash()` / `geohash_decode()`.
+- `add_point()`, iteration over features, `GeoEngine(verbose=False)`.
+- `load(delimiter=..., infer_types=...)`: quote-aware comma / semicolon / tab / pipe
+  detection, `.tsv` and `.txt` files, opt-in type inference that keeps IDs, ZIP codes
+  and phone numbers as strings.
+- `load_data()` accepts FeatureCollections, Features, Geometries and any iterable
+  (Feature dicts with a missing or mis-cased `"type"` are still accepted, as in 1.0).
+- Maps: all geometry types, `overlays=` (e.g. draw a buffer), canvas-rendered markers,
+  heatmap `radius` / `blur`.
+- **Open, keyless basemaps** — `tiles=` `light` (default: OpenStreetMap with muted
+  colours), `osm`, `dark`, `humanitarian`, `cyclosm`, `osm-fr`, `osm-de`, `topo`
+  (OpenTopoMap), `satellite` (NASA Blue Marble) and `none`, or a custom URL template with
+  `attribution=`; `tile_presets()` lists them. CARTO basemaps were dropped because they
+  need an API key since 2026. OpenStreetMap tiles are requested with the Referer their
+  policy requires; a page opened from disk (which can't send one) shows how to view it
+  instead of requesting tiles.
+- **`geo.show()`** and **`qoregeo serve map.html`** serve a map from `127.0.0.1` and open
+  the browser; `map_html()` / `heatmap_html()` return pages as strings; a `GeoEngine`
+  displays as an interactive map in Jupyter.
+- **Static PNG / SVG maps** in pure Python: `geo.image("map.png" | "map.svg")`,
+  `to_png()`, `to_svg()`, `qoregeo.render_png()` / `render_svg()`.
+- **Geocoding**: `qoregeo.Geocoder` for OpenStreetMap Nominatim, Photon or a self-hosted
+  server — at most 1 request/second per public server across all processes (a shared SQLite
+  file in the user cache folder, which also keeps answers for 30 days; `cache_dir=` /
+  `QOREGEO_CACHE_DIR`), identifying User-Agent, in-memory LRU cache, `GeocodingError` with
+  actionable hints.
+- **`intersects()`** and **`filter_intersects()`** for any GeoJSON (exact for buffers).
+- `save(csv_safe=True)` escapes spreadsheet formulas (CSV injection).
+- **Command line**: `qoregeo info | distance | map | image | export | serve | geocode |
+  reverse | tiles | tools | call | mcp | skill` (also `python -m qoregeo`).
+- **AI integration**: a zero-dependency **MCP server** (`qoregeo mcp`, protocol
+  2024-11-05 … 2026-07-28, folder sandbox, opt-in writes and geocoding, PNG previews the
+  model can see); **Claude / OpenAI tool schemas** (`qoregeo.tools`); an **Agent Skill**
+  (`qoregeo skill install | zip`); a Claude Code / Codex **plugin + marketplace**, a Gemini
+  CLI extension, an MCP Registry `server.json`, `AGENTS.md` and `llms.txt`.
+- `buffer()` rings follow the RFC 7946 right-hand rule (counter-clockwise).
+- Exceptions inherit the matching built-ins (`ValueError`, `LookupError`,
+  `RuntimeError`, `FileNotFoundError`) and expose attributes (`.lat`, `.unit`,
+  `.column`, …). New `InvalidGeoJSONError`, `InvalidArgumentError` and
+  `FileReadError`. `GeoFileNotFoundError` is the new name of `FileNotFoundError`,
+  which is no longer exported by `from qoregeo import *`, so it can't shadow the
+  built-in.
+- Points can be `(lat, lng)` / `(lat, lng, alt)` sequences, `{"lat": …, "lng": …}` dicts,
+  GeoJSON Points or Point Features everywhere a method takes a point.
+- `py.typed` marker and a public `PointLike` type — the inline type hints are now
+  visible to type checkers (the package passes `mypy --strict`; `bearing()` has
+  precise overloads).
+- Thousands of offline tests (geometry, I/O, dataset operations, maps, rendering,
+  geocoding, CLI, MCP protocol conformance, tools).
+
+### Changed
+- Version is single-sourced from `qoregeo/_version.py`.
+- Packaging: PEP 639 license metadata, hatchling ≥ 1.27, PEP 735 dependency groups
+  (`pip install -e . --group dev`), ruff `lint` table.
+- CI: Python 3.10 – 3.15 on Linux / Windows / macOS, ruff + strict mypy job, build +
+  `twine check`; actions bumped to current majors (checkout v7, setup-python v7,
+  codecov v7, upload/download-artifact v7/v8).
+- Release: runs the full lint / type / test matrix, then separate build and publish
+  jobs, tag/version check, wheel tested before upload, `pypi` environment for trusted
+  publishing; Dependabot for actions.
+
+## [1.0.3] — 2026-03-02
 
 ### Fixed
 - fix map loading error
 
-## [1.0.2] — 2025-03-02
+## [1.0.2] — 2026-03-02
 
 ### Fixed
 - Skip auto-detection when lat_col/lng_col are manually provided
 - Fix southern hemisphere distance test range
 
-## [1.0.0] — 2025-01-01
+## [1.0.0] — 2026-03-02
 
 ### 🎉 Initial Release
 
@@ -57,15 +225,3 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Python 3.8–3.12 compatible  
 - Fully typed (PEP 484)  
 - MIT licensed  
-
----
-
-## [Unreleased] — v1.1 (In Progress)
-
-### Planned
-- Polygon boundary loading (district/state GeoJSON shapes)
-- Street address geocoding (auto lat/lng from address string)
-- Line buffer zones (draw radius around roads, rivers)
-- PNG map export (static screenshot from any map)
-- `intersects()` — test if two polygons overlap
-- Improved type stubs for mypy strict mode

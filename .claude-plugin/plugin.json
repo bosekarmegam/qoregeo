@@ -1,0 +1,11 @@
+{
+  "name": "qoregeo",
+  "displayName": "QOREgeo GIS",
+  "version": "1.1.0",
+  "description": "Zero-dependency GIS for agents: distances, nearest places, geofences, CSV/GeoJSON filters, OpenStreetMap maps, map previews and geocoding — as an MCP server plus an Agent Skill.",
+  "author": { "name": "Suneel Bose", "url": "https://github.com/bosekarmegam" },
+  "homepage": "https://github.com/bosekarmegam/qoregeo",
+  "repository": "https://github.com/bosekarmegam/qoregeo",
+  "license": "MIT",
+  "keywords": ["gis", "geospatial", "maps", "geojson", "openstreetmap", "geocoding", "mcp"]
+}

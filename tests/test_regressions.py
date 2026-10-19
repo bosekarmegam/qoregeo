@@ -1,0 +1,526 @@
+"""
+tests/test_regressions.py
+=========================
+Regression tests for defects found while reviewing the 1.1.0 release — each
+test pins one fixed behaviour (most also worked in 1.0.3 and must keep working).
+"""
+
+from __future__ import annotations
+
+import concurrent.futures
+import copy
+import csv
+import decimal
+import errno
+import json
+import os
+import pickle
+import re
+import sys
+import time
+import warnings
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from qoregeo import (
+    ColumnNotFoundError,
+    GeoEngine,
+    GeoFileNotFoundError,
+    InvalidArgumentError,
+    InvalidCoordinateError,
+    InvalidGeoJSONError,
+)
+
+DELHI = (28.6139, 77.2090)
+JAIPUR = (26.9124, 75.7873)
+
+
+@pytest.fixture
+def two_cities() -> GeoEngine:
+    return (GeoEngine(verbose=False)
+            .add_point(*DELHI, name="Delhi")
+            .add_point(*JAIPUR, name="Jaipur"))
+
+
+def _names(geo: GeoEngine) -> list[str]:
+    return [f["properties"]["name"] for f in geo]
+
+
+def parse_config(page: str) -> dict[str, Any]:
+    """The JSON assigned to ``var CONFIG`` in a generated map page."""
+    found = re.findall(r"^[ \t]*var CONFIG = JSON\.parse\((.*)\);[ \t]*$", page, re.MULTILINE)
+    assert len(found) == 1
+    result: dict[str, Any] = json.loads(json.loads(found[0]))
+    return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Columns seen by filter()
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestFilterColumns:
+    def test_filter_on_injected_distance(self, two_cities):
+        near = two_cities.filter_by_radius(28.61, 77.20, 1000)
+        assert _names(near.filter("_distance", 100, op="<")) == ["Delhi"]
+        assert _names(two_cities.k_nearest(DELHI, k=2).filter("_distance", 0)) == ["Delhi"]
+        line = [DELHI, JAIPUR]
+        assert two_cities.filter_by_line(line, 5).filter("_distance", 1, op="<").count() == 2
+
+    def test_property_added_in_place_after_a_filter(self, two_cities):
+        two_cities.filter("name", "Delhi")
+        for feat in two_cities.get_features():
+            feat["properties"]["tier"] = "1"
+        assert two_cities.filter("tier", "1").count() == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exact comparisons for large integers
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBigIntegers:
+    IDS = [9007199254740993, 9007199254740992]
+
+    @pytest.fixture
+    def orders(self) -> GeoEngine:
+        geo = GeoEngine(verbose=False)
+        for i, oid in enumerate(self.IDS):
+            geo.add_point(10 + i, 20, order_id=oid, code=str(oid))
+        return geo
+
+    def test_equality_is_exact(self, orders):
+        assert [f["properties"]["order_id"] for f in orders.filter("order_id", self.IDS[0])] == \
+            [self.IDS[0]]
+        assert orders.filter("code", self.IDS[1]).count() == 1
+
+    def test_ordering_is_exact(self, orders):
+        assert orders.filter("order_id", self.IDS[1], op=">").count() == 1
+        assert [f["properties"]["order_id"] for f in orders.sort_by("code")] == sorted(self.IDS)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Loading edge cases
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLoadingEdgeCases:
+    def test_polygon_with_empty_ring_does_not_crash(self, tmp_path):
+        geo = GeoEngine(verbose=False).load_data([
+            {"type": "Polygon", "coordinates": [[]]},
+            {"type": "Point", "coordinates": [77.2, 28.6]},
+        ])
+        assert geo.nearest((28.6, 77.2))["index"] == 1
+        assert geo.centroid() == pytest.approx((28.6, 77.2))
+        geo.save(tmp_path / "x.csv")
+        geo.map(tmp_path / "x.html", tiles="osm")
+
+    @pytest.mark.parametrize("ftype", [None, "feature", "FEATURE"])
+    def test_feature_with_missing_or_miscased_type(self, ftype):
+        item = {"geometry": {"type": "Point", "coordinates": [77.2, 28.6]}, "properties": {"n": 1}}
+        if ftype is not None:
+            item["type"] = ftype
+        geo = GeoEngine(verbose=False).load_data([item])
+        assert geo.get_features()[0]["type"] == "Feature"
+        assert geo.count() == 1
+
+    def test_blank_line_after_sep_preamble(self, tmp_path):
+        path = tmp_path / "excel.csv"
+        path.write_text("sep=;\n\nname;lat;lng\nA;10;20\n", encoding="utf-8")
+        assert GeoEngine().load(path).get_features()[0]["properties"] == {"name": "A"}
+
+    def test_field_size_limit_restored_after_concurrent_loads(self, tmp_path):
+        path = tmp_path / "big.csv"
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["lat", "lng", "blob"])
+            writer.writerow(["10", "20", "x" * 200_000])
+        before = csv.field_size_limit()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            counts = list(pool.map(lambda _: GeoEngine().load(path).count(), range(32)))
+        assert counts == [1] * 32
+        assert csv.field_size_limit() == before
+
+    @pytest.mark.parametrize("kwargs", [{"encoding": "rot13"}, {"delimiter": "\n"},
+                                        {"delimiter": '"'}])
+    def test_bad_reader_options_are_invalid_arguments(self, tmp_path, kwargs):
+        path = tmp_path / "x.csv"
+        path.write_text("lat,lng\n1,2\n", encoding="utf-8")
+        with pytest.raises(InvalidArgumentError):
+            GeoEngine().load(path, **kwargs)
+
+    def test_integer_with_too_many_digits_is_invalid_geojson(self, tmp_path):
+        path = tmp_path / "huge.geojson"
+        path.write_text('{"type": "Point", "coordinates": [1' + "0" * 5000 + ", 2]}",
+                        encoding="utf-8")
+        with pytest.raises(InvalidGeoJSONError):
+            GeoEngine().load(path)
+
+    def test_infer_types_keeps_digits_a_float_would_lose(self, tmp_path):
+        path = tmp_path / "p.csv"
+        path.write_text("lat,lng,pi,big\n1,2,3.14159265358979323846,1" + "0" * 5000 + "\n",
+                        encoding="utf-8")
+        props = GeoEngine().load(path, infer_types=True).get_features()[0]["properties"]
+        assert props["pi"] == "3.14159265358979323846"
+        assert props["big"] == "1" + "0" * 5000
+
+
+class TestOverflowingNumbers:
+    def test_huge_coordinates_raise_coordinate_errors(self):
+        geo = GeoEngine(verbose=False)
+        with pytest.raises(InvalidCoordinateError):
+            geo.distance((10 ** 400, 0), (0, 0))
+        with pytest.raises(InvalidCoordinateError):
+            geo.add_point(10 ** 400, 0)
+
+    def test_huge_geojson_positions_are_skipped(self):
+        with pytest.warns(UserWarning, match="too large"):
+            geo = GeoEngine(verbose=False).load_data([
+                {"type": "Point", "coordinates": [10 ** 400, 0]},
+                {"type": "Point", "coordinates": [1, 2]},
+            ])
+        assert geo.count() == 1
+
+    def test_out_of_range_decimal_becomes_null(self, tmp_path):
+        geo = GeoEngine(verbose=False).add_point(1, 2, big=decimal.Decimal("1e400"))
+        out = tmp_path / "d.geojson"
+        geo.save(out)
+        assert json.loads(out.read_text(encoding="utf-8"))["features"][0]["properties"] == \
+            {"big": None}
+        geo.map(tmp_path / "d.html", tiles="osm")
+
+    def test_huge_heat_weight_does_not_crash(self, tmp_path):
+        geo = GeoEngine(verbose=False).add_point(1, 2, w=10 ** 400).add_point(3, 4, w=1)
+        with pytest.warns(UserWarning, match="adds no heat"):
+            geo.heatmap(tmp_path / "h.html", intensity_col="w", tiles="osm")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# File writing
+# ─────────────────────────────────────────────────────────────────────────────
+
+needs_symlinks = pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+not_root = pytest.mark.skipif(
+    os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+    reason="permission checks are bypassed for root / differ on Windows",
+)
+
+
+class TestFileWriting:
+    @needs_symlinks
+    @pytest.mark.parametrize("ext", [".geojson", ".html"])
+    def test_writing_through_a_symlink_updates_its_target(self, two_cities, tmp_path, ext):
+        real = tmp_path / f"real{ext}"
+        real.write_text("OLD", encoding="utf-8")
+        link = tmp_path / f"latest{ext}"
+        link.symlink_to(real)
+        if ext == ".html":
+            two_cities.map(link, tiles="osm")
+        else:
+            two_cities.save(link)
+        assert link.is_symlink()
+        assert real.read_text(encoding="utf-8") != "OLD"
+
+    @pytest.mark.skipif(not hasattr(os, "link"), reason="no hard links")
+    def test_hard_linked_names_both_see_the_new_content(self, two_cities, tmp_path):
+        a = tmp_path / "a.geojson"
+        a.write_text("OLD", encoding="utf-8")
+        b = tmp_path / "b.geojson"
+        os.link(a, b)
+        two_cities.save(a)
+        assert b.read_text(encoding="utf-8") == a.read_text(encoding="utf-8") != "OLD"
+
+    @not_root
+    def test_read_only_target_is_not_replaced(self, two_cities, tmp_path):
+        target = tmp_path / "locked.geojson"
+        target.write_text("PROTECTED", encoding="utf-8")
+        target.chmod(0o444)
+        try:
+            with pytest.raises(PermissionError):
+                two_cities.save(target)
+            assert target.read_text(encoding="utf-8") == "PROTECTED"
+        finally:
+            target.chmod(0o644)
+
+    @not_root
+    def test_writable_file_in_read_only_folder(self, two_cities, tmp_path):
+        folder = tmp_path / "ro"
+        folder.mkdir()
+        target = folder / "out.geojson"
+        target.write_text("OLD", encoding="utf-8")
+        folder.chmod(0o555)
+        try:
+            two_cities.save(target)
+            assert json.loads(target.read_text(encoding="utf-8"))["type"] == "FeatureCollection"
+        finally:
+            folder.chmod(0o755)
+
+    def test_long_file_name(self, two_cities, tmp_path):
+        target = tmp_path / ("x" * 240 + ".geojson")
+        two_cities.save(target)
+        assert target.exists()
+        assert [p.name for p in tmp_path.iterdir()] == [target.name]   # no temp files left
+
+    def test_bytes_output_path_for_maps(self, two_cities, tmp_path):
+        out = os.fsencode(tmp_path / "m.html")
+        two_cities.map(out, tiles="osm")
+        two_cities.heatmap(os.fsencode(tmp_path / "h.html"), tiles="osm")
+        assert (tmp_path / "m.html").exists() and (tmp_path / "h.html").exists()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Exceptions
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestExceptionRoundTrip:
+    @pytest.mark.parametrize("clone", [lambda e: pickle.loads(pickle.dumps(e)), copy.copy,
+                                       copy.deepcopy])
+    def test_file_not_found_keeps_errno(self, clone):
+        with pytest.raises(GeoFileNotFoundError) as info:
+            GeoEngine().load("/no/such/file.csv")
+        again = clone(info.value)
+        assert type(again) is GeoFileNotFoundError
+        assert again.errno == errno.ENOENT
+        assert again.strerror == os.strerror(errno.ENOENT)
+        assert again.filename == "/no/such/file.csv"
+        assert str(again) == str(info.value)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Maps across the antimeridian
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _lngs(cfg: dict) -> list[float]:
+    out: list[float] = []
+
+    def walk(c):
+        if isinstance(c, list) and len(c) >= 2 and not isinstance(c[0], list):
+            out.append(c[0])
+        elif isinstance(c, list):
+            for x in c:
+                walk(x)
+
+    for f in cfg["data"]["features"]:
+        walk(f["geometry"]["coordinates"])
+    return out
+
+
+class TestAntimeridianMaps:
+    def test_shifted_maps_disable_world_copy_jump(self, tmp_path):
+        fiji = GeoEngine(verbose=False).add_point(-18.14, 178.44).add_point(-16.8, -179.95)
+        out = tmp_path / "f.html"
+        fiji.map(out, tiles="osm")
+        cfg = parse_config(out.read_text(encoding="utf-8"))
+        assert cfg["worldCopyJump"] is False
+        assert sorted(_lngs(cfg)) == pytest.approx([178.44, 180.05])
+
+        india = GeoEngine(verbose=False).add_point(*DELHI)
+        india.map(out, tiles="osm")
+        assert parse_config(out.read_text(encoding="utf-8"))["worldCopyJump"] is True
+
+    def test_mixed_global_data_keeps_europe_together(self, tmp_path):
+        geo = GeoEngine(verbose=False).load_data([
+            {"type": "Point", "coordinates": [178.44, -18.14]},          # Fiji
+            {"type": "Point", "coordinates": [-179.95, -16.8]},          # Fiji, east of 180
+            {"type": "LineString", "coordinates": [[-0.1276, 51.5], [2.3522, 48.86]]},  # London–Paris
+        ])
+        out = tmp_path / "g.html"
+        geo.map(out, tiles="osm")
+        line = parse_config(out.read_text(encoding="utf-8"))["data"]["features"][2]
+        assert line["geometry"]["coordinates"] == [[-0.1276, 51.5], [2.3522, 48.86]]
+
+    def test_center_moves_with_shifted_data(self, tmp_path):
+        fiji = GeoEngine(verbose=False).add_point(-18.14, 178.44).add_point(-16.8, -179.95)
+        out = tmp_path / "c.html"
+        fiji.map(out, center=(-17.5, -179.5), zoom=7, tiles="osm")
+        assert parse_config(out.read_text(encoding="utf-8"))["view"]["center"] == \
+            pytest.approx([-17.5, 180.5])
+
+    @pytest.mark.parametrize("wrap", ["feature", "collection"])
+    def test_feature_overlays_count_toward_the_shift(self, tmp_path, wrap):
+        zone = GeoEngine().buffer((-17.5, 179.9), 300)
+        overlay = {"type": "Feature", "geometry": zone, "properties": {}}
+        if wrap == "collection":
+            overlay = {"type": "FeatureCollection", "features": [overlay]}
+        geo = GeoEngine(verbose=False).add_point(-17.0, -179.5)
+        out = tmp_path / "o.html"
+        geo.map(out, overlays=[overlay], tiles="osm")
+        cfg = parse_config(out.read_text(encoding="utf-8"))
+        assert cfg["worldCopyJump"] is False
+        assert _lngs(cfg) == pytest.approx([180.5])
+
+    @pytest.mark.parametrize("kwargs", [{"attribution": 5}, {"attribution": ["x"]}])
+    def test_non_string_tile_options_rejected(self, two_cities, tmp_path, kwargs):
+        with pytest.raises(InvalidArgumentError):
+            two_cities.map(tmp_path / "t.html", **kwargs)
+
+
+class TestWorldSpanningMaps:
+    """World-wide data stays a world map: no antimeridian folding (HTML and images agree)."""
+
+    WORLD_BOX = {"type": "Polygon",
+                 "coordinates": [[[-180, -60], [180, -60], [180, 60], [-180, 60], [-180, -60]]]}
+
+    def test_world_box_with_a_point_is_not_folded(self):
+        geo = GeoEngine(verbose=False).load_data([
+            {"type": "Feature", "geometry": self.WORLD_BOX, "properties": {}},
+            {"type": "Feature", "geometry": {"type": "Point", "coordinates": [77.2, 28.6]}, "properties": {}},
+        ])
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is True
+        assert cfg["data"]["features"][0]["geometry"] == self.WORLD_BOX
+
+    def test_world_box_overlay_prevents_folding(self):
+        geo = GeoEngine(verbose=False).add_point(-17.0, 179.5).add_point(-17.5, -179.5)
+        cfg = parse_config(geo.map_html(overlays=[self.WORLD_BOX]))
+        assert cfg["worldCopyJump"] is True
+        assert sorted(_lngs(cfg)) == [-179.5, 179.5]
+
+    def test_crossing_span_wider_than_a_hemisphere_is_not_shifted(self):
+        geo = GeoEngine(verbose=False)
+        for lng in (100.0, 170.0, -170.0, -60.0):    # tightest span 100° → -60° is 200° wide
+            geo.add_point(0.0, lng)
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is True
+        assert sorted(_lngs(cfg)) == [-170.0, -60.0, 100.0, 170.0]
+
+    def test_narrow_cluster_still_unwrapped(self):
+        geo = GeoEngine(verbose=False).add_point(-18.1, 178.4).add_point(-16.8, -179.9)
+        cfg = parse_config(geo.map_html())
+        assert cfg["worldCopyJump"] is False
+        assert sorted(_lngs(cfg)) == pytest.approx([178.4, 180.1])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX-only path check")
+def test_no_temp_files_left_after_failed_save(tmp_path, two_cities):
+    target = tmp_path / "bad.geojson"
+    target.write_text("OLD", encoding="utf-8")
+    with pytest.raises(UnicodeEncodeError):
+        two_cities.add_point(1, 2, name="Ω").save(target, encoding="ascii")
+    assert target.read_text(encoding="utf-8") == "OLD"
+    assert sorted(p.name for p in Path(tmp_path).iterdir()) == ["bad.geojson"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Wide CSV headers load in linear time
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestWideHeaders:
+    def test_duplicate_check_is_linear(self, tmp_path):
+        # 40,000 columns took ~13 s with the old list.count() check (O(n²)).
+        n = 40_000
+        path = tmp_path / "wide.csv"
+        path.write_text("lat,lng," + ",".join(f"c{i}" for i in range(n)) + ",c7,c3\n1,2\n",
+                        encoding="utf-8")
+        start = time.perf_counter()
+        with pytest.warns(UserWarning, match=r"duplicate column name\(s\) \['c3', 'c7'\]"):
+            geo = GeoEngine(verbose=False).load(path)
+        assert time.perf_counter() - start < 4.0
+        assert geo.count() == 1
+
+    def test_no_warning_without_duplicates(self, tmp_path):
+        path = tmp_path / "plain.csv"
+        path.write_text("lat,lng,a,b\n1,2,x,y\n", encoding="utf-8")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert GeoEngine(verbose=False).load(path).count() == 1
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# sort_by() on a column that doesn't exist
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSortByColumn:
+    @pytest.fixture
+    def cities(self) -> GeoEngine:
+        return (GeoEngine(verbose=False)
+                .add_point(*DELHI, name="Delhi", population=32_900_000)
+                .add_point(-33.87, 151.21, name="Sydney", population=5_450_000)
+                .add_point(*JAIPUR, name="Jaipur"))
+
+    def test_misspelled_column_raises(self, cities):
+        # Used to return file order, so "top N" answers were silently wrong.
+        with pytest.raises(ColumnNotFoundError) as info:
+            cities.sort_by("populaton", descending=True)
+        assert info.value.column == "populaton"
+        assert "population" in info.value.available
+        assert "geo.sort_by(" in str(info.value)
+
+    def test_error_names_the_loaded_file(self, tmp_path):
+        path = tmp_path / "c.csv"
+        path.write_text("name,lat,lng\nA,1,2\n", encoding="utf-8")
+        with pytest.raises(ColumnNotFoundError) as info:
+            GeoEngine(verbose=False).load(path).sort_by("nope")
+        assert info.value.filepath == str(path)
+
+    def test_sparse_column_still_sorts_missing_last(self, cities):
+        assert _names(cities.sort_by("population")) == ["Sydney", "Delhi", "Jaipur"]
+        assert _names(cities.sort_by("population", descending=True)) == ["Delhi", "Sydney", "Jaipur"]
+
+    def test_empty_filter_result_knows_its_columns(self, cities):
+        empty = cities.filter("name", "Nowhere")
+        assert empty.sort_by("population").count() == 0
+        with pytest.raises(ColumnNotFoundError):
+            empty.sort_by("populaton")
+
+    def test_injected_distance_column(self, cities):
+        near = cities.k_nearest(DELHI, k=3).sort_by("_distance", descending=True)
+        assert _names(near)[0] == "Sydney"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Representative points of shapes cut at the antimeridian
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Fiji as RFC 7946 §3.1.9 asks: a MultiPolygon cut at ±180°.
+FIJI_CUT = {"type": "MultiPolygon", "coordinates": [
+    [[[177.2, -18.3], [178.7, -18.3], [178.7, -17.3], [177.2, -17.3], [177.2, -18.3]]],
+    [[[178.4, -17.0], [180.0, -17.0], [180.0, -16.1], [178.4, -16.1], [178.4, -17.0]]],
+    [[[-180.0, -19.0], [-178.5, -19.0], [-178.5, -16.2], [-180.0, -16.2], [-180.0, -19.0]]],
+]}
+
+
+class TestAntimeridianRepresentativePoint:
+    def _fiji(self) -> GeoEngine:
+        return GeoEngine(verbose=False).load_data([
+            {"type": "Feature", "geometry": FIJI_CUT, "properties": {"name": "Fiji"}}])
+
+    def test_centroid_lands_on_fiji(self):
+        # Was (-17.43, -31.92): the South Atlantic.
+        lat, lng = self._fiji().centroid()
+        assert lat == pytest.approx(-17.43, abs=0.01)
+        assert lng == pytest.approx(179.849, abs=0.01)
+
+    def test_heatmap_point_lands_on_fiji(self):
+        cfg = parse_config(self._fiji().heatmap_html(tiles="none"))
+        (lat, lng, weight), = cfg["points"]
+        assert (lat, weight) == (pytest.approx(-17.43, abs=0.01), 1.0)
+        assert lng == pytest.approx(179.849, abs=0.01)
+
+    def test_csv_coordinates_land_on_fiji(self, tmp_path):
+        out = tmp_path / "fiji.csv"
+        self._fiji().save(out)
+        with open(out, newline="", encoding="utf-8") as fh:
+            row, = csv.DictReader(fh)
+        assert float(row["longitude"]) == pytest.approx(179.849, abs=0.01)
+
+    def test_part_east_of_180_pulls_east(self):
+        # A Chukotka-like shape: mostly west of 180° with a part just east of it.
+        shape = {"type": "MultiPolygon", "coordinates": [
+            [[[170, 65], [180, 65], [180, 70], [170, 70], [170, 65]]],
+            [[[-180, 65], [-172, 65], [-172, 68], [-180, 68], [-180, 65]]],
+        ]}
+        geo = GeoEngine(verbose=False).load_data([shape])
+        lat, lng = geo.centroid()
+        assert 65 < lat < 70
+        assert lng > 175 or lng < -175
+
+    @pytest.mark.parametrize("ring, expected_lng", [
+        ([[175, -5], [185, -5], [185, 5], [175, 5], [175, -5]], 180.0),      # continuous
+        ([[10, -5], [20, -5], [20, 5], [10, 5], [10, -5]], 15.0),            # ordinary
+        ([[-180, -5], [180, -5], [180, 5], [-180, 5], [-180, -5]], 0.0),     # world band
+    ], ids=["continuous", "ordinary", "world-band"])
+    def test_other_polygons_unchanged(self, ring, expected_lng):
+        geo = GeoEngine(verbose=False).load_data([{"type": "Polygon", "coordinates": [ring]}])
+        lat, lng = geo.centroid()
+        assert lat == pytest.approx(0.0, abs=1e-9)
+        assert abs(lng) == pytest.approx(abs(expected_lng), abs=1e-9)
