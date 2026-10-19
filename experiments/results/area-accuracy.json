@@ -58,10 +58,10 @@
    ],
    "timing_repeats": 7
   },
-  "utc_timestamp": "2026-10-19T12:56:00+00:00",
+  "utc_timestamp": "2026-10-19T12:57:15+00:00",
   "command": "python experiments/02_area_accuracy.py",
   "python_executable": "/tmp/claude-0/-home-user-qoregeo/0ad94230-bb83-5009-9d1f-a9244caa505e/scratchpad/expvenv/bin/python",
-  "runtime_seconds": 56.1,
+  "runtime_seconds": 62.7,
   "figures": [
    "docs/assets/experiments/area-accuracy-latitude.svg",
    "docs/assets/experiments/area-accuracy-length.svg",
@@ -6400,20 +6400,20 @@
    "polygon": "geodesic circle, r = 100 km at 45 N, 1,024 vertices",
    "per_call": {
     "qoregeo.area (pure Python, sphere)": {
-     "median_us": 512.73,
-     "min_us": 460.74,
+     "median_us": 501.18,
+     "min_us": 417.81,
      "calls_per_run": 500,
      "runs": 7
     },
     "geographiclib PolygonArea (pure Python, WGS84)": {
-     "median_us": 59074.27,
-     "min_us": 56719.07,
+     "median_us": 60840.69,
+     "min_us": 56471.77,
      "calls_per_run": 5,
      "runs": 7
     },
     "pyproj Geod.polygon_area_perimeter (C, WGS84)": {
-     "median_us": 727.96,
-     "min_us": 674.34,
+     "median_us": 760.85,
+     "min_us": 683.11,
      "calls_per_run": 500,
      "runs": 7
     }
@@ -8950,7 +8950,7 @@
    "area(buffer) matches the WGS84 geodesic circle within 2e-05 % for r up to 100 km and 0.0018 % at 1,000 km; pi r^2 is off by 0.21 % at 1,000 km.",
    "The region a buffer covers (haversine distance <= r) differs from the true WGS84 circle by -0.45 % to +0.89 % in area, so area(buffer) and the zone it tests disagree by that much.",
    "length() haversine error vs WGS84: -0.444 % to +0.561 % (meridian at the equator is the worst case); method='vincenty' is within 1e-05 %.",
-   "Timing (indicative, 1,024-vertex ring): qoregeo.area (pure Python, sphere) median 513 us; geographiclib PolygonArea (pure Python, WGS84) median 59,074 us; pyproj Geod.polygon_area_perimeter (C, WGS84) median 728 us."
+   "Timing (indicative, 1,024-vertex ring): qoregeo.area (pure Python, sphere) median 501 us; geographiclib PolygonArea (pure Python, WGS84) median 60,841 us; pyproj Geod.polygon_area_perimeter (C, WGS84) median 761 us."
   ]
  }
 }
